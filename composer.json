@@ -1,7 +1,7 @@
 {
     "name": "sanchescom/php-wifi",
     "description": "PHP library for working with wifi network",
-    "license": "GNU GPLv3",
+    "license": "GPL-3.0",
     "authors": [
         {
             "name": "Alexander Efimov",
