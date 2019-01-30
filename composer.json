@@ -1,0 +1,27 @@
+{
+    "name": "sanchescom/php-wifi",
+    "description": "PHP library for working with wifi network",
+    "license": "GNU GPLv3",
+    "authors": [
+        {
+            "name": "Alexander Efimov",
+            "email": "sanches.com@mail.ru"
+        }
+    ],
+    "minimum-stability": "0.0.1",
+    "autoload": {
+        "psr-4": {
+            "Sanchescom\\Wifi\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Sanchescom\\Wifi\\Test\\": "tests/"
+        }
+    },
+    "require": {
+        "php": "^7.2.8",
+        "pastuhov/php-exec-command": "^1.1",
+        "splitbrain/php-cli": "^1.1"
+    }
+}
