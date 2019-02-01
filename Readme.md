@@ -1,3 +1,5 @@
+[![Maintainability](https://api.codeclimate.com/v1/badges/f68d983610cf0f93e5d3/maintainability)](https://codeclimate.com/github/sanchescom/php-wifi/maintainability)
+
 PHP Wifi
 ==========
 
