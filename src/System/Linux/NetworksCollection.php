@@ -48,7 +48,7 @@ class NetworksCollection extends AbstractNetworksCollection
      */
     public function extractingNetworks($output): array
     {
-        $availableNetworks = explode("\n", trim($output));
+        $availableNetworks = $this->explodeAvailableNetworks($output);
 
         array_walk($availableNetworks, function (&$networkData) {
             $networkData = $this->extractingDataFromString($networkData);

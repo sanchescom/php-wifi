@@ -56,14 +56,14 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
 
         $currentBssid = $this->extractBssid($current, 0);
 
-        $availableNetworks = explode("\n", trim($networks));
+        $availableNetworks = $this->explodeAvailableNetworks($networks);
 
         array_shift($availableNetworks);
 
         array_walk($availableNetworks, function (&$networkData) use ($currentBssid) {
             $networkData = $this->extractingDataFromString($networkData);
 
-            if (in_array($networkData[self::BSSID_KEY], $currentBssid)) {
+            if ($this->isConnected($networkData[self::BSSID_KEY], $currentBssid)) {
                 array_push($networkData, true);
             }
         });

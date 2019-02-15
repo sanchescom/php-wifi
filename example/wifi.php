@@ -16,10 +16,8 @@ class Example
         $allNetworks = Wifi::scan()->getAll();
 
         if (count($allNetworks) > 0) {
-            echo "SSID (BSSID):\r\n";
-
             foreach ($allNetworks as $network) {
-                echo $network->ssid . "(" . $network->bssid . ")\r\n ";
+                echo $network . "\n";
             }
         }
     }

@@ -117,4 +117,23 @@ abstract class AbstractNetworksCollection
     {
         return array_values(array_filter($this->getAll(), $closure));
     }
+
+    /**
+     * @param string $networksString
+     * @return array
+     */
+    protected function explodeAvailableNetworks(string $networksString): array
+    {
+        return explode("\n", trim($networksString));
+    }
+
+    /**
+     * @param string $bssid
+     * @param array $connectedBssid
+     * @return bool
+     */
+    protected function isConnected(string $bssid, array $connectedBssid): bool
+    {
+        return in_array($bssid, $connectedBssid);
+    }
 }
