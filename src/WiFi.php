@@ -42,8 +42,9 @@ class WiFi
     protected static $systemNetworks;
 
     /**
-     * @return AbstractNetworksCollection
      * @throws Exception
+     *
+     * @return AbstractNetworksCollection
      */
     public static function scan(): AbstractNetworksCollection
     {
