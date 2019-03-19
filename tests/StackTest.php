@@ -1,9 +1,9 @@
 <?php
 
-namespace Sanchescom\Wifi\Test;
+namespace Sanchescom\WiFi\Test;
 
 use PHPUnit\Framework\TestCase;
-use Sanchescom\Wifi\System\Windows\Network;
+use Sanchescom\WiFi\System\Windows\Network;
 
 class StackTest extends TestCase
 {

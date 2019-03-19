@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Windows;
+namespace Sanchescom\WiFi\System\Windows;
 
-use Sanchescom\Wifi\System\AbstractNetworksCollection;
-use Sanchescom\Wifi\System\NetworksCollectionTrait;
+use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\NetworksCollectionTrait;
 
 /**
  * Class NetworksCollection

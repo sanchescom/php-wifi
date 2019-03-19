@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Linux;
+namespace Sanchescom\WiFi\System\Linux;
 
 use Exception;
 use pastuhov\Command\Command;
-use Sanchescom\Wifi\System\AbstractNetwork;
-use Sanchescom\Wifi\System\UtilityInterface;
+use Sanchescom\WiFi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\UtilityInterface;
 
 class Network extends AbstractNetwork implements UtilityInterface
 {

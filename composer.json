@@ -11,12 +11,12 @@
     "minimum-stability": "stable",
     "autoload": {
         "psr-4": {
-            "Sanchescom\\Wifi\\": "src/"
+            "Sanchescom\\WiFi\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Sanchescom\\Wifi\\Test\\": "tests/"
+            "Sanchescom\\WiFi\\Test\\": "tests/"
         }
     },
     "require": {

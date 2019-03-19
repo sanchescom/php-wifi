@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Mac;
+namespace Sanchescom\WiFi\System\Mac;
 
-use Sanchescom\Wifi\System\AbstractNetworksCollection;
-use Sanchescom\Wifi\System\NetworksCollectionTrait;
-use Sanchescom\Wifi\System\UtilityInterface;
+use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\NetworksCollectionTrait;
+use Sanchescom\WiFi\System\UtilityInterface;
 
 class NetworksCollection extends AbstractNetworksCollection implements UtilityInterface
 {

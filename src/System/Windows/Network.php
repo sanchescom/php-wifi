@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Windows;
+namespace Sanchescom\WiFi\System\Windows;
 
 use Exception;
 use pastuhov\Command\Command;
-use Sanchescom\Wifi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\AbstractNetwork;
 
 /**
  * Class Network
