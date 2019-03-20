@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Mac;
+namespace Sanchescom\WiFi\System\Mac;
 
 use Exception;
 use pastuhov\Command\Command;
-use Sanchescom\Wifi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\AbstractNetwork;
 
+/**
+ * Class Network.
+ */
 class Network extends AbstractNetwork
 {
     use UtilityTrait;
@@ -15,6 +18,7 @@ class Network extends AbstractNetwork
     /**
      * @param string $password
      * @param string $device
+     *
      * @throws Exception
      */
     public function connect(string $password, string $device): void
@@ -26,6 +30,7 @@ class Network extends AbstractNetwork
 
     /**
      * @param string $device
+     *
      * @throws Exception
      */
     public function disconnect(string $device): void
@@ -41,6 +46,7 @@ class Network extends AbstractNetwork
 
     /**
      * @param array $network
+     *
      * @return Network
      */
     public static function createFromArray(array $network): AbstractNetwork

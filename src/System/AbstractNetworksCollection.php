@@ -2,15 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System;
+namespace Sanchescom\WiFi\System;
 
 use Closure;
 use Exception;
 use pastuhov\Command\Command;
 
 /**
- * Class AbstractNetworksCollection
- * @package Sanchescom\Wifi\System
+ * Class AbstractNetworksCollection.
  */
 abstract class AbstractNetworksCollection
 {
@@ -21,6 +20,7 @@ abstract class AbstractNetworksCollection
 
     /**
      * @param string $output
+     *
      * @return array
      */
     abstract protected function extractingNetworks(string $output): array;
@@ -36,8 +36,9 @@ abstract class AbstractNetworksCollection
     abstract protected function getCommand(): string;
 
     /**
-     * @return AbstractNetworksCollection
      * @throws Exception
+     *
+     * @return AbstractNetworksCollection
      */
     public function scan(): AbstractNetworksCollection
     {
@@ -70,6 +71,7 @@ abstract class AbstractNetworksCollection
 
     /**
      * @param string $ssid
+     *
      * @return AbstractNetwork[]
      */
     public function getBySsid(string $ssid): array
@@ -83,6 +85,7 @@ abstract class AbstractNetworksCollection
 
     /**
      * @param string $bssid
+     *
      * @return AbstractNetwork[]
      */
     public function getByBssid(string $bssid): array
@@ -96,6 +99,7 @@ abstract class AbstractNetworksCollection
 
     /**
      * @param array $networks
+     *
      * @return $this
      */
     protected function setNetworks(array $networks): self
@@ -111,10 +115,32 @@ abstract class AbstractNetworksCollection
 
     /**
      * @param Closure $closure
+     *
      * @return AbstractNetwork[]
      */
     protected function getFiltered(Closure $closure): array
     {
         return array_values(array_filter($this->getAll(), $closure));
+    }
+
+    /**
+     * @param string $networksString
+     *
+     * @return array
+     */
+    protected function explodeAvailableNetworks(string $networksString): array
+    {
+        return explode("\n", trim($networksString));
+    }
+
+    /**
+     * @param string $bssid
+     * @param array $connectedBssid
+     *
+     * @return bool
+     */
+    protected function isConnected(string $bssid, array $connectedBssid): bool
+    {
+        return in_array($bssid, $connectedBssid);
     }
 }

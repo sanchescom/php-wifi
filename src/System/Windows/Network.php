@@ -2,15 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Windows;
+namespace Sanchescom\WiFi\System\Windows;
 
 use Exception;
 use pastuhov\Command\Command;
-use Sanchescom\Wifi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\AbstractNetwork;
 
 /**
- * Class Network
- * @package Sanchescom\Wifi\System\Windows
+ * Class Network.
  */
 class Network extends AbstractNetwork
 {
@@ -19,6 +18,7 @@ class Network extends AbstractNetwork
     /**
      * @param string $password
      * @param string $device
+     *
      * @throws Exception
      */
     public function connect(string $password, string $device): void
@@ -45,6 +45,7 @@ class Network extends AbstractNetwork
 
     /**
      * @param string $device
+     *
      * @throws Exception
      */
     public function disconnect(string $device): void
@@ -56,6 +57,7 @@ class Network extends AbstractNetwork
 
     /**
      * @param array $network
+     *
      * @return Network
      */
     public static function createFromArray(array $network): AbstractNetwork

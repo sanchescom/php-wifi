@@ -2,15 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Linux;
+namespace Sanchescom\WiFi\System\Linux;
 
-use Sanchescom\Wifi\System\AbstractNetworksCollection;
-use Sanchescom\Wifi\System\NetworksCollectionTrait;
+use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\NetworksCollectionTrait;
 
+/**
+ * Class NetworksCollection.
+ */
 class NetworksCollection extends AbstractNetworksCollection
 {
     use NetworksCollectionTrait, UtilityTrait;
 
+    /**
+     * @var int
+     */
     const BSSID_KEY = 0;
 
     /**
@@ -33,7 +39,6 @@ class NetworksCollection extends AbstractNetworksCollection
         ]);
     }
 
-
     /**
      * @return string
      */
@@ -44,11 +49,12 @@ class NetworksCollection extends AbstractNetworksCollection
 
     /**
      * @param string $output
+     *
      * @return array
      */
     public function extractingNetworks($output): array
     {
-        $availableNetworks = explode("\n", trim($output));
+        $availableNetworks = $this->explodeAvailableNetworks($output);
 
         array_walk($availableNetworks, function (&$networkData) {
             $networkData = $this->extractingDataFromString($networkData);
@@ -59,6 +65,7 @@ class NetworksCollection extends AbstractNetworksCollection
 
     /**
      * @param string $networkData
+     *
      * @return array
      */
     protected function extractingDataFromString($networkData): array
