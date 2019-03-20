@@ -1,3 +1,7 @@
+[![Maintainability](https://api.codeclimate.com/v1/badges/852384730259754d4008/maintainability)](https://codeclimate.com/github/sanchescom/php-wifi/maintainability)
+[![StyleCI](https://github.styleci.io/repos/175257648/shield?branch=master)](https://github.styleci.io/repos/168349832)
+[![Quality Score](https://img.shields.io/scrutinizer/g/sanchescom/laravel-phpsocket.io.svg?style=flat-square)](https://scrutinizer-ci.com/g/sanchescom/php-wifi)
+
 # PHP WiFI
 
 PHP WiFi is cross-platform php library base on integrated in OS utilities
