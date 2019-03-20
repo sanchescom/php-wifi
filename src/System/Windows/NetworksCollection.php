@@ -9,7 +9,7 @@ use Sanchescom\WiFi\System\NetworksCollectionTrait;
 
 /**
  * Class NetworksCollection.
- * @inheritdoc
+ * {@inheritdoc}
  */
 class NetworksCollection extends AbstractNetworksCollection
 {
@@ -32,9 +32,9 @@ class NetworksCollection extends AbstractNetworksCollection
     {
         return implode(' && ', [
             'chcp 65001',
-            $this->getUtility() . ' show networks mode=Bssid',
-            'echo ' . $this->separator,
-            $this->getUtility() . ' show interfaces'
+            $this->getUtility().' show networks mode=Bssid',
+            'echo '.$this->separator,
+            $this->getUtility().' show interfaces',
         ]);
     }
 

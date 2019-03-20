@@ -33,11 +33,10 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
      */
     protected function getCommand(): string
     {
-
         return implode(' && ', [
-            $this->getUtility() . ' -s',
-            'echo "' . $this->separator . '"',
-            $this->getUtility() . ' --getinfo'
+            $this->getUtility().' -s',
+            'echo "'.$this->separator.'"',
+            $this->getUtility().' --getinfo',
         ]);
     }
 
@@ -84,12 +83,12 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
     {
         $extractedProperties = [];
 
-        $pattern = '/(.*?)' .
-        '(\w{2}:\w{2}:\w{2}:\w{2}:\w{2}:\w{2})\s{1,}' .
-        '([-+]?[0-9]*)\s{1,}' .
-        '([^a-zA-Z]*)' .
-        '(\w{1,})\s{1,}' .
-        '([\w-]+)' .
+        $pattern = '/(.*?)'.
+        '(\w{2}:\w{2}:\w{2}:\w{2}:\w{2}:\w{2})\s{1,}'.
+        '([-+]?[0-9]*)\s{1,}'.
+        '([^a-zA-Z]*)'.
+        '(\w{1,})\s{1,}'.
+        '([\w-]+)'.
         '(.*)/';
 
         preg_match_all(

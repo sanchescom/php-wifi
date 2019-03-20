@@ -25,17 +25,18 @@ class NetworksCollection extends AbstractNetworksCollection
     protected function getCommand(): string
     {
         $options =
-            ' --terse' .
-            ' --fields ' .
-            'active, ssid, bssid, ' .
-            'mode, chan, freq, ' .
-            'signal, security, wpa-flags, ' .
-            'rsn-flags' .
-            ' device' .
-            ' wifi' .
+            ' --terse'.
+            ' --fields '.
+            'active, ssid, bssid, '.
+            'mode, chan, freq, '.
+            'signal, security, wpa-flags, '.
+            'rsn-flags'.
+            ' device'.
+            ' wifi'.
             ' list';
+
         return implode(' && ', [
-            $this->getUtility() . $options,
+            $this->getUtility().$options,
         ]);
     }
 

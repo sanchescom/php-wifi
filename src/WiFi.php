@@ -7,9 +7,9 @@ namespace Sanchescom\WiFi;
 use Exception;
 use Sanchescom\WiFi\Exceptions\UnknownSystem;
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\Linux\NetworksCollection as LinuxNetworks;
 use Sanchescom\WiFi\System\Mac\NetworksCollection as MacNetworks;
 use Sanchescom\WiFi\System\Windows\NetworksCollection as WindowsNetworks;
-use Sanchescom\WiFi\System\Linux\NetworksCollection as LinuxNetworks;
 
 /**
  * Class WiFi.
@@ -49,6 +49,7 @@ class WiFi
     public static function scan(): AbstractNetworksCollection
     {
         self::init();
+
         return self::$systemNetworks->scan();
     }
 

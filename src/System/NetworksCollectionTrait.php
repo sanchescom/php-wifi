@@ -6,7 +6,7 @@ namespace Sanchescom\WiFi\System;
 
 trait NetworksCollectionTrait
 {
-    protected $separator = "--separator--";
+    protected $separator = '--separator--';
 
     /**
      * @param array $array
@@ -26,7 +26,7 @@ trait NetworksCollectionTrait
 
     /**
      * @param string $string
-     * @param int $matchColumn
+     * @param int    $matchColumn
      *
      * @return array
      */
