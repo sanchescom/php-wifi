@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System;
 
 /**
- * Class AbstractNetwork
- * @package Sanchescom\Wifi\System
+ * Class AbstractNetwork.
  */
 abstract class AbstractNetwork
 {

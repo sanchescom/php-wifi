@@ -110,13 +110,13 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduc
 
 ## Versioning
 
-We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](https://github.com/sanchescom/laravel-phpsocket.io/tags). 
+We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](https://github.com/sanchescom/php-wifi/tags). 
 
 ## Authors
 
 * **Efimov Aleksandr** - *Initial work* - [Sanchescom](https://github.com/sanchescom)
 
-See also the list of [contributors](https://github.com/sanchescom/laravel-phpsocket.io/contributors) who participated in this project.
+See also the list of [contributors](https://github.com/sanchescom/php-wifi/contributors) who participated in this project.
 
 ## License
 
