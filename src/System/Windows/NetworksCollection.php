@@ -8,9 +8,8 @@ use Sanchescom\WiFi\System\AbstractNetworksCollection;
 use Sanchescom\WiFi\System\NetworksCollectionTrait;
 
 /**
- * Class NetworksCollection
+ * Class NetworksCollection.
  * @inheritdoc
- * @package Sanchescom\Wifi\System\Windows
  */
 class NetworksCollection extends AbstractNetworksCollection
 {
@@ -49,6 +48,7 @@ class NetworksCollection extends AbstractNetworksCollection
 
     /**
      * @param string $output
+     *
      * @return array
      */
     protected function extractingNetworks(string $output): array
@@ -78,6 +78,7 @@ class NetworksCollection extends AbstractNetworksCollection
 
     /**
      * @param $row
+     *
      * @return string
      */
     private function extractingDataFromString($row)

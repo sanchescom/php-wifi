@@ -7,10 +7,16 @@ namespace Sanchescom\WiFi\System\Linux;
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
 use Sanchescom\WiFi\System\NetworksCollectionTrait;
 
+/**
+ * Class NetworksCollection.
+ */
 class NetworksCollection extends AbstractNetworksCollection
 {
     use NetworksCollectionTrait, UtilityTrait;
 
+    /**
+     * @var int
+     */
     const BSSID_KEY = 0;
 
     /**
@@ -33,7 +39,6 @@ class NetworksCollection extends AbstractNetworksCollection
         ]);
     }
 
-
     /**
      * @return string
      */
@@ -44,6 +49,7 @@ class NetworksCollection extends AbstractNetworksCollection
 
     /**
      * @param string $output
+     *
      * @return array
      */
     public function extractingNetworks($output): array
@@ -59,6 +65,7 @@ class NetworksCollection extends AbstractNetworksCollection
 
     /**
      * @param string $networkData
+     *
      * @return array
      */
     protected function extractingDataFromString($networkData): array

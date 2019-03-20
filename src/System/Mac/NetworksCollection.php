@@ -8,6 +8,9 @@ use Sanchescom\WiFi\System\AbstractNetworksCollection;
 use Sanchescom\WiFi\System\NetworksCollectionTrait;
 use Sanchescom\WiFi\System\UtilityInterface;
 
+/**
+ * Class NetworksCollection.
+ */
 class NetworksCollection extends AbstractNetworksCollection implements UtilityInterface
 {
     use NetworksCollectionTrait;
@@ -48,6 +51,7 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
 
     /**
      * @param string $output
+     *
      * @return array
      */
     public function extractingNetworks($output): array
@@ -73,6 +77,7 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
 
     /**
      * @param string $networkData
+     *
      * @return array
      */
     protected function extractingDataFromString(string $networkData): array

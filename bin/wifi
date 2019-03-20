@@ -19,7 +19,10 @@ use splitbrain\phpcli\CLI;
 use splitbrain\phpcli\Options;
 use splitbrain\phpcli\TableFormatter;
 
-class Wifi extends CLI
+/**
+ * Class Wifi.
+ */
+class WiFi extends CLI
 {
     /**
      * Register options and arguments on the given $options object
@@ -128,4 +131,4 @@ class Wifi extends CLI
     }
 }
 
-(new Wifi())->run();
+(new WiFi())->run();

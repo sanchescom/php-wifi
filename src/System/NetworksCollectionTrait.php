@@ -10,6 +10,7 @@ trait NetworksCollectionTrait
 
     /**
      * @param array $array
+     *
      * @return array
      */
     protected function trimArrayValue(array $array): array
@@ -26,6 +27,7 @@ trait NetworksCollectionTrait
     /**
      * @param string $string
      * @param int $matchColumn
+     *
      * @return array
      */
     protected function extractBssid(string $string, int $matchColumn): array
@@ -43,6 +45,7 @@ trait NetworksCollectionTrait
 
     /**
      * @param string $output
+     *
      * @return array
      */
     protected function explodeOutput(string $output): array

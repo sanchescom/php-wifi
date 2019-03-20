@@ -9,15 +9,22 @@ use pastuhov\Command\Command;
 use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\UtilityInterface;
 
+/**
+ * Class Network.
+ */
 class Network extends AbstractNetwork implements UtilityInterface
 {
     use UtilityTrait;
 
+    /**
+     * @var string
+     */
     const POSITIVE_CONNECTION_FLAG = 'yes';
 
     /**
      * @param string $password
      * @param string $device
+     *
      * @throws Exception
      */
     public function connect(string $password, string $device): void
@@ -34,6 +41,7 @@ class Network extends AbstractNetwork implements UtilityInterface
 
     /**
      * @param string $device
+     *
      * @throws Exception
      */
     public function disconnect(string $device): void
@@ -47,6 +55,7 @@ class Network extends AbstractNetwork implements UtilityInterface
 
     /**
      * @param array $network
+     *
      * @return Network
      */
     public static function createFromArray(array $network): AbstractNetwork
