@@ -88,7 +88,7 @@ try {
 
 ### List of found wifi networks
 ```bash
-$ ./vendor/bin/wifi start
+$ ./vendor/bin/wifi list
 ```
 
 ### List connected wifi networks
@@ -103,7 +103,7 @@ $ ./vendor/bin/wifi connect --bssid=4c:49:e3:f5:35:17 --password=12345 --device=
 
 ### Disconnect from wifi network
 ```bash
-$ ./vendor/bin/wifi connect --bssid=4c:49:e3:f5:35:17 --device=en1
+$ ./vendor/bin/wifi disconnect --bssid=4c:49:e3:f5:35:17 --device=en1
 ```
 
 ## Contributing
