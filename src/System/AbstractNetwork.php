@@ -10,47 +10,47 @@ namespace Sanchescom\WiFi\System;
 abstract class AbstractNetwork
 {
     /**
-     * @var string $bssid
+     * @var string
      */
     public $bssid;
 
     /**
-     * @var string $ssid
+     * @var string
      */
     public $ssid;
 
     /**
-     * @var int $channel
+     * @var int
      */
     public $channel;
 
     /**
-     * @var float $quality
+     * @var float
      */
     public $quality;
 
     /**
-     * @var float $dbm
+     * @var float
      */
     public $dbm;
 
     /**
-     * @var string $security
+     * @var string
      */
     public $security;
 
     /**
-     * @var string $securityFlags
+     * @var string
      */
     public $securityFlags;
 
     /**
-     * @var int $frequency
+     * @var int
      */
     public $frequency;
 
     /**
-     * @var bool $connected
+     * @var bool
      */
     public $connected;
 
@@ -71,7 +71,7 @@ abstract class AbstractNetwork
      *          1,    // frequency increasing
      *      ],
      * ];
-     * </code>
+     * </code>.
      *
      * @var array[int][int]int
      */
@@ -96,9 +96,10 @@ abstract class AbstractNetwork
 
     /**
      * @param array $network
+     *
      * @return AbstractNetwork
      */
-    abstract public static function createFromArray(array $network): AbstractNetwork;
+    abstract public static function createFromArray(array $network): self;
 
     /**
      * @return array

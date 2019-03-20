@@ -31,7 +31,7 @@ class Network extends AbstractNetwork implements UtilityInterface
     {
         Command::exec(
             sprintf(
-                $this->getUtility() . ' -w 5 device wifi connect %s password %s ifname %s',
+                $this->getUtility().' -w 5 device wifi connect %s password %s ifname %s',
                 $device,
                 $this->ssid,
                 $password
@@ -48,7 +48,7 @@ class Network extends AbstractNetwork implements UtilityInterface
     {
         Command::exec(
             implode(' && ', [
-                sprintf($this->getUtility() . ' device disconnect %s', $device),
+                sprintf($this->getUtility().' device disconnect %s', $device),
             ])
         );
     }
@@ -63,13 +63,13 @@ class Network extends AbstractNetwork implements UtilityInterface
         $instance = new self();
         $instance->ssid = $network[1];
         $instance->bssid = $network[2];
-        $instance->channel = (int)$network[4];
+        $instance->channel = (int) $network[4];
         $instance->security = $network[7];
-        $instance->securityFlags = $network[8] . ' ' . $network[9];
+        $instance->securityFlags = $network[8].' '.$network[9];
         $instance->dbm = $network[6];
         $instance->quality = $instance->dBmToQuality();
-        $instance->frequency = (int)$network[5];
-        $instance->connected = ($network[0]==self::POSITIVE_CONNECTION_FLAG);
+        $instance->frequency = (int) $network[5];
+        $instance->connected = ($network[0] == self::POSITIVE_CONNECTION_FLAG);
 
         return $instance;
     }
