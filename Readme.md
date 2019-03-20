@@ -1,16 +1,27 @@
-PHP Wifi
-==========
+# PHP WiFI
 
-PHP Wifi is cross-platform php library base on integrated in OS utilities
+PHP WiFi is cross-platform php library base on integrated in OS utilities
 
-Example
--------
+## Getting Started
 
-```php
+These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See deployment for notes on how to deploy the project on a live system.
+
+### Installing
+
+Require this package, with [Composer](https://getcomposer.org/), in the root directory of your project.
+
+``` bash
+$ composer require sanchescom/php-wifi
+```
+
+## Usage
+
+Create folder `app\Sockets` and put there `ExampleSocket.php`
+
+``` php
 <?php
-require_once(__DIR__ . '/../vendor/autoload.php');
 
-use Sanchescom\Wifi\Wifi;
+use Sanchescom\WiFi\WiFi;
 
 class Example
 {
@@ -21,13 +32,11 @@ class Example
      */
     public function getAllNetworks()
     {
-        $allNetworks = Wifi::scan()->getAll();
+        $allNetworks = WiFi::scan()->getAll();
 
         if (count($allNetworks) > 0) {
-            echo "SSID (BSSID):\r\n";
-
             foreach ($allNetworks as $network) {
-                echo $network->ssid . "(" . $network->bssid . ")\r\n ";
+                echo $network . "\n";
             }
         }
     }
@@ -39,7 +48,7 @@ class Example
      */
     public function connect($ssid, $password)
     {
-        $networks = Wifi::scan()
+        $networks = WiFi::scan()
             ->getBySsid($ssid);
 
         if (count($networks) > 0) {
@@ -54,7 +63,7 @@ class Example
      */
     public function disconnect()
     {
-        $connectedNetworks = Wifi::scan()->getConnected();
+        $connectedNetworks = WiFi::scan()->getConnected();
 
         foreach ($connectedNetworks as $network) {
             $network->disconnect($this->device);
@@ -73,19 +82,47 @@ try {
 }
 ```
 
-Use as CLI
--------
+## Running in console:
+
+### List of found wifi networks
 ```bash
-    php wifi list //List of found wifi networks
-    
-    php wifi list --connected  //List connected wifi networks
-    
-    php wifi connect --bssid=4c:49:e3:f5:35:17 --password=12345 --device=en1  //Connect to wifi network
-    
-    php wifi connect --bssid=4c:49:e3:f5:35:17 --device=en1  //Disconnect from wifi network
+$ ./vendor/bin/wifi start
 ```
 
-### Platform support
+### List connected wifi networks
+```bash
+$ ./vendor/bin/wifi list --connected
+```
+
+### Connect to wifi network
+```bash
+$ ./vendor/bin/wifi connect --bssid=4c:49:e3:f5:35:17 --password=12345 --device=en1
+```
+
+### Disconnect from wifi network
+```bash
+$ ./vendor/bin/wifi connect --bssid=4c:49:e3:f5:35:17 --device=en1
+```
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
+
+## Versioning
+
+We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](https://github.com/sanchescom/laravel-phpsocket.io/tags). 
+
+## Authors
+
+* **Efimov Aleksandr** - *Initial work* - [Sanchescom](https://github.com/sanchescom)
+
+See also the list of [contributors](https://github.com/sanchescom/laravel-phpsocket.io/contributors) who participated in this project.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
+
+## Platform support
 
 * **Linux**
 * **MacOS**
