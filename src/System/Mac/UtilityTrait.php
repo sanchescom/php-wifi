@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Mac;
+namespace Sanchescom\WiFi\System\Mac;
 
 trait UtilityTrait
 {

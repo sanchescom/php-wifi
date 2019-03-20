@@ -2,7 +2,7 @@
 
 require_once(__DIR__ . '/../vendor/autoload.php');
 
-use Sanchescom\Wifi\Wifi;
+use Sanchescom\WiFi\WiFi;
 
 class Example
 {
@@ -13,13 +13,11 @@ class Example
      */
     public function getAllNetworks()
     {
-        $allNetworks = Wifi::scan()->getAll();
+        $allNetworks = WiFi::scan()->getAll();
 
         if (count($allNetworks) > 0) {
-            echo "SSID (BSSID):\r\n";
-
             foreach ($allNetworks as $network) {
-                echo $network->ssid . "(" . $network->bssid . ")\r\n ";
+                echo $network . "\n";
             }
         }
     }
@@ -31,7 +29,7 @@ class Example
      */
     public function connect($ssid, $password)
     {
-        $networks = Wifi::scan()
+        $networks = WiFi::scan()
             ->getBySsid($ssid);
 
         if (count($networks) > 0) {
@@ -46,7 +44,7 @@ class Example
      */
     public function disconnect()
     {
-        $connectedNetworks = Wifi::scan()->getConnected();
+        $connectedNetworks = WiFi::scan()->getConnected();
 
         foreach ($connectedNetworks as $network) {
             $network->disconnect($this->device);

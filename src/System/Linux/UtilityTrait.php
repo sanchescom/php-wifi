@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Linux;
+namespace Sanchescom\WiFi\System\Linux;
 
 trait UtilityTrait
 {

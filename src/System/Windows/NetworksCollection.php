@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Windows;
+namespace Sanchescom\WiFi\System\Windows;
 
-use Sanchescom\Wifi\System\AbstractNetworksCollection;
-use Sanchescom\Wifi\System\NetworksCollectionTrait;
+use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\NetworksCollectionTrait;
 
 /**
  * Class NetworksCollection
@@ -20,6 +20,11 @@ class NetworksCollection extends AbstractNetworksCollection
      * @var int
      */
     const BSSID_KEY = 4;
+
+    /**
+     * @var int
+     */
+    const ZERO_KEY = 0;
 
     /**
      * @return string
@@ -37,7 +42,7 @@ class NetworksCollection extends AbstractNetworksCollection
     /**
      * @return string
      */
-    protected function getNetwork():? string
+    protected function getNetwork(): ?string
     {
         return Network::class;
     }
@@ -52,25 +57,34 @@ class NetworksCollection extends AbstractNetworksCollection
 
         $currentBssid = $this->extractBssid($current, 1);
 
-        $groupedNetworks = [];
-        $availableNetworks = explode("\n", trim($networks));
+        $availableNetworks = $this->explodeAvailableNetworks($networks);
 
-        for ($i=10, $j=5, $k=0; count($availableNetworks) >= $j; $i--, $j++) {
-            if ($i==0) {
-                if (in_array($groupedNetworks[$k][4], $currentBssid)) {
+        $groupedNetworks = [];
+
+        for ($i = 10, $j = 5, $k = 0; count($availableNetworks) >= $j; $i--, $j++) {
+            if ($i == self::ZERO_KEY) {
+                if ($this->isConnected($groupedNetworks[$k][self::BSSID_KEY], $currentBssid)) {
                     $groupedNetworks[$k][] = true;
                 }
-                $i=11;
+                $i = 11;
                 $k++;
                 continue;
             }
-
-            $title = strtok($availableNetworks[$j], ':') ?: '';
-            $value = substr($availableNetworks[$j], strlen($title));
-
-            $groupedNetworks[$k][] = trim(ltrim($value, ':'));
+            $groupedNetworks[$k][] = $this->extractingDataFromString($availableNetworks[$j]);
         }
 
         return $groupedNetworks;
+    }
+
+    /**
+     * @param $row
+     * @return string
+     */
+    private function extractingDataFromString($row)
+    {
+        $title = strtok($row, ':') ?: '';
+        $value = substr($row, strlen($title));
+
+        return trim(ltrim($value, ':'));
     }
 }

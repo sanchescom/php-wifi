@@ -58,9 +58,9 @@ class Wifi extends CLI
         switch ($options->getCmd()) {
             case 'list':
                 if ($options->getOpt('connected')) {
-                    $networks = \Sanchescom\Wifi\Wifi::scan()->getConnected();
+                    $networks = \Sanchescom\WiFi\WiFi::scan()->getConnected();
                 } else {
-                    $networks = \Sanchescom\Wifi\Wifi::scan()->getAll();
+                    $networks = \Sanchescom\WiFi\WiFi::scan()->getAll();
                 }
 
                 $table = new TableFormatter($this->colors);
@@ -99,7 +99,7 @@ class Wifi extends CLI
 
                 break;
             case 'connect':
-                $networks = \Sanchescom\Wifi\Wifi::scan()
+                $networks = \Sanchescom\WiFi\WiFi::scan()
                     ->getByBssid($options->getOpt('bssid'));
 
                 if ($networks) {
@@ -109,7 +109,7 @@ class Wifi extends CLI
                 }
                 break;
             case 'disconnect':
-                $networks = \Sanchescom\Wifi\Wifi::scan()
+                $networks = \Sanchescom\WiFi\WiFi::scan()
                     ->getByBssid($options->getOpt('bssid'));
 
                 if ($networks) {

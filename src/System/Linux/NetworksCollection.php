@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System\Linux;
+namespace Sanchescom\WiFi\System\Linux;
 
-use Sanchescom\Wifi\System\AbstractNetworksCollection;
-use Sanchescom\Wifi\System\NetworksCollectionTrait;
+use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\NetworksCollectionTrait;
 
 class NetworksCollection extends AbstractNetworksCollection
 {
@@ -48,7 +48,7 @@ class NetworksCollection extends AbstractNetworksCollection
      */
     public function extractingNetworks($output): array
     {
-        $availableNetworks = explode("\n", trim($output));
+        $availableNetworks = $this->explodeAvailableNetworks($output);
 
         array_walk($availableNetworks, function (&$networkData) {
             $networkData = $this->extractingDataFromString($networkData);

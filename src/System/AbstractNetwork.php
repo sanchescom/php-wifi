@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\System;
+namespace Sanchescom\WiFi\System;
 
 /**
  * Class AbstractNetwork
@@ -61,6 +61,30 @@ abstract class AbstractNetwork
     protected static $frequencies = [];
 
     /**
+     * Array description:
+     * <code>
+     * $frequencySettings = [
+     *      [
+     *          2412, // frequency starts from
+     *          1,    // channel starts from
+     *          14,   // channel ends till
+     *          5,    // frequency step
+     *          1,    // frequency increasing
+     *      ],
+     * ];
+     * </code>
+     *
+     * @var array[int][int]int
+     */
+    protected $frequencySettings = [
+        [2412, 1, 14, 5, 1],
+        [5180, 36, 64, 10, 2],
+        [5500, 100, 144, 10, 2],
+        [5745, 149, 161, 10, 2],
+        [5825, 165, 173, 20, 4],
+    ];
+
+    /**
      * @param string $password
      * @param string $device
      */
@@ -80,30 +104,61 @@ abstract class AbstractNetwork
     /**
      * @return array
      */
-    protected static function generateFrequencies(): array
+    public function getFrequencySettings(): array
+    {
+        return $this->frequencySettings;
+    }
+
+    /**
+     * @return string
+     */
+    public function __toString(): string
+    {
+        return implode('|', [
+            $this->bssid,
+            $this->ssid,
+            $this->quality,
+            $this->dbm,
+            $this->security,
+            $this->securityFlags,
+            $this->frequency,
+            var_export($this->connected, true),
+        ]);
+    }
+
+    /**
+     * @return array
+     */
+    protected function generateFrequencies(): array
     {
         if (empty(self::$frequencies)) {
-            $frequencySettings = [
-                [2412, 1, 14, 5, 1],
-                [5180, 36, 64, 10, 2],
-                [5500, 100, 144, 10, 2],
-                [5745, 149, 161, 10, 2],
-                [5825, 165, 173, 20, 4],
-            ];
-
-            $frequencies = [];
+            $frequencySettings = $this->getFrequencySettings();
 
             foreach ($frequencySettings as $frequencySetting) {
-                for ($i = $frequencySetting[1]; $i <= $frequencySetting[2]; $i += $frequencySetting[4]) {
-                    $frequencies[$i] = $frequencySetting[0];
-                    $frequencySetting[0] = $frequencySetting[0] + $frequencySetting[3];
-                }
+                $this->setGeneratedFrequencies($frequencySetting);
             }
-
-            self::$frequencies = $frequencies;
         }
 
         return self::$frequencies;
+    }
+
+    /**
+     * @param array $frequencySetting
+     */
+    protected function setGeneratedFrequencies(array $frequencySetting): void
+    {
+        list(
+            $frequencyStart,
+            $channelStart,
+            $channelEnd,
+            $frequencyStep,
+            $frequencyIncreasing
+            ) = $frequencySetting;
+
+        for ($i = $channelStart; $i <= $channelEnd; $i += $frequencyIncreasing) {
+            self::$frequencies[$i] = $frequencyStart;
+            $frequencyStart = $frequencyStart + $frequencyStep;
+        }
     }
 
     /**
@@ -111,7 +166,7 @@ abstract class AbstractNetwork
      */
     protected function getFrequency(): int
     {
-        return self::generateFrequencies()[$this->channel];
+        return $this->generateFrequencies()[$this->channel];
     }
 
     /**

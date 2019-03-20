@@ -2,20 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi;
+namespace Sanchescom\WiFi;
 
 use Exception;
-use Sanchescom\Wifi\Exceptions\UnknownSystem;
-use Sanchescom\Wifi\System\AbstractNetworksCollection;
-use Sanchescom\Wifi\System\Mac\NetworksCollection as MacNetworks;
-use Sanchescom\Wifi\System\Windows\NetworksCollection as WindowsNetworks;
-use Sanchescom\Wifi\System\Linux\NetworksCollection as LinuxNetworks;
+use Sanchescom\WiFi\Exceptions\UnknownSystem;
+use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\Mac\NetworksCollection as MacNetworks;
+use Sanchescom\WiFi\System\Windows\NetworksCollection as WindowsNetworks;
+use Sanchescom\WiFi\System\Linux\NetworksCollection as LinuxNetworks;
 
 /**
- * Class Wifi
- * @package Sanchescom\Wifi
+ * Class WiFi.
  */
-class Wifi
+class WiFi
 {
     /**
      * @var int
@@ -43,8 +42,9 @@ class Wifi
     protected static $systemNetworks;
 
     /**
-     * @return AbstractNetworksCollection
      * @throws Exception
+     *
+     * @return AbstractNetworksCollection
      */
     public static function scan(): AbstractNetworksCollection
     {

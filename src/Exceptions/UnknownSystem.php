@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\Wifi\Exceptions;
+namespace Sanchescom\WiFi\Exceptions;
 
 use Exception;
 
