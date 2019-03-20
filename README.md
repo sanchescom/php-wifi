@@ -16,8 +16,6 @@ $ composer require sanchescom/php-wifi
 
 ## Usage
 
-Create folder `app\Sockets` and put there `ExampleSocket.php`
-
 ``` php
 <?php
 
