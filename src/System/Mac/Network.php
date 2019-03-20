@@ -24,7 +24,7 @@ class Network extends AbstractNetwork
     public function connect(string $password, string $device): void
     {
         Command::exec(
-            sprintf($this->getUtility() . ' -setairportnetwork %s %s %s', $device, $this->ssid, $password)
+            sprintf($this->getUtility().' -setairportnetwork %s %s %s', $device, $this->ssid, $password)
         );
     }
 
@@ -37,9 +37,9 @@ class Network extends AbstractNetwork
     {
         Command::exec(
             implode(' && ', [
-                sprintf($this->getUtility() . ' -removepreferredwirelessnetwork %s %s', $device, $this->ssid),
-                sprintf($this->getUtility() . ' -setairportpower %s %s', $device, 'off'),
-                sprintf($this->getUtility() . ' -setairportpower %s %s', $device, 'on')
+                sprintf($this->getUtility().' -removepreferredwirelessnetwork %s %s', $device, $this->ssid),
+                sprintf($this->getUtility().' -setairportpower %s %s', $device, 'off'),
+                sprintf($this->getUtility().' -setairportpower %s %s', $device, 'on'),
             ])
         );
     }
@@ -54,7 +54,7 @@ class Network extends AbstractNetwork
         $instance = new self();
         $instance->ssid = $network[0];
         $instance->bssid = $network[1];
-        $instance->channel = (int)$network[3];
+        $instance->channel = (int) $network[3];
         $instance->security = $network[6];
         $instance->securityFlags = $network[5];
         $instance->quality = $network[2];

@@ -40,9 +40,9 @@ abstract class AbstractNetworksCollection
      *
      * @return AbstractNetworksCollection
      */
-    public function scan(): AbstractNetworksCollection
+    public function scan(): self
     {
-        $output = (string)Command::exec($this->getCommand());
+        $output = (string) Command::exec($this->getCommand());
 
         return $this->setNetworks(
             $this->extractingNetworks($output)
@@ -107,6 +107,7 @@ abstract class AbstractNetworksCollection
         $this->networks = array_map(function ($network) {
             /** @var AbstractNetwork $networkInstance */
             $networkInstance = $this->getNetwork();
+
             return $networkInstance::createFromArray($network);
         }, $networks);
 
@@ -135,7 +136,7 @@ abstract class AbstractNetworksCollection
 
     /**
      * @param string $bssid
-     * @param array $connectedBssid
+     * @param array  $connectedBssid
      *
      * @return bool
      */

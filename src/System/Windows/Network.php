@@ -28,11 +28,11 @@ class Network extends AbstractNetwork
         Command::exec(
             implode(' && ', [
                 sprintf(
-                    ($this->getUtility() . ' add profile filename="%s"'),
+                    ($this->getUtility().' add profile filename="%s"'),
                     $this->getTmpFileName()
                 ),
                 sprintf(
-                    ($this->getUtility() . ' connect interface="%s" ssid="%s" name="%s"'),
+                    ($this->getUtility().' connect interface="%s" ssid="%s" name="%s"'),
                     $device,
                     $this->ssid,
                     $this->ssid
@@ -51,7 +51,7 @@ class Network extends AbstractNetwork
     public function disconnect(string $device): void
     {
         Command::exec(
-            sprintf($this->getUtility() . ' disconnect interface="%s"', $device)
+            sprintf($this->getUtility().' disconnect interface="%s"', $device)
         );
     }
 
@@ -68,7 +68,7 @@ class Network extends AbstractNetwork
         $instance->channel = $network[7];
         $instance->security = $network[2];
         $instance->securityFlags = $network[3];
-        $instance->quality = (int)$network[5];
+        $instance->quality = (int) $network[5];
         $instance->frequency = $instance->getFrequency();
         $instance->dbm = $instance->qualityToDBm();
         $instance->connected = isset($network[10]);
@@ -81,17 +81,17 @@ class Network extends AbstractNetwork
      */
     protected function createProfile($password): void
     {
-        $fileNamePrefix = __DIR__ . './ProfileTemplates/';
+        $fileNamePrefix = __DIR__.'./ProfileTemplates/';
         $fileNamePostfix = 'PersonalProfileTemplate.xml';
 
         if (strpos($this->security, 'WPA2') !== false) {
-            $fileName = $fileNamePrefix . "WPA2-" . $fileNamePostfix;
+            $fileName = $fileNamePrefix.'WPA2-'.$fileNamePostfix;
         } elseif (strpos($this->security, 'WEP') !== false) {
-            $fileName = $fileNamePrefix . "WPA-" . $fileNamePostfix;
+            $fileName = $fileNamePrefix.'WPA-'.$fileNamePostfix;
         } elseif (strpos($this->security, 'WEP') !== false) {
-            $fileName = $fileNamePrefix . "WEP-" . $fileNamePostfix;
+            $fileName = $fileNamePrefix.'WEP-'.$fileNamePostfix;
         } else {
-            $fileName = $fileNamePrefix . "Unknown-" . $fileNamePostfix;
+            $fileName = $fileNamePrefix.'Unknown-'.$fileNamePostfix;
         }
 
         unlink($this->getTmpFileName());
@@ -111,7 +111,7 @@ class Network extends AbstractNetwork
      */
     protected function getTmpFileName(): string
     {
-        return __DIR__. "\\..\\..\\..\\tmp\\" . $this->ssid . '.xml';
+        return __DIR__.'\\..\\..\\..\\tmp\\'.$this->ssid.'.xml';
     }
 
     /**
@@ -122,9 +122,9 @@ class Network extends AbstractNetwork
         $hex = '';
 
         for ($i = 0; $i < strlen($this->ssid); $i++) {
-            $ord    = ord($this->ssid[$i]);
+            $ord = ord($this->ssid[$i]);
             $dechex = dechex($ord);
-            $hex   .= substr('0' . $dechex, -2);
+            $hex .= substr('0'.$dechex, -2);
         }
 
         return strtoupper($hex);
