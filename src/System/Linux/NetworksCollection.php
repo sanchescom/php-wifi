@@ -27,9 +27,9 @@ class NetworksCollection extends AbstractNetworksCollection
         $options =
             ' --terse'.
             ' --fields '.
-            'active, ssid, bssid, '.
-            'mode, chan, freq, '.
-            'signal, security, wpa-flags, '.
+            'active,ssid,bssid,'.
+            'mode,chan,freq,'.
+            'signal,security,wpa-flags,'.
             'rsn-flags'.
             ' device'.
             ' wifi'.

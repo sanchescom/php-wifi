@@ -31,10 +31,10 @@ class Network extends AbstractNetwork implements UtilityInterface
     {
         Command::exec(
             sprintf(
-                $this->getUtility().' -w 5 device wifi connect %s password %s ifname %s',
-                $device,
+                $this->getUtility().' -w 10 device wifi connect "%s" password "%s" ifname "%s"',
                 $this->ssid,
-                $password
+                $password,
+                $device
             )
         );
     }
