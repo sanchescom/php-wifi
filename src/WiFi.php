@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi;
 
-use Exception;
 use Sanchescom\WiFi\Exceptions\UnknownSystem;
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
 use Sanchescom\WiFi\System\Linux\NetworksCollection as LinuxNetworks;
@@ -32,8 +31,6 @@ class WiFi
     const OS_OSX = 'DAR';
 
     /**
-     * @throws Exception
-     *
      * @return AbstractNetworksCollection
      */
     public static function scan(): AbstractNetworksCollection
