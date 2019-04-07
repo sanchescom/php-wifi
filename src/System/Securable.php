@@ -21,6 +21,6 @@ trait Securable
 
     public function isUnknown()
     {
-        return (!$this->isWep() && !$this->isWpa() && !$this->isWpa2());
+        return !$this->isWep() && !$this->isWpa() && !$this->isWpa2();
     }
 }

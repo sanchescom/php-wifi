@@ -72,11 +72,11 @@ class Service
     public function getTmpProfileFileName(): string
     {
         return __DIR__
-            . DIRECTORY_SEPARATOR
-            . static::$tmpFolderName
-            . DIRECTORY_SEPARATOR
-            . $this->network->ssid
-            . '.xml';
+            .DIRECTORY_SEPARATOR
+            .static::$tmpFolderName
+            .DIRECTORY_SEPARATOR
+            .$this->network->ssid
+            .'.xml';
     }
 
     /**
@@ -95,12 +95,12 @@ class Service
         }
 
         return __DIR__
-            . DIRECTORY_SEPARATOR
-            . static::$templateFolderName
-            . DIRECTORY_SEPARATOR
-            . $security
-            . '-'
-            . static::$fileNamePostfix;
+            .DIRECTORY_SEPARATOR
+            .static::$templateFolderName
+            .DIRECTORY_SEPARATOR
+            .$security
+            .'-'
+            .static::$fileNamePostfix;
     }
 
     /**
@@ -113,7 +113,7 @@ class Service
         $hex = '';
 
         for ($i = 0; $i < $len; $i++) {
-            $hex .= substr('0' . dechex(ord($ssid[$i])), -2);
+            $hex .= substr('0'.dechex(ord($ssid[$i])), -2);
         }
 
         return strtoupper($hex);
