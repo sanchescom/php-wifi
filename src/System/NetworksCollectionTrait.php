@@ -26,7 +26,7 @@ trait NetworksCollectionTrait
 
     /**
      * @param string $string
-     * @param int $matchColumn
+     * @param int    $matchColumn
      *
      * @return array
      */

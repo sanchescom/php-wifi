@@ -47,9 +47,9 @@ class NetworksCollection extends AbstractNetworksCollection
     {
         return implode(' && ', [
             'chcp 65001',
-            $this->getUtility() . ' show networks mode=Bssid',
-            'echo ' . $this->separator,
-            $this->getUtility() . ' show interfaces',
+            $this->getUtility().' show networks mode=Bssid',
+            'echo '.$this->separator,
+            $this->getUtility().' show interfaces',
         ]);
     }
 
@@ -92,11 +92,11 @@ class NetworksCollection extends AbstractNetworksCollection
     }
 
     /**
-     * Checking which network currently connected and set a flag
+     * Checking which network currently connected and set a flag.
      *
      * @param array $groupedNetworks
      * @param array $currentBssid
-     * @param int $networkBlockIndex
+     * @param int   $networkBlockIndex
      */
     private function checkNetworkConnection(array &$groupedNetworks, array $currentBssid, int $networkBlockIndex): void
     {
@@ -106,7 +106,7 @@ class NetworksCollection extends AbstractNetworksCollection
     }
 
     /**
-     * Checking that iterable row is start of description
+     * Checking that iterable row is start of description.
      *
      * @param int $firstRowIndex
      *
@@ -118,7 +118,7 @@ class NetworksCollection extends AbstractNetworksCollection
     }
 
     /**
-     * Setting vars to state for new iteration of processing network description
+     * Setting vars to state for new iteration of processing network description.
      *
      * @param int $nextRowIndex
      *
