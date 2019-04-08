@@ -41,29 +41,29 @@ class Service
 
     /**
      * @param string $password
+     *
+     * @return bool
      */
-    public function create($password): void
+    public function create(string $password): bool
     {
-        file_put_contents(
+        return file_put_contents(
             $this->getTmpProfileFileName(),
-            str_replace(
-                ['{ssid}', '{hex}', '{key}'],
-                [$this->network->ssid, $this->ssidToHex(), $password],
-                (file_get_contents($this->getTemplateProfileFileName()) ?: '')
-            )
+            $this->renderTemplate($password)
         );
     }
 
     /**
      * Delete tmp profile file created for chosen network.
      */
-    public function delete(): void
+    public function delete(): bool
     {
         $tmpProfile = $this->getTmpProfileFileName();
 
         if (file_exists($tmpProfile)) {
-            unlink($tmpProfile);
+            return unlink($tmpProfile);
         }
+
+        return false;
     }
 
     /**
@@ -77,6 +77,30 @@ class Service
             .DIRECTORY_SEPARATOR
             .$this->network->ssid
             .'.xml';
+    }
+
+    /**
+     * @param string $password
+     *
+     * @return mixed
+     */
+    protected function renderTemplate(string $password): string
+    {
+        $content = file_get_contents($this->getTemplateProfileFileName()) ?: '';
+
+        return str_replace(
+            [
+                '{ssid}',
+                '{hex}',
+                '{key}',
+            ],
+            [
+                $this->network->ssid,
+                $this->ssidToHex(),
+                $password,
+            ],
+            $content
+        );
     }
 
     /**
