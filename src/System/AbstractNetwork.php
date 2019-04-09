@@ -9,6 +9,8 @@ namespace Sanchescom\WiFi\System;
  */
 abstract class AbstractNetwork
 {
+    use Securable;
+
     /**
      * @var string
      */

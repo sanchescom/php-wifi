@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi;
 
-use Exception;
 use Sanchescom\WiFi\Exceptions\UnknownSystem;
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
 use Sanchescom\WiFi\System\Linux\NetworksCollection as LinuxNetworks;
@@ -17,72 +16,93 @@ use Sanchescom\WiFi\System\Windows\NetworksCollection as WindowsNetworks;
 class WiFi
 {
     /**
-     * @var int
+     * @var string
      */
-    const OS_UNKNOWN = 1;
+    const OS_WIN = 'WIN';
 
     /**
-     * @var int
+     * @var string
      */
-    const OS_WIN = 2;
+    const OS_LINUX = 'LINUX';
 
     /**
-     * @var int
+     * @var string
      */
-    const OS_LINUX = 3;
+    const OS_OSX = 'DAR';
 
     /**
-     * @var int
-     */
-    const OS_OSX = 4;
-
-    /**
-     * @var AbstractNetworksCollection
-     */
-    protected static $systemNetworks;
-
-    /**
-     * @throws Exception
-     *
      * @return AbstractNetworksCollection
      */
     public static function scan(): AbstractNetworksCollection
     {
-        self::init();
-
-        return self::$systemNetworks->scan();
+        return (new static())->getSystemNetwork()->scan();
     }
 
     /**
-     * @return int
-     */
-    protected static function getOS(): int
-    {
-        switch (true) {
-            case stristr(PHP_OS, 'DAR'):
-                return self::OS_OSX;
-            case stristr(PHP_OS, 'WIN'):
-                return self::OS_WIN;
-            case stristr(PHP_OS, 'LINUX'):
-                return self::OS_LINUX;
-            default:
-                return self::OS_UNKNOWN;
-        }
-    }
-
-    /**
+     * Getting instance on network collections depended on operation system.
+     *
      * @throws UnknownSystem
+     *
+     * @return AbstractNetworksCollection
      */
-    private static function init(): void
+    protected function getSystemNetwork(): AbstractNetworksCollection
     {
-        if (self::getOS() == self::OS_WIN) {
-            self::$systemNetworks = new WindowsNetworks();
-        } elseif (self::getOS() == self::OS_OSX) {
-            self::$systemNetworks = new MacNetworks();
-        } elseif (self::getOS() == self::OS_LINUX) {
-            self::$systemNetworks = new LinuxNetworks();
+        if ($this->isWindows()) {
+            return $this->windowsNetwork();
+        } elseif ($this->isMac()) {
+            return $this->macNetwork();
+        } elseif ($this->isLinux()) {
+            return $this->linuxNetwork();
         } else {
             throw new UnknownSystem("Operation system doesn't support");
         }
+    }
+
+    /**
+     * @return string
+     */
+    protected function isWindows()
+    {
+        return stristr(PHP_OS, self::OS_WIN);
+    }
+
+    /**
+     * @return string
+     */
+    protected function isMac()
+    {
+        return stristr(PHP_OS, self::OS_OSX);
+    }
+
+    /**
+     * @return string
+     */
+    protected function isLinux()
+    {
+        return stristr(PHP_OS, self::OS_LINUX);
+    }
+
+    /**
+     * @return WindowsNetworks
+     */
+    protected function windowsNetwork(): AbstractNetworksCollection
+    {
+        return new WindowsNetworks();
+    }
+
+    /**
+     * @return MacNetworks
+     */
+    protected function macNetwork(): AbstractNetworksCollection
+    {
+        return new MacNetworks();
+    }
+
+    /**
+     * @return LinuxNetworks
+     */
+    protected function linuxNetwork(): AbstractNetworksCollection
+    {
+        return new LinuxNetworks();
     }
 }

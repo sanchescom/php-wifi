@@ -7,6 +7,7 @@ namespace Sanchescom\WiFi\System\Windows;
 use Exception;
 use pastuhov\Command\Command;
 use Sanchescom\WiFi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\Windows\Profile\Service;
 
 /**
  * Class Network.
@@ -23,13 +24,13 @@ class Network extends AbstractNetwork
      */
     public function connect(string $password, string $device): void
     {
-        $this->createProfile($password);
+        $this->getProfileService()->create($password);
 
         Command::exec(
             implode(' && ', [
                 sprintf(
                     ($this->getUtility().' add profile filename="%s"'),
-                    $this->getTmpFileName()
+                    $this->getProfileService()->getTmpProfileFileName()
                 ),
                 sprintf(
                     ($this->getUtility().' connect interface="%s" ssid="%s" name="%s"'),
@@ -40,7 +41,7 @@ class Network extends AbstractNetwork
             ])
         );
 
-        @unlink($this->getTmpFileName());
+        $this->getProfileService()->delete();
     }
 
     /**
@@ -76,57 +77,8 @@ class Network extends AbstractNetwork
         return $instance;
     }
 
-    /**
-     * @param string $password
-     */
-    protected function createProfile($password): void
+    protected function getProfileService()
     {
-        $fileNamePrefix = __DIR__.'./ProfileTemplates/';
-        $fileNamePostfix = 'PersonalProfileTemplate.xml';
-
-        if (strpos($this->security, 'WPA2') !== false) {
-            $fileName = $fileNamePrefix.'WPA2-'.$fileNamePostfix;
-        } elseif (strpos($this->security, 'WEP') !== false) {
-            $fileName = $fileNamePrefix.'WPA-'.$fileNamePostfix;
-        } elseif (strpos($this->security, 'WEP') !== false) {
-            $fileName = $fileNamePrefix.'WEP-'.$fileNamePostfix;
-        } else {
-            $fileName = $fileNamePrefix.'Unknown-'.$fileNamePostfix;
-        }
-
-        unlink($this->getTmpFileName());
-
-        file_put_contents(
-            $this->getTmpFileName(),
-            str_replace(
-                ['{ssid}', '{hex}', '{key}'],
-                [$this->ssid, $this->ssidToHex(), $password],
-                (file_get_contents($fileName) ?: '')
-            )
-        );
-    }
-
-    /**
-     * @return string
-     */
-    protected function getTmpFileName(): string
-    {
-        return __DIR__.'\\..\\..\\..\\tmp\\'.$this->ssid.'.xml';
-    }
-
-    /**
-     * @return string
-     */
-    protected function ssidToHex(): string
-    {
-        $hex = '';
-
-        for ($i = 0; $i < strlen($this->ssid); $i++) {
-            $ord = ord($this->ssid[$i]);
-            $dechex = dechex($ord);
-            $hex .= substr('0'.$dechex, -2);
-        }
-
-        return strtoupper($hex);
+        return new Service($this);
     }
 }
