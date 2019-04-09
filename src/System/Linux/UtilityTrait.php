@@ -11,6 +11,6 @@ trait UtilityTrait
      */
     public function getUtility()
     {
-        return 'nmcli';
+        return 'LANG=C nmcli';
     }
 }
