@@ -46,10 +46,7 @@ class Service
      */
     public function create(string $password): bool
     {
-        return file_put_contents(
-            $this->getTmpProfileFileName(),
-            $this->renderTemplate($password)
-        );
+        return !!file_put_contents($this->getTmpProfileFileName(), $this->renderTemplate($password));
     }
 
     /**
@@ -82,7 +79,7 @@ class Service
     /**
      * @param string $password
      *
-     * @return mixed
+     * @return string
      */
     protected function renderTemplate(string $password): string
     {

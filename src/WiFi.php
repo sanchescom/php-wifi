@@ -59,27 +59,27 @@ class WiFi
     }
 
     /**
-     * @return string
+     * @return bool
      */
-    protected function isWindows()
+    protected function isWindows(): bool
     {
-        return stristr(PHP_OS, self::OS_WIN);
+        return !!stristr(PHP_OS, self::OS_WIN);
     }
 
     /**
-     * @return string
+     * @return bool
      */
-    protected function isMac()
+    protected function isMac(): bool
     {
-        return stristr(PHP_OS, self::OS_OSX);
+        return !!stristr(PHP_OS, self::OS_OSX);
     }
 
     /**
-     * @return string
+     * @return bool
      */
-    protected function isLinux()
+    protected function isLinux(): bool
     {
-        return stristr(PHP_OS, self::OS_LINUX);
+        return !!stristr(PHP_OS, self::OS_LINUX);
     }
 
     /**

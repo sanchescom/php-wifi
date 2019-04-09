@@ -47,9 +47,9 @@ class NetworksCollection extends AbstractNetworksCollection
     {
         return implode(' && ', [
             'chcp 65001',
-            $this->getUtility() . ' show networks mode=Bssid',
-            'echo ' . $this->separator,
-            $this->getUtility() . ' show interfaces',
+            $this->getUtility().' show networks mode=Bssid',
+            'echo '.$this->separator,
+            $this->getUtility().' show interfaces',
         ]);
     }
 
@@ -96,7 +96,7 @@ class NetworksCollection extends AbstractNetworksCollection
      *
      * @param array $groupedNetworks
      * @param array $currentBssid
-     * @param int $networkBlockIndex
+     * @param int   $networkBlockIndex
      */
     private function checkNetworkConnection(array &$groupedNetworks, array $currentBssid, int $networkBlockIndex): void
     {
@@ -130,11 +130,11 @@ class NetworksCollection extends AbstractNetworksCollection
     }
 
     /**
-     * @param $row
+     * @param string $row
      *
      * @return string
      */
-    private function extractingDataFromString($row): string
+    private function extractingDataFromString(string $row): string
     {
         $title = strtok($row, ':') ?: '';
         $value = substr($row, strlen($title));
