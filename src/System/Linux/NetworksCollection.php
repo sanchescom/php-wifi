@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System\Linux;
 
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
-use Sanchescom\WiFi\System\NetworksCollectionTrait;
 
 /**
  * Class NetworksCollection.
  */
 class NetworksCollection extends AbstractNetworksCollection
 {
-    use NetworksCollectionTrait, UtilityTrait;
+    use UtilityTrait;
 
     /**
      * @var int
@@ -81,6 +80,6 @@ class NetworksCollection extends AbstractNetworksCollection
 
         array_shift($extractedProperties);
 
-        return $this->trimArrayValue($extractedProperties);
+        return trim_first($extractedProperties);
     }
 }

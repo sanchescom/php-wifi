@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System\Windows;
 
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
-use Sanchescom\WiFi\System\NetworksCollectionTrait;
+use Sanchescom\WiFi\System\Separable;
 
 /**
  * Class NetworksCollection.
@@ -13,7 +13,7 @@ use Sanchescom\WiFi\System\NetworksCollectionTrait;
  */
 class NetworksCollection extends AbstractNetworksCollection
 {
-    use NetworksCollectionTrait, UtilityTrait;
+    use Separable, UtilityTrait;
 
     /**
      * @var int
@@ -70,7 +70,7 @@ class NetworksCollection extends AbstractNetworksCollection
     {
         list($networks, $current) = $this->explodeOutput($output);
 
-        $currentBssid = $this->extractBssid($current, self::EXTRACT_BSSID_KEY);
+        $currentBssid = extract_bssid($current, self::EXTRACT_BSSID_KEY);
 
         $availableNetworks = $this->explodeAvailableNetworks($networks);
 
@@ -130,11 +130,11 @@ class NetworksCollection extends AbstractNetworksCollection
     }
 
     /**
-     * @param $row
+     * @param string $row
      *
      * @return string
      */
-    private function extractingDataFromString($row): string
+    private function extractingDataFromString(string $row): string
     {
         $title = strtok($row, ':') ?: '';
         $value = substr($row, strlen($title));

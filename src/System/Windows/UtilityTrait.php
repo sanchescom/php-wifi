@@ -6,11 +6,17 @@ namespace Sanchescom\WiFi\System\Windows;
 
 trait UtilityTrait
 {
+    /** @var string */
+    private static $utility = 'netsh';
+
+    /** @var string */
+    private static $argument = 'wlan';
+
     /**
      * @return string
      */
     public function getUtility()
     {
-        return 'netsh wlan';
+        return self::$utility.' '.self::$argument;
     }
 }
