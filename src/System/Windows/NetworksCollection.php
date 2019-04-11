@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System\Windows;
 
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
-use Sanchescom\Wifi\System\Separable;
+use Sanchescom\WiFi\System\Separable;
 
 /**
  * Class NetworksCollection.

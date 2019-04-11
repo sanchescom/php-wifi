@@ -63,7 +63,7 @@ class WiFi
      */
     protected function isWindows(): bool
     {
-        return (bool) stristr(PHP_OS, self::OS_WIN);
+        return os_prefix() == self::OS_WIN;
     }
 
     /**
@@ -71,7 +71,7 @@ class WiFi
      */
     protected function isMac(): bool
     {
-        return (bool) stristr(PHP_OS, self::OS_OSX);
+        return os_prefix() == self::OS_OSX;
     }
 
     /**
@@ -79,7 +79,7 @@ class WiFi
      */
     protected function isLinux(): bool
     {
-        return (bool) stristr(PHP_OS, self::OS_LINUX);
+        return os_prefix() == self::OS_LINUX;
     }
 
     /**

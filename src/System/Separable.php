@@ -1,6 +1,6 @@
 <?php
 
-namespace Sanchescom\Wifi\System;
+namespace Sanchescom\WiFi\System;
 
 trait Separable
 {
