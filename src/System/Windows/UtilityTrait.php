@@ -17,6 +17,6 @@ trait UtilityTrait
      */
     public function getUtility()
     {
-        return static::$utility.' '.static::$argument;
+        return self::$utility.' '.self::$argument;
     }
 }

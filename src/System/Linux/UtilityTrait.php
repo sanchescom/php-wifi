@@ -15,7 +15,7 @@ trait UtilityTrait
     public function getUtility()
     {
         return implode(' ', array_merge($this->getEnvs(), [
-            static::$utility,
+            self::$utility,
         ]));
     }
 
