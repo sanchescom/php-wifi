@@ -8,7 +8,7 @@ trait UtilityTrait
 {
     /** @var string */
     private static $utility = 'nmcli';
-    
+
     /**
      * @return string
      */
@@ -18,7 +18,10 @@ trait UtilityTrait
             static::$utility,
         ]));
     }
-    
+
+    /**
+     * @return array
+     */
     private function getEnvs()
     {
         return [

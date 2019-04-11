@@ -5,7 +5,7 @@ if (!function_exists('extract_bssid')) {
      * Extracting bssid from passed string.
      *
      * @param string $string
-     * @param int $matchColumn
+     * @param int    $matchColumn
      *
      * @return array
      */
