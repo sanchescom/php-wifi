@@ -16,10 +16,8 @@ class Network extends AbstractNetwork implements UtilityInterface
 {
     use UtilityTrait;
 
-    /**
-     * @var string
-     */
-    const POSITIVE_CONNECTION_FLAG = 'yes';
+    /** @var string */
+    private const POSITIVE_CONNECTION_FLAG = 'yes';
 
     /**
      * @param string $password

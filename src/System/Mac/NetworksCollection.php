@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System\Mac;
 
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
-use Sanchescom\WiFi\System\NetworksCollectionTrait;
+use Sanchescom\Wifi\System\Separable;
 use Sanchescom\WiFi\System\UtilityInterface;
 
 /**
@@ -13,7 +13,7 @@ use Sanchescom\WiFi\System\UtilityInterface;
  */
 class NetworksCollection extends AbstractNetworksCollection implements UtilityInterface
 {
-    use NetworksCollectionTrait;
+    use Separable;
 
     /**
      * @var int
@@ -57,7 +57,7 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
     {
         list($networks, $current) = $this->explodeOutput($output);
 
-        $currentBssid = $this->extractBssid($current, 0);
+        $currentBssid = extract_bssid($current, 0);
 
         $availableNetworks = $this->explodeAvailableNetworks($networks);
 
@@ -99,6 +99,6 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
 
         array_shift($extractedProperties);
 
-        return $this->trimArrayValue($extractedProperties);
+        return trim_first($extractedProperties);
     }
 }

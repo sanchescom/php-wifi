@@ -6,11 +6,23 @@ namespace Sanchescom\WiFi\System\Linux;
 
 trait UtilityTrait
 {
+    /** @var string */
+    private static $utility = 'nmcli';
+    
     /**
      * @return string
      */
     public function getUtility()
     {
-        return 'LANG=C nmcli';
+        return implode(' ', array_merge($this->getEnvs(), [
+            static::$utility,
+        ]));
+    }
+    
+    private function getEnvs()
+    {
+        return [
+            'LANG=C',
+        ];
     }
 }

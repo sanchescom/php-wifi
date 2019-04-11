@@ -10,6 +10,10 @@
     ],
     "minimum-stability": "stable",
     "autoload": {
+        "files": [
+            "src/Helpers/array.php",
+            "src/Helpers/string.php"
+        ],
         "psr-4": {
             "Sanchescom\\WiFi\\": "src/"
         }

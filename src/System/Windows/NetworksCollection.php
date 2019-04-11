@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System\Windows;
 
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
-use Sanchescom\WiFi\System\NetworksCollectionTrait;
+use Sanchescom\Wifi\System\Separable;
 
 /**
  * Class NetworksCollection.
@@ -13,7 +13,7 @@ use Sanchescom\WiFi\System\NetworksCollectionTrait;
  */
 class NetworksCollection extends AbstractNetworksCollection
 {
-    use NetworksCollectionTrait, UtilityTrait;
+    use Separable, UtilityTrait;
 
     /**
      * @var int
@@ -70,7 +70,7 @@ class NetworksCollection extends AbstractNetworksCollection
     {
         list($networks, $current) = $this->explodeOutput($output);
 
-        $currentBssid = $this->extractBssid($current, self::EXTRACT_BSSID_KEY);
+        $currentBssid = extract_bssid($current, self::EXTRACT_BSSID_KEY);
 
         $availableNetworks = $this->explodeAvailableNetworks($networks);
 
@@ -92,7 +92,7 @@ class NetworksCollection extends AbstractNetworksCollection
     }
 
     /**
-     * Checking which network currently connected and set a flag
+     * Checking which network currently connected and set a flag.
      *
      * @param array $groupedNetworks
      * @param array $currentBssid
@@ -106,7 +106,7 @@ class NetworksCollection extends AbstractNetworksCollection
     }
 
     /**
-     * Checking that iterable row is start of description
+     * Checking that iterable row is start of description.
      *
      * @param int $firstRowIndex
      *
@@ -118,7 +118,7 @@ class NetworksCollection extends AbstractNetworksCollection
     }
 
     /**
-     * Setting vars to state for new iteration of processing network description
+     * Setting vars to state for new iteration of processing network description.
      *
      * @param int $nextRowIndex
      *
