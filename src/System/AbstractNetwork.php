@@ -9,8 +9,6 @@ namespace Sanchescom\WiFi\System;
  */
 abstract class AbstractNetwork
 {
-    use Securable;
-
     /**
      * @var string
      */
@@ -62,6 +60,15 @@ abstract class AbstractNetwork
     protected static $frequencies = [];
 
     /**
+     * @var array
+     */
+    protected static $securityTypes = [
+        'WPA2',
+        'WPA',
+        'WEP',
+    ];
+
+    /**
      * Array description:
      * <code>
      * $frequencySettings = [
@@ -109,6 +116,22 @@ abstract class AbstractNetwork
     public function getFrequencySettings(): array
     {
         return $this->frequencySettings;
+    }
+
+    /**
+     * @return string
+     */
+    public function getSecurityType(): string
+    {
+        $securityType = 'Unknown';
+
+        foreach (self::$securityTypes as $securityType) {
+            if (strpos($this->security, $securityType) !== false) {
+                break;
+            }
+        }
+
+        return $securityType;
     }
 
     /**
