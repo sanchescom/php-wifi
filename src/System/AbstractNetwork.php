@@ -182,7 +182,8 @@ abstract class AbstractNetwork
 
         for ($i = $channelStart; $i <= $channelEnd; $i += $frequencyIncreasing) {
             self::$frequencies[$i] = $frequencyStart;
-            $frequencyStart = $frequencyStart + $frequencyStep;
+
+            $frequencyStart += $frequencyStep;
         }
     }
 
