@@ -66,7 +66,7 @@ class Network extends AbstractNetwork
         $instance = new self();
         $instance->ssid = $network[0];
         $instance->bssid = $network[4];
-        $instance->channel = $network[7];
+        $instance->channel = (int) $network[7];
         $instance->security = $network[2];
         $instance->securityFlags = $network[3];
         $instance->quality = (int) $network[5];
