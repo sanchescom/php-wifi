@@ -2,9 +2,9 @@
 [![StyleCI](https://github.styleci.io/repos/175257648/shield?branch=master)](https://github.styleci.io/repos/168349832)
 [![Quality Score](https://img.shields.io/scrutinizer/g/sanchescom/laravel-phpsocket.io.svg?style=flat-square)](https://scrutinizer-ci.com/g/sanchescom/php-wifi)
 
-# PHP WiFI
+# PHP WiFi
 
-PHP WiFi is cross-platform php library base on integrated in OS utilities
+PHP WiFi is cross-platform php library based on integrated in OS utilities
 
 ## Getting Started
 

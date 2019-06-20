@@ -9,8 +9,6 @@ namespace Sanchescom\WiFi\System;
  */
 abstract class AbstractNetwork
 {
-    use Securable;
-
     /**
      * @var string
      */
@@ -59,30 +57,10 @@ abstract class AbstractNetwork
     /**
      * @var array
      */
-    protected static $frequencies = [];
-
-    /**
-     * Array description:
-     * <code>
-     * $frequencySettings = [
-     *      [
-     *          2412, // frequency starts from
-     *          1,    // channel starts from
-     *          14,   // channel ends till
-     *          5,    // frequency step
-     *          1,    // frequency increasing
-     *      ],
-     * ];
-     * </code>.
-     *
-     * @var array[int][int]int
-     */
-    protected $frequencySettings = [
-        [2412, 1, 14, 5, 1],
-        [5180, 36, 64, 10, 2],
-        [5500, 100, 144, 10, 2],
-        [5745, 149, 161, 10, 2],
-        [5825, 165, 173, 20, 4],
+    protected static $securityTypes = [
+        'WPA2',
+        'WPA',
+        'WEP',
     ];
 
     /**
@@ -104,11 +82,27 @@ abstract class AbstractNetwork
     abstract public static function createFromArray(array $network): self;
 
     /**
-     * @return array
+     * @return string
      */
-    public function getFrequencySettings(): array
+    public function getSecurityType(): string
     {
-        return $this->frequencySettings;
+        $securityType = 'Unknown';
+
+        foreach (self::$securityTypes as $securityType) {
+            if (strpos($this->security, $securityType) !== false) {
+                break;
+            }
+        }
+
+        return $securityType;
+    }
+
+    /**
+     * @return int
+     */
+    public function getFrequency(): int
+    {
+        return $this->getFrequencyGenerator()->getFrequencyForChannel($this->channel);
     }
 
     /**
@@ -129,46 +123,11 @@ abstract class AbstractNetwork
     }
 
     /**
-     * @return array
+     * @return FrequencyGenerator
      */
-    protected function generateFrequencies(): array
+    protected function getFrequencyGenerator(): FrequencyGenerator
     {
-        if (empty(self::$frequencies)) {
-            $frequencySettings = $this->getFrequencySettings();
-
-            foreach ($frequencySettings as $frequencySetting) {
-                $this->setGeneratedFrequencies($frequencySetting);
-            }
-        }
-
-        return self::$frequencies;
-    }
-
-    /**
-     * @param array $frequencySetting
-     */
-    protected function setGeneratedFrequencies(array $frequencySetting): void
-    {
-        list(
-            $frequencyStart,
-            $channelStart,
-            $channelEnd,
-            $frequencyStep,
-            $frequencyIncreasing
-            ) = $frequencySetting;
-
-        for ($i = $channelStart; $i <= $channelEnd; $i += $frequencyIncreasing) {
-            self::$frequencies[$i] = $frequencyStart;
-            $frequencyStart = $frequencyStart + $frequencyStep;
-        }
-    }
-
-    /**
-     * @return int
-     */
-    protected function getFrequency(): int
-    {
-        return $this->generateFrequencies()[$this->channel];
+        return new FrequencyGenerator();
     }
 
     /**

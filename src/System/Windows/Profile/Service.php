@@ -93,7 +93,7 @@ class Service
             ],
             [
                 $this->network->ssid,
-                $this->ssidToHex(),
+                to_hex($this->network->ssid),
                 $password,
             ],
             $content
@@ -105,38 +105,12 @@ class Service
      */
     protected function getTemplateProfileFileName(): string
     {
-        if ($this->network->isWpa2()) {
-            $security = 'WPA2';
-        } elseif ($this->network->isWpa()) {
-            $security = 'WPA';
-        } elseif ($this->network->isWep()) {
-            $security = 'WEP';
-        } else {
-            $security = 'Unknown';
-        }
-
         return __DIR__
             .DIRECTORY_SEPARATOR
             .static::$templateFolderName
             .DIRECTORY_SEPARATOR
-            .$security
+            .$this->network->getSecurityType()
             .'-'
             .static::$fileNamePostfix;
-    }
-
-    /**
-     * @return string
-     */
-    protected function ssidToHex(): string
-    {
-        $ssid = $this->network->ssid;
-        $len = strlen($ssid);
-        $hex = '';
-
-        for ($i = 0; $i < $len; $i++) {
-            $hex .= substr('0'.dechex(ord($ssid[$i])), -2);
-        }
-
-        return strtoupper($hex);
     }
 }
