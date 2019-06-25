@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System\Mac;
 
 use Exception;
-use pastuhov\Command\Command;
 use Sanchescom\WiFi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\CommandExecutor;
+use Sanchescom\WiFi\System\Frequency;
 
 /**
  * Class Network.
  */
 class Network extends AbstractNetwork
 {
-    use UtilityTrait;
+    use Frequency;
 
     /**
      * @param string $password
@@ -23,8 +24,8 @@ class Network extends AbstractNetwork
      */
     public function connect(string $password, string $device): void
     {
-        Command::exec(
-            sprintf($this->getUtility().' -setairportnetwork %s %s %s', $device, $this->ssid, $password)
+        $this->commandExecutor->execute(
+            sprintf('networksetup -setairportnetwork %s %s %s', $device, $this->ssid, $password)
         );
     }
 
@@ -35,23 +36,24 @@ class Network extends AbstractNetwork
      */
     public function disconnect(string $device): void
     {
-        Command::exec(
-            implode(' && ', [
-                sprintf($this->getUtility().' -removepreferredwirelessnetwork %s %s', $device, $this->ssid),
-                sprintf($this->getUtility().' -setairportpower %s %s', $device, 'off'),
-                sprintf($this->getUtility().' -setairportpower %s %s', $device, 'on'),
-            ])
+        $this->commandExecutor->execute(
+            glue_commands(
+                sprintf('networksetup -removepreferredwirelessnetwork %s %s', $device, $this->ssid),
+                sprintf('networksetup -setairportpower %s %s', $device, 'off'),
+                sprintf('networksetup -setairportpower %s %s', $device, 'on')
+            )
         );
     }
 
     /**
      * @param array $network
+     * @param CommandExecutor $commandExecutor
      *
      * @return Network
      */
-    public static function createFromArray(array $network): AbstractNetwork
+    public function createFromArray(array $network, CommandExecutor $commandExecutor): AbstractNetwork
     {
-        $instance = new self();
+        $instance = new self($commandExecutor);
         $instance->ssid = $network[0];
         $instance->bssid = $network[1];
         $instance->channel = (int) $network[3];
@@ -59,7 +61,7 @@ class Network extends AbstractNetwork
         $instance->securityFlags = $network[5];
         $instance->quality = $network[2];
         $instance->frequency = $instance->getFrequency();
-        $instance->dbm = $instance->qualityToDBm();
+        $instance->dbm = to_dbm($network[2]);
         $instance->connected = isset($network[7]);
 
         return $instance;

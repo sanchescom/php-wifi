@@ -63,23 +63,18 @@ abstract class AbstractNetwork
         'WEP',
     ];
 
-    /**
-     * @param string $password
-     * @param string $device
-     */
-    abstract public function connect(string $password, string $device): void;
+    /** @var CommandExecutor */
+    protected $commandExecutor;
 
     /**
-     * @param string $device
-     */
-    abstract public function disconnect(string $device): void;
-
-    /**
-     * @param array $network
+     * AbstractNetwork constructor.
      *
-     * @return AbstractNetwork
+     * @param CommandExecutor $commandExecutor
      */
-    abstract public static function createFromArray(array $network): self;
+    public function __construct(CommandExecutor $commandExecutor)
+    {
+        $this->commandExecutor = $commandExecutor;
+    }
 
     /**
      * @return string
@@ -95,14 +90,6 @@ abstract class AbstractNetwork
         }
 
         return $securityType;
-    }
-
-    /**
-     * @return int
-     */
-    public function getFrequency(): int
-    {
-        return $this->getFrequencyGenerator()->getFrequencyForChannel($this->channel);
     }
 
     /**
@@ -123,26 +110,21 @@ abstract class AbstractNetwork
     }
 
     /**
-     * @return FrequencyGenerator
+     * @param string $password
+     * @param string $device
      */
-    protected function getFrequencyGenerator(): FrequencyGenerator
-    {
-        return new FrequencyGenerator();
-    }
+    abstract public function connect(string $password, string $device): void;
 
     /**
-     * @return float
+     * @param string $device
      */
-    protected function dBmToQuality(): float
-    {
-        return 2 * ($this->dbm + 100);
-    }
+    abstract public function disconnect(string $device): void;
 
     /**
-     * @return float
+     * @param array $network
+     * @param CommandExecutor $commandExecutor
+     *
+     * @return AbstractNetwork
      */
-    protected function qualityToDBm(): float
-    {
-        return ($this->quality / 2) - 100;
-    }
+    abstract public function createFromArray(array $network, CommandExecutor $commandExecutor): self;
 }

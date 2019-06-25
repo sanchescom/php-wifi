@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System\Windows;
 
 use Exception;
-use pastuhov\Command\Command;
 use Sanchescom\WiFi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\CommandExecutor;
+use Sanchescom\WiFi\System\Frequency;
 use Sanchescom\WiFi\System\Windows\Profile\Service;
 
 /**
@@ -14,7 +15,7 @@ use Sanchescom\WiFi\System\Windows\Profile\Service;
  */
 class Network extends AbstractNetwork
 {
-    use UtilityTrait;
+    use Frequency;
 
     /**
      * @param string $password
@@ -24,24 +25,20 @@ class Network extends AbstractNetwork
      */
     public function connect(string $password, string $device): void
     {
-        $this->getProfileService()->create($password);
+        $profileService = $this->getProfileService();
 
-        Command::exec(
-            implode(' && ', [
-                sprintf(
-                    ($this->getUtility().' add profile filename="%s"'),
-                    $this->getProfileService()->getTmpProfileFileName()
-                ),
-                sprintf(
-                    ($this->getUtility().' connect interface="%s" ssid="%s" name="%s"'),
-                    $device,
-                    $this->ssid,
-                    $this->ssid
-                ),
-            ])
-        );
+        try {
+            $profileService->create($password);
 
-        $this->getProfileService()->delete();
+            $command = glue_commands(
+                sprintf('netsh wlan add profile filename="%s"', $profileService->getTmpProfileFileName()),
+                sprintf('netsh wlan connect interface="%s" ssid="%s" name="%s"', $device, $this->ssid, $this->ssid)
+            );
+
+            $this->commandExecutor->execute($command);
+        } finally {
+            $profileService->delete();
+        }
     }
 
     /**
@@ -51,27 +48,27 @@ class Network extends AbstractNetwork
      */
     public function disconnect(string $device): void
     {
-        Command::exec(
-            sprintf($this->getUtility().' disconnect interface="%s"', $device)
-        );
+        $this->commandExecutor->execute(sprintf(' disconnect interface="%s"', $device));
     }
 
     /**
      * @param array $network
      *
+     * @param CommandExecutor $commandExecutor
+     *
      * @return Network
      */
-    public static function createFromArray(array $network): AbstractNetwork
+    public function createFromArray(array $network, CommandExecutor $commandExecutor): AbstractNetwork
     {
-        $instance = new self();
+        $instance = new self($commandExecutor);
         $instance->ssid = $network[0];
         $instance->bssid = $network[4];
-        $instance->channel = (int) $network[7];
+        $instance->channel = (int)$network[7];
         $instance->security = $network[2];
         $instance->securityFlags = $network[3];
-        $instance->quality = (int) $network[5];
+        $instance->quality = (int)$network[5];
         $instance->frequency = $instance->getFrequency();
-        $instance->dbm = $instance->qualityToDBm();
+        $instance->dbm = to_dbm((int)$network[5]);
         $instance->connected = isset($network[10]);
 
         return $instance;
@@ -79,6 +76,6 @@ class Network extends AbstractNetwork
 
     protected function getProfileService()
     {
-        return new Service($this);
+        return new Service($this->ssid, $this->getSecurityType());
     }
 }

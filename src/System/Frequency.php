@@ -5,7 +5,7 @@ namespace Sanchescom\WiFi\System;
 /**
  * Class FrequencyGenerator.
  */
-class FrequencyGenerator
+trait Frequency
 {
     /**
      * @var array
@@ -37,13 +37,11 @@ class FrequencyGenerator
     ];
 
     /**
-     * @param int $channel
-     *
      * @return mixed
      */
-    public function getFrequencyForChannel(int $channel)
+    public function getFrequency()
     {
-        return $this->generateFrequencies()[$channel];
+        return $this->generateFrequencies()[$this->channel];
     }
 
     /**

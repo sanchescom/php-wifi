@@ -6,7 +6,7 @@ namespace Sanchescom\WiFi\System;
 
 use Closure;
 use Exception;
-use pastuhov\Command\Command;
+use Tightenco\Collect\Support\Collection;
 
 /**
  * Class AbstractNetworksCollection.
@@ -17,6 +17,9 @@ abstract class AbstractNetworksCollection
      * @var AbstractNetwork[]
      */
     protected $networks;
+
+    /** @var CommandExecutor */
+    protected $commandExecutor;
 
     /**
      * @param string $output
@@ -36,92 +39,48 @@ abstract class AbstractNetworksCollection
     abstract protected function getCommand(): string;
 
     /**
+     * AbstractNetworksCollection constructor.
+     *
+     * @param CommandExecutor $commandExecutor
+     */
+    public function __construct(CommandExecutor $commandExecutor)
+    {
+        $this->commandExecutor = $commandExecutor;
+    }
+
+    /**
      * @throws Exception
      *
-     * @return AbstractNetworksCollection
+     * @return Collection
      */
-    public function scan(): self
+    public function scan(): Collection
     {
-        $output = (string) Command::exec($this->getCommand());
+        $output = $this->commandExecutor->execute($this->getCommand());
 
-        return $this->setNetworks(
+        $this->setNetworks(
             $this->extractingNetworks($output)
         );
-    }
 
-    /**
-     * @return AbstractNetwork[]
-     */
-    public function getAll(): array
-    {
-        return $this->networks;
-    }
-
-    /**
-     * @return AbstractNetwork[]
-     */
-    public function getConnected(): array
-    {
-        return $this->getFiltered(function (AbstractNetwork $network) {
-            if ($network->connected) {
-                return $network;
-            }
-        });
-    }
-
-    /**
-     * @param string $ssid
-     *
-     * @return AbstractNetwork[]
-     */
-    public function getBySsid(string $ssid): array
-    {
-        return $this->getFiltered(function (AbstractNetwork $network) use ($ssid) {
-            if ($network->ssid == $ssid) {
-                return $network;
-            }
-        });
-    }
-
-    /**
-     * @param string $bssid
-     *
-     * @return AbstractNetwork[]
-     */
-    public function getByBssid(string $bssid): array
-    {
-        return $this->getFiltered(function (AbstractNetwork $network) use ($bssid) {
-            if ($network->bssid == $bssid) {
-                return $network;
-            }
-        });
+        return collect($this->networks);
     }
 
     /**
      * @param array $networks
      *
-     * @return $this
+     * @return void
      */
-    protected function setNetworks(array $networks): self
+    protected function setNetworks(array $networks): void
     {
         $this->networks = array_map(function ($network) {
-            /** @var AbstractNetwork $networkInstance */
-            $networkInstance = $this->getNetwork();
+            return call_user_func_array([
+                $this->getNetwork(),
+                'createFromArray'
+            ], [
+                $network,
+                $this->commandExecutor
+            ]);
 
-            return $networkInstance::createFromArray($network);
         }, $networks);
-
-        return $this;
-    }
-
-    /**
-     * @param Closure $closure
-     *
-     * @return AbstractNetwork[]
-     */
-    protected function getFiltered(Closure $closure): array
-    {
-        return array_values(array_filter($this->getAll(), $closure));
     }
 
     /**
@@ -132,16 +91,5 @@ abstract class AbstractNetworksCollection
     protected function explodeAvailableNetworks(string $networksString): array
     {
         return explode("\n", trim($networksString));
-    }
-
-    /**
-     * @param string $bssid
-     * @param array  $connectedBssid
-     *
-     * @return bool
-     */
-    protected function isConnected(string $bssid, array $connectedBssid): bool
-    {
-        return in_array($bssid, $connectedBssid);
     }
 }

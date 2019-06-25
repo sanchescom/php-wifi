@@ -11,8 +11,6 @@ use Sanchescom\WiFi\System\AbstractNetworksCollection;
  */
 class NetworksCollection extends AbstractNetworksCollection
 {
-    use UtilityTrait;
-
     /**
      * @var int
      */
@@ -23,20 +21,16 @@ class NetworksCollection extends AbstractNetworksCollection
      */
     protected function getCommand(): string
     {
-        $options =
-            ' --terse'.
-            ' --fields '.
-            'active,ssid,bssid,'.
-            'mode,chan,freq,'.
-            'signal,security,wpa-flags,'.
-            'rsn-flags'.
-            ' device'.
-            ' wifi'.
-            ' list';
-
-        return implode(' && ', [
-            $this->getUtility().$options,
-        ]);
+        return 'LANG=C nmcli '
+            .' --terse'
+            .' --fields '
+            .'active,ssid,bssid,'
+            .'mode,chan,freq,'
+            .'signal,security,wpa-flags,'
+            .'rsn-flags'
+            .' device'
+            .' wifi'
+            .' list';
     }
 
     /**

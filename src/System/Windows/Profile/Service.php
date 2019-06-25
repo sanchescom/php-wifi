@@ -2,8 +2,6 @@
 
 namespace Sanchescom\WiFi\System\Windows\Profile;
 
-use Sanchescom\WiFi\System\Windows\Network;
-
 /**
  * Class Service.
  */
@@ -25,18 +23,25 @@ class Service
     protected static $fileNamePostfix = 'PersonalProfileTemplate.xml';
 
     /**
-     * @var Network
+     * @var string
      */
-    protected $network;
+    protected $ssid;
+
+    /**
+     * @var string
+     */
+    protected $securityType;
 
     /**
      * Service constructor.
      *
-     * @param Network $network
+     * @param string $ssid
+     * @param string $securityType
      */
-    public function __construct(Network $network)
+    public function __construct(string $ssid, string $securityType)
     {
-        $this->network = $network;
+        $this->ssid = $ssid;
+        $this->securityType = $securityType;
     }
 
     /**
@@ -72,7 +77,7 @@ class Service
             .DIRECTORY_SEPARATOR
             .static::$tmpFolderName
             .DIRECTORY_SEPARATOR
-            .$this->network->ssid
+            .$this->ssid
             .'.xml';
     }
 
@@ -92,8 +97,8 @@ class Service
                 '{key}',
             ],
             [
-                $this->network->ssid,
-                to_hex($this->network->ssid),
+                $this->ssid,
+                to_hex($this->ssid),
                 $password,
             ],
             $content
@@ -109,7 +114,7 @@ class Service
             .DIRECTORY_SEPARATOR
             .static::$templateFolderName
             .DIRECTORY_SEPARATOR
-            .$this->network->getSecurityType()
+            .$this->securityType
             .'-'
             .static::$fileNamePostfix;
     }

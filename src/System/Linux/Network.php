@@ -5,19 +5,16 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System\Linux;
 
 use Exception;
-use pastuhov\Command\Command;
 use Sanchescom\WiFi\System\AbstractNetwork;
-use Sanchescom\WiFi\System\UtilityInterface;
+use Sanchescom\WiFi\System\CommandExecutor;
 
 /**
  * Class Network.
  */
-class Network extends AbstractNetwork implements UtilityInterface
+class Network extends AbstractNetwork
 {
-    use UtilityTrait;
-
     /** @var string */
-    private const POSITIVE_CONNECTION_FLAG = 'yes';
+    protected const POSITIVE_CONNECTION_FLAG = 'yes';
 
     /**
      * @param string $password
@@ -27,14 +24,9 @@ class Network extends AbstractNetwork implements UtilityInterface
      */
     public function connect(string $password, string $device): void
     {
-        Command::exec(
-            sprintf(
-                $this->getUtility().' -w 10 device wifi connect "%s" password "%s" ifname "%s"',
-                $this->ssid,
-                $password,
-                $device
-            )
-        );
+        $format = 'LANG=C nmcli -w 10 device wifi connect "%s" password "%s" ifname "%s"';
+
+        $this->commandExecutor->execute(sprintf($format, $this->ssid, $password, $device));
     }
 
     /**
@@ -44,28 +36,26 @@ class Network extends AbstractNetwork implements UtilityInterface
      */
     public function disconnect(string $device): void
     {
-        Command::exec(
-            implode(' && ', [
-                sprintf($this->getUtility().' device disconnect %s', $device),
-            ])
-        );
+        $this->commandExecutor->execute(sprintf('LANG=C nmcli device disconnect %s', $device));
     }
 
     /**
      * @param array $network
      *
+     * @param CommandExecutor $commandExecutor
+     *
      * @return Network
      */
-    public static function createFromArray(array $network): AbstractNetwork
+    public function createFromArray(array $network, CommandExecutor $commandExecutor): AbstractNetwork
     {
-        $instance = new self();
+        $instance = new self($commandExecutor);
         $instance->ssid = $network[1];
         $instance->bssid = $network[2];
         $instance->channel = (int) $network[4];
         $instance->security = $network[7];
         $instance->securityFlags = $network[8].' '.$network[9];
         $instance->dbm = $network[6];
-        $instance->quality = $instance->dBmToQuality();
+        $instance->quality = to_quality($network[6]);
         $instance->frequency = (int) $network[5];
         $instance->connected = ($network[0] == self::POSITIVE_CONNECTION_FLAG);
 

@@ -11,7 +11,7 @@ use Sanchescom\WiFi\System\UtilityInterface;
 /**
  * Class NetworksCollection.
  */
-class NetworksCollection extends AbstractNetworksCollection implements UtilityInterface
+class NetworksCollection extends AbstractNetworksCollection
 {
     use Separable;
 
@@ -23,21 +23,11 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
     /**
      * @return string
      */
-    public function getUtility()
-    {
-        return '/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport';
-    }
-
-    /**
-     * @return string
-     */
     protected function getCommand(): string
     {
-        return implode(' && ', [
-            $this->getUtility().' -s',
-            'echo "'.$this->separator.'"',
-            $this->getUtility().' --getinfo',
-        ]);
+        $utility = '/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport';
+
+        return sprintf('%s -s && echo "%s" && %s --getinfo', $utility, $this->separator, $utility);
     }
 
     /**
@@ -66,7 +56,7 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
         array_walk($availableNetworks, function (&$networkData) use ($currentBssid) {
             $networkData = $this->extractingDataFromString($networkData);
 
-            if ($this->isConnected($networkData[self::BSSID_KEY], $currentBssid)) {
+            if (in_array($networkData[self::BSSID_KEY], $currentBssid)) {
                 array_push($networkData, true);
             }
         });

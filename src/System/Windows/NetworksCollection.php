@@ -13,7 +13,7 @@ use Sanchescom\WiFi\System\Separable;
  */
 class NetworksCollection extends AbstractNetworksCollection
 {
-    use Separable, UtilityTrait;
+    use Separable;
 
     /**
      * @var int
@@ -45,12 +45,12 @@ class NetworksCollection extends AbstractNetworksCollection
      */
     protected function getCommand(): string
     {
-        return implode(' && ', [
+        return glue_commands(
             'chcp 65001',
-            $this->getUtility().' show networks mode=Bssid',
+            'netsh wlan show networks mode=Bssid',
             'echo '.$this->separator,
-            $this->getUtility().' show interfaces',
-        ]);
+            'netsh wlan show interfaces'
+        );
     }
 
     /**
@@ -100,7 +100,7 @@ class NetworksCollection extends AbstractNetworksCollection
      */
     private function checkNetworkConnection(array &$groupedNetworks, array $currentBssid, int $networkBlockIndex): void
     {
-        if ($this->isConnected($groupedNetworks[$networkBlockIndex][self::BSSID_KEY], $currentBssid)) {
+        if (in_array($groupedNetworks[$networkBlockIndex][self::BSSID_KEY], $currentBssid)) {
             $groupedNetworks[$networkBlockIndex][] = true;
         }
     }

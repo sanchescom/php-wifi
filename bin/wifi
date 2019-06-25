@@ -70,9 +70,10 @@ class WiFi extends CLI
         switch ($options->getCmd()) {
             case 'list':
                 if ($options->getOpt('connected')) {
-                    $networks = \Sanchescom\WiFi\WiFi::scan()->getConnected();
+                    $networks = \Sanchescom\WiFi\WiFi::scan()
+                        ->where('connected', true);
                 } else {
-                    $networks = \Sanchescom\WiFi\WiFi::scan()->getAll();
+                    $networks = \Sanchescom\WiFi\WiFi::scan();
                 }
 
                 $table = new TableFormatter($this->colors);
@@ -112,20 +113,20 @@ class WiFi extends CLI
                 break;
             case 'connect':
                 $networks = \Sanchescom\WiFi\WiFi::scan()
-                    ->getByBssid($options->getOpt('bssid'));
+                    ->where('bssid', $options->getOpt('bssid'));
 
-                if ($networks) {
-                    $networks[0]->connect($options->getOpt('password'), $options->getOpt('device'));
+                if ($networks->isNotEmpty()) {
+                    $networks->first()->connect($options->getOpt('password'), $options->getOpt('device'));
                 } else {
                     $this->error('Unknown network, try to find another one');
                 }
                 break;
             case 'disconnect':
                 $networks = \Sanchescom\WiFi\WiFi::scan()
-                    ->getByBssid($options->getOpt('bssid'));
+                    ->where('bssid', $options->getOpt('bssid'));
 
-                if ($networks) {
-                    $networks[0]->disconnect($options->getOpt('device'));
+                if ($networks->isNotEmpty()) {
+                    $networks->first()->disconnect($options->getOpt('device'));
                 } else {
                     $this->error('Unknown network, try to find another one');
                 }

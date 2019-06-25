@@ -43,3 +43,17 @@ if (!function_exists('to_hex')) {
         return strtoupper($hex);
     }
 }
+
+if (!function_exists('glue_commands')) {
+    /**
+     * Glue commands.
+     *
+     * @param string ...$commands
+     *
+     * @return string
+     */
+    function glue_commands(string ...$commands): string
+    {
+        return implode(' && ', $commands);
+    }
+}

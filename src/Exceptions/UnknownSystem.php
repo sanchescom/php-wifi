@@ -4,8 +4,18 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\Exceptions;
 
-use Exception;
+use RuntimeException;
 
-class UnknownSystem extends Exception
+/**
+ * Class UnknownSystem.
+ */
+class UnknownSystem extends RuntimeException
 {
+    /**
+     * UnknownSystem constructor.
+     */
+    public function __construct()
+    {
+        parent::__construct("Operation system doesn't support: " . PHP_OS);
+    }
 }
