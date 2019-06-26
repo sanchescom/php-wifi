@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System;
 
-use Closure;
 use Exception;
 use Tightenco\Collect\Support\Collection;
 
@@ -18,8 +17,8 @@ abstract class AbstractNetworksCollection
      */
     protected $networks;
 
-    /** @var CommandExecutor */
-    protected $commandExecutor;
+    /** @var Command */
+    protected $command;
 
     /**
      * @param string $output
@@ -41,11 +40,11 @@ abstract class AbstractNetworksCollection
     /**
      * AbstractNetworksCollection constructor.
      *
-     * @param CommandExecutor $commandExecutor
+     * @param Command $command
      */
-    public function __construct(CommandExecutor $commandExecutor)
+    public function __construct(Command $command)
     {
-        $this->commandExecutor = $commandExecutor;
+        $this->command = $command;
     }
 
     /**
@@ -55,7 +54,7 @@ abstract class AbstractNetworksCollection
      */
     public function scan(): Collection
     {
-        $output = $this->commandExecutor->execute($this->getCommand());
+        $output = $this->command->execute($this->getCommand());
 
         $this->setNetworks(
             $this->extractingNetworks($output)
@@ -71,13 +70,13 @@ abstract class AbstractNetworksCollection
      */
     protected function setNetworks(array $networks): void
     {
-        $this->networks = array_map(function ($network) {
+        $this->networks = array_map(function (array $network) {
             return call_user_func_array([
                 $this->getNetwork(),
                 'createFromArray'
             ], [
                 $network,
-                $this->commandExecutor
+                $this->command
             ]);
 
         }, $networks);

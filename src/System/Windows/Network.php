@@ -6,9 +6,8 @@ namespace Sanchescom\WiFi\System\Windows;
 
 use Exception;
 use Sanchescom\WiFi\System\AbstractNetwork;
-use Sanchescom\WiFi\System\CommandExecutor;
+use Sanchescom\WiFi\System\Command;
 use Sanchescom\WiFi\System\Frequency;
-use Sanchescom\WiFi\System\Windows\Profile\Service;
 
 /**
  * Class Network.
@@ -25,20 +24,14 @@ class Network extends AbstractNetwork
      */
     public function connect(string $password, string $device): void
     {
-        $profileService = $this->getProfileService();
+        $command = glue_commands(
+            sprintf('netsh wlan add profile filename="%s"', $this->getProfileService()->create($password)),
+            sprintf('netsh wlan connect interface="%s" ssid="%s" name="%s"', $device, $this->ssid, $this->ssid)
+        );
 
-        try {
-            $profileService->create($password);
+        $this->command->execute($command);
 
-            $command = glue_commands(
-                sprintf('netsh wlan add profile filename="%s"', $profileService->getTmpProfileFileName()),
-                sprintf('netsh wlan connect interface="%s" ssid="%s" name="%s"', $device, $this->ssid, $this->ssid)
-            );
-
-            $this->commandExecutor->execute($command);
-        } finally {
-            $profileService->delete();
-        }
+        $this->getProfileService()->delete();
     }
 
     /**
@@ -48,17 +41,17 @@ class Network extends AbstractNetwork
      */
     public function disconnect(string $device): void
     {
-        $this->commandExecutor->execute(sprintf(' disconnect interface="%s"', $device));
+        $this->command->execute(sprintf(' disconnect interface="%s"', $device));
     }
 
     /**
      * @param array $network
      *
-     * @param CommandExecutor $commandExecutor
+     * @param Command $commandExecutor
      *
      * @return Network
      */
-    public function createFromArray(array $network, CommandExecutor $commandExecutor): AbstractNetwork
+    public function createFromArray(array $network, Command $commandExecutor): AbstractNetwork
     {
         $instance = new self($commandExecutor);
         $instance->ssid = $network[0];
@@ -76,6 +69,6 @@ class Network extends AbstractNetwork
 
     protected function getProfileService()
     {
-        return new Service($this->ssid, $this->getSecurityType());
+        return new Profile($this->ssid, $this->getSecurityType());
     }
 }

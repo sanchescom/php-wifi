@@ -6,7 +6,7 @@ namespace Sanchescom\WiFi\System\Mac;
 
 use Exception;
 use Sanchescom\WiFi\System\AbstractNetwork;
-use Sanchescom\WiFi\System\CommandExecutor;
+use Sanchescom\WiFi\System\Command;
 use Sanchescom\WiFi\System\Frequency;
 
 /**
@@ -24,7 +24,7 @@ class Network extends AbstractNetwork
      */
     public function connect(string $password, string $device): void
     {
-        $this->commandExecutor->execute(
+        $this->command->execute(
             sprintf('networksetup -setairportnetwork %s %s %s', $device, $this->ssid, $password)
         );
     }
@@ -36,7 +36,7 @@ class Network extends AbstractNetwork
      */
     public function disconnect(string $device): void
     {
-        $this->commandExecutor->execute(
+        $this->command->execute(
             glue_commands(
                 sprintf('networksetup -removepreferredwirelessnetwork %s %s', $device, $this->ssid),
                 sprintf('networksetup -setairportpower %s %s', $device, 'off'),
@@ -47,11 +47,11 @@ class Network extends AbstractNetwork
 
     /**
      * @param array $network
-     * @param CommandExecutor $commandExecutor
+     * @param Command $commandExecutor
      *
      * @return Network
      */
-    public function createFromArray(array $network, CommandExecutor $commandExecutor): AbstractNetwork
+    public function createFromArray(array $network, Command $commandExecutor): AbstractNetwork
     {
         $instance = new self($commandExecutor);
         $instance->ssid = $network[0];

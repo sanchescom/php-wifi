@@ -1,27 +1,14 @@
 <?php
 
-namespace Sanchescom\WiFi\System\Windows\Profile;
+declare(strict_types=1);
+
+namespace Sanchescom\WiFi\System\Windows;
 
 /**
  * Class Service.
  */
-class Service
+class Profile
 {
-    /**
-     * @var string
-     */
-    protected static $tmpFolderName = 'tmp';
-
-    /**
-     * @var string
-     */
-    protected static $templateFolderName = 'templates';
-
-    /**
-     * @var string
-     */
-    protected static $fileNamePostfix = 'PersonalProfileTemplate.xml';
-
     /**
      * @var string
      */
@@ -47,11 +34,13 @@ class Service
     /**
      * @param string $password
      *
-     * @return bool
+     * @return string
      */
-    public function create(string $password): bool
+    public function create(string $password): string
     {
-        return (bool) file_put_contents($this->getTmpProfileFileName(), $this->renderTemplate($password));
+        file_put_contents($this->getTmpFileName(), $this->renderTemplate($password));
+
+        return $this->getTmpFileName();
     }
 
     /**
@@ -59,7 +48,7 @@ class Service
      */
     public function delete(): bool
     {
-        $tmpProfile = $this->getTmpProfileFileName();
+        $tmpProfile = $this->getTmpFileName();
 
         if (file_exists($tmpProfile)) {
             return unlink($tmpProfile);
@@ -71,14 +60,17 @@ class Service
     /**
      * @return string
      */
-    public function getTmpProfileFileName(): string
+    protected function getTmpFileName(): string
     {
-        return __DIR__
-            .DIRECTORY_SEPARATOR
-            .static::$tmpFolderName
-            .DIRECTORY_SEPARATOR
-            .$this->ssid
-            .'.xml';
+        return __DIR__.'/../../../tmp/'.$this->ssid.'.xml';
+    }
+
+    /**
+     * @return string
+     */
+    protected function getTemplateFileName(): string
+    {
+        return __DIR__.'/../../../templates/'.$this->securityType.'.xml';
     }
 
     /**
@@ -88,7 +80,7 @@ class Service
      */
     protected function renderTemplate(string $password): string
     {
-        $content = file_get_contents($this->getTemplateProfileFileName()) ?: '';
+        $content = file_get_contents($this->getTemplateFileName()) ?: '';
 
         return str_replace(
             [
@@ -103,19 +95,5 @@ class Service
             ],
             $content
         );
-    }
-
-    /**
-     * @return string
-     */
-    protected function getTemplateProfileFileName(): string
-    {
-        return __DIR__
-            .DIRECTORY_SEPARATOR
-            .static::$templateFolderName
-            .DIRECTORY_SEPARATOR
-            .$this->securityType
-            .'-'
-            .static::$fileNamePostfix;
     }
 }

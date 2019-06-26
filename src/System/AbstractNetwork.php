@@ -9,71 +9,51 @@ namespace Sanchescom\WiFi\System;
  */
 abstract class AbstractNetwork
 {
-    /**
-     * @var string
-     */
+    /** @var string */
     public $bssid;
 
-    /**
-     * @var string
-     */
+    /** @var string */
     public $ssid;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     public $channel;
 
-    /**
-     * @var float
-     */
+    /** @var float */
     public $quality;
 
-    /**
-     * @var float
-     */
+    /** @var float */
     public $dbm;
 
-    /**
-     * @var string
-     */
+    /** @var string */
     public $security;
 
-    /**
-     * @var string
-     */
+    /** @var string */
     public $securityFlags;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     public $frequency;
 
-    /**
-     * @var bool
-     */
+    /** @var bool */
     public $connected;
 
-    /**
-     * @var array
-     */
+    /** @var array */
     protected static $securityTypes = [
         'WPA2',
         'WPA',
         'WEP',
     ];
 
-    /** @var CommandExecutor */
-    protected $commandExecutor;
+    /** @var Command */
+    protected $command;
 
     /**
      * AbstractNetwork constructor.
      *
-     * @param CommandExecutor $commandExecutor
+     * @param Command $command
      */
-    public function __construct(CommandExecutor $commandExecutor)
+    public function __construct(Command $command)
     {
-        $this->commandExecutor = $commandExecutor;
+        $this->command = $command;
     }
 
     /**
@@ -122,9 +102,9 @@ abstract class AbstractNetwork
 
     /**
      * @param array $network
-     * @param CommandExecutor $commandExecutor
+     * @param Command $commandExecutor
      *
      * @return AbstractNetwork
      */
-    abstract public function createFromArray(array $network, CommandExecutor $commandExecutor): self;
+    abstract public function createFromArray(array $network, Command $commandExecutor): AbstractNetwork;
 }

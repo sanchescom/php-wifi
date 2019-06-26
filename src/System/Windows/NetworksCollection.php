@@ -15,29 +15,19 @@ class NetworksCollection extends AbstractNetworksCollection
 {
     use Separable;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     const BSSID_KEY = 4;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     const EXTRACT_BSSID_KEY = 1;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     const ZERO_KEY = 0;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     const NETWORK_DESCRIPTION_ROWS_AMOUNT = 11;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     const NETWORK_DESCRIPTION_BLOCK_STEP = 1;
 
     /**

@@ -6,7 +6,7 @@ namespace Sanchescom\WiFi\System\Linux;
 
 use Exception;
 use Sanchescom\WiFi\System\AbstractNetwork;
-use Sanchescom\WiFi\System\CommandExecutor;
+use Sanchescom\WiFi\System\Command;
 
 /**
  * Class Network.
@@ -26,7 +26,7 @@ class Network extends AbstractNetwork
     {
         $format = 'LANG=C nmcli -w 10 device wifi connect "%s" password "%s" ifname "%s"';
 
-        $this->commandExecutor->execute(sprintf($format, $this->ssid, $password, $device));
+        $this->command->execute(sprintf($format, $this->ssid, $password, $device));
     }
 
     /**
@@ -36,17 +36,17 @@ class Network extends AbstractNetwork
      */
     public function disconnect(string $device): void
     {
-        $this->commandExecutor->execute(sprintf('LANG=C nmcli device disconnect %s', $device));
+        $this->command->execute(sprintf('LANG=C nmcli device disconnect %s', $device));
     }
 
     /**
      * @param array $network
      *
-     * @param CommandExecutor $commandExecutor
+     * @param Command $commandExecutor
      *
      * @return Network
      */
-    public function createFromArray(array $network, CommandExecutor $commandExecutor): AbstractNetwork
+    public function createFromArray(array $network, Command $commandExecutor): AbstractNetwork
     {
         $instance = new self($commandExecutor);
         $instance->ssid = $network[1];

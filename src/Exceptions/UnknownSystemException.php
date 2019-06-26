@@ -9,7 +9,7 @@ use RuntimeException;
 /**
  * Class UnknownSystem.
  */
-class UnknownSystem extends RuntimeException
+class UnknownSystemException extends RuntimeException
 {
     /**
      * UnknownSystem constructor.

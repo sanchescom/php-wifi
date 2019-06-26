@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi;
 
-use Sanchescom\WiFi\Exceptions\UnknownSystem;
+use Sanchescom\WiFi\Exceptions\UnknownSystemException;
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
-use Sanchescom\WiFi\System\CommandExecutor;
+use Sanchescom\WiFi\System\Command;
 use Sanchescom\WiFi\System\Linux\NetworksCollection as LinuxNetworks;
 use Sanchescom\WiFi\System\Mac\NetworksCollection as MacNetworks;
 use Sanchescom\WiFi\System\Windows\NetworksCollection as WindowsNetworks;
@@ -43,7 +43,7 @@ class WiFi
     /**
      * Getting instance on network collections depended on operation system.
      *
-     * @throws UnknownSystem
+     * @throws UnknownSystemException
      *
      * @return AbstractNetworksCollection
      */
@@ -56,7 +56,7 @@ class WiFi
         } elseif ($this->isLinux()) {
             return $this->linuxNetwork();
         } else {
-            throw new UnknownSystem();
+            throw new UnknownSystemException();
         }
     }
 
@@ -109,10 +109,10 @@ class WiFi
     }
 
     /**
-     * @return CommandExecutor
+     * @return Command
      */
     protected function getCommandExecutor()
     {
-        return new CommandExecutor();
+        return new Command();
     }
 }
