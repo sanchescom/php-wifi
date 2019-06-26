@@ -40,15 +40,14 @@ class Network extends AbstractNetwork
     }
 
     /**
-     * @param array $network
-     *
-     * @param Command $commandExecutor
+     * @param array   $network
+     * @param Command $command
      *
      * @return Network
      */
-    public function createFromArray(array $network, Command $commandExecutor): AbstractNetwork
+    public function createFromArray(array $network, Command $command): AbstractNetwork
     {
-        $instance = new self($commandExecutor);
+        $instance = new self($command);
         $instance->ssid = $network[1];
         $instance->bssid = $network[2];
         $instance->channel = (int) $network[4];

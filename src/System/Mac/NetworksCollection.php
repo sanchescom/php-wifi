@@ -6,7 +6,6 @@ namespace Sanchescom\WiFi\System\Mac;
 
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
 use Sanchescom\WiFi\System\Separable;
-use Sanchescom\WiFi\System\UtilityInterface;
 
 /**
  * Class NetworksCollection.

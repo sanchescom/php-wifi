@@ -12,7 +12,7 @@ class Command
 {
     /**
      * @param string $command
-     * @param bool $mergeStdErr
+     * @param bool   $mergeStdErr
      *
      * @return string
      */

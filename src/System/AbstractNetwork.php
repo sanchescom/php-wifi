@@ -101,10 +101,10 @@ abstract class AbstractNetwork
     abstract public function disconnect(string $device): void;
 
     /**
-     * @param array $network
-     * @param Command $commandExecutor
+     * @param array   $network
+     * @param Command $command
      *
      * @return AbstractNetwork
      */
-    abstract public function createFromArray(array $network, Command $commandExecutor): AbstractNetwork;
+    abstract public function createFromArray(array $network, Command $command): self;
 }

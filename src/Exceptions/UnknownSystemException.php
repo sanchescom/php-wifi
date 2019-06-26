@@ -16,6 +16,6 @@ class UnknownSystemException extends RuntimeException
      */
     public function __construct()
     {
-        parent::__construct("Operation system doesn't support: " . PHP_OS);
+        parent::__construct("Operation system doesn't support: ".PHP_OS);
     }
 }

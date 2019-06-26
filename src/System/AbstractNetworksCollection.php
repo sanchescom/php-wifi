@@ -73,10 +73,10 @@ abstract class AbstractNetworksCollection
         $this->networks = array_map(function (array $network) {
             return call_user_func_array([
                 $this->getNetwork(),
-                'createFromArray'
+                'createFromArray',
             ], [
                 $network,
-                $this->command
+                $this->command,
             ]);
 
         }, $networks);

@@ -25,14 +25,14 @@ class CommandException extends RuntimeException
      *
      * @param string $command
      * @param string $output
-     * @param int $returnCode
+     * @param int    $returnCode
      */
     public function __construct(string $command, string $output, int $returnCode)
     {
         if ($this->returnCode == 127) {
-            $message = 'Command not found: "' . $command . '"';
+            $message = 'Command not found: "'.$command.'"';
         } else {
-            $message = 'Command "' . $command . '" exited with code ' . $returnCode . ': ' . $output;
+            $message = 'Command "'.$command.'" exited with code '.$returnCode.': '.$output;
         }
 
         parent::__construct($message);
