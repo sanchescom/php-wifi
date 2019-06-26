@@ -6,11 +6,11 @@ namespace Sanchescom\WiFi;
 
 use Sanchescom\WiFi\Exceptions\UnknownSystemException;
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\Collection;
 use Sanchescom\WiFi\System\Command;
 use Sanchescom\WiFi\System\Linux\NetworksCollection as LinuxNetworks;
 use Sanchescom\WiFi\System\Mac\NetworksCollection as MacNetworks;
 use Sanchescom\WiFi\System\Windows\NetworksCollection as WindowsNetworks;
-use Tightenco\Collect\Support\Collection;
 
 /**
  * Class WiFi.

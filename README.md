@@ -34,7 +34,7 @@ class Example
      */
     public function getAllNetworks()
     {
-        $networks = WiFi::scan();
+        $networks = WiFi::scan()->getAll();
 
         foreach ($networks as $network) {
             echo $network . "\n";
@@ -44,16 +44,13 @@ class Example
     /**
      * @param $ssid
      * @param $password
-     * @throws Exception
      */
     public function connect($ssid, $password)
     {
-        $networks = WiFi::scan()->where('bssid', $ssid);
-
-        if ($networks->isNotEmpty()) {
-            $networks->first()->connect($password, $this->device);
-        } else {
-            echo "Network $ssid wasn't found!\r\n";
+        try {
+            WiFi::scan()->getBySsid($ssid)->connect($password, $this->device);
+        } catch (Exception $exception) {
+            echo $this->error($exception->getMessage());
         }
     }
 
@@ -62,7 +59,7 @@ class Example
      */
     public function disconnect()
     {
-        $networks = WiFi::scan()->where('connected', true);
+        $networks = WiFi::scan()->getConnected();
 
         foreach ($networks as $network) {
             $network->disconnect($this->device);

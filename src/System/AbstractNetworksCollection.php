@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System;
 
 use Exception;
-use Tightenco\Collect\Support\Collection;
 
 /**
  * Class AbstractNetworksCollection.
@@ -60,7 +59,7 @@ abstract class AbstractNetworksCollection
             $this->extractingNetworks($output)
         );
 
-        return collect($this->networks);
+        return new Collection($this->networks);
     }
 
     /**

@@ -69,9 +69,9 @@ class WiFi extends CLI
         switch ($options->getCmd()) {
             case 'list':
                 if ($options->getOpt('connected')) {
-                    $networks = \Sanchescom\WiFi\WiFi::scan()->where('connected', true);
+                    $networks = \Sanchescom\WiFi\WiFi::scan()->getConnected();
                 } else {
-                    $networks = \Sanchescom\WiFi\WiFi::scan();
+                    $networks = \Sanchescom\WiFi\WiFi::scan()->getAll();
                 }
 
                 $table = new \LucidFrame\Console\ConsoleTable();
@@ -101,24 +101,26 @@ class WiFi extends CLI
                 }
 
                 $table->hideBorder()->display();
-
                 break;
             case 'connect':
-                $networks = \Sanchescom\WiFi\WiFi::scan()->where('bssid', $options->getOpt('bssid'));
-
-                if ($networks->isNotEmpty()) {
-                    $networks->first()->connect($options->getOpt('password'), $options->getOpt('device'));
-                } else {
-                    $this->error('Unknown network, try to find another one');
+                try {
+                    \Sanchescom\WiFi\WiFi::scan()
+                        ->getByBssid($options->getOpt('bssid'))
+                        ->connect(
+                                $options->getOpt('password'),
+                                $options->getOpt('device')
+                        );
+                } catch (Exception $exception) {
+                    $this->error($exception->getMessage());
                 }
                 break;
             case 'disconnect':
-                $networks = \Sanchescom\WiFi\WiFi::scan()->where('bssid', $options->getOpt('bssid'));
-
-                if ($networks->isNotEmpty()) {
-                    $networks->first()->disconnect($options->getOpt('device'));
-                } else {
-                    $this->error('Unknown network, try to find another one');
+                try {
+                    \Sanchescom\WiFi\WiFi::scan()
+                        ->getByBssid($options->getOpt('bssid'))
+                        ->disconnect($options->getOpt('device'));
+                } catch (Exception $exception) {
+                    $this->error($exception->getMessage());
                 }
                 break;
             default:
