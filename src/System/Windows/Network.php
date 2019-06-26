@@ -55,12 +55,12 @@ class Network extends AbstractNetwork
         $instance = new self($command);
         $instance->ssid = $network[0];
         $instance->bssid = $network[4];
-        $instance->channel = (int)$network[7];
+        $instance->channel = (int) $network[7];
         $instance->security = $network[2];
         $instance->securityFlags = $network[3];
-        $instance->quality = (int)$network[5];
+        $instance->quality = (int) $network[5];
         $instance->frequency = $instance->getFrequency();
-        $instance->dbm = to_dbm((int)$network[5]);
+        $instance->dbm = to_dbm((int) $network[5]);
         $instance->connected = isset($network[10]);
 
         return $instance;

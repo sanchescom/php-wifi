@@ -78,7 +78,6 @@ abstract class AbstractNetworksCollection
                 $network,
                 $this->command,
             ]);
-
         }, $networks);
     }
 
