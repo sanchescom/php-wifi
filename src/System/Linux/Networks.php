@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Linux;
 
-use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\AbstractNetworks;
 
 /**
- * Class NetworksCollection.
+ * Class Networks.
  */
-class NetworksCollection extends AbstractNetworksCollection
+class Networks extends AbstractNetworks
 {
     /**
      * @var int

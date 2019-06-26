@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi;
 
 use Sanchescom\WiFi\Exceptions\UnknownSystemException;
-use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\AbstractNetworks;
 use Sanchescom\WiFi\System\Collection;
 use Sanchescom\WiFi\System\Command;
-use Sanchescom\WiFi\System\Linux\NetworksCollection as LinuxNetworks;
-use Sanchescom\WiFi\System\Mac\NetworksCollection as MacNetworks;
-use Sanchescom\WiFi\System\Windows\NetworksCollection as WindowsNetworks;
+use Sanchescom\WiFi\System\Linux\Networks as LinuxNetworks;
+use Sanchescom\WiFi\System\Mac\Networks as MacNetworks;
+use Sanchescom\WiFi\System\Windows\Networks as WindowsNetworks;
 
 /**
  * Class WiFi.
@@ -45,9 +45,9 @@ class WiFi
      *
      * @throws UnknownSystemException
      *
-     * @return AbstractNetworksCollection
+     * @return AbstractNetworks
      */
-    protected function getSystemNetwork(): AbstractNetworksCollection
+    protected function getSystemNetwork(): AbstractNetworks
     {
         if ($this->isWindows()) {
             return $this->windowsNetwork();
@@ -87,7 +87,7 @@ class WiFi
     /**
      * @return WindowsNetworks
      */
-    protected function windowsNetwork(): AbstractNetworksCollection
+    protected function windowsNetwork(): AbstractNetworks
     {
         return new WindowsNetworks($this->getCommandExecutor());
     }
@@ -95,7 +95,7 @@ class WiFi
     /**
      * @return MacNetworks
      */
-    protected function macNetwork(): AbstractNetworksCollection
+    protected function macNetwork(): AbstractNetworks
     {
         return new MacNetworks($this->getCommandExecutor());
     }
@@ -103,7 +103,7 @@ class WiFi
     /**
      * @return LinuxNetworks
      */
-    protected function linuxNetwork(): AbstractNetworksCollection
+    protected function linuxNetwork(): AbstractNetworks
     {
         return new LinuxNetworks($this->getCommandExecutor());
     }

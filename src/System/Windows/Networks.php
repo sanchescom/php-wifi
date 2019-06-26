@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Windows;
 
-use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\AbstractNetworks;
 use Sanchescom\WiFi\System\Separable;
 
 /**
- * Class NetworksCollection.
+ * Class Networks.
  * {@inheritdoc}
  */
-class NetworksCollection extends AbstractNetworksCollection
+class Networks extends AbstractNetworks
 {
     use Separable;
 
@@ -74,7 +74,7 @@ class NetworksCollection extends AbstractNetworksCollection
 
                 list($i, $k) = $this->nextNetwork($k);
             } else {
-                $groupedNetworks[$k][] = $this->extractingDataFromString($availableNetworks[$j]);
+                $groupedNetworks[$k][] = extract_after($availableNetworks[$j]);
             }
         }
 
@@ -117,18 +117,5 @@ class NetworksCollection extends AbstractNetworksCollection
     private function nextNetwork(int $nextRowIndex): array
     {
         return [self::NETWORK_DESCRIPTION_ROWS_AMOUNT, $nextRowIndex + self::NETWORK_DESCRIPTION_BLOCK_STEP];
-    }
-
-    /**
-     * @param string $row
-     *
-     * @return string
-     */
-    private function extractingDataFromString(string $row): string
-    {
-        $title = strtok($row, ':') ?: '';
-        $value = substr($row, strlen($title));
-
-        return trim(ltrim($value, ':'));
     }
 }

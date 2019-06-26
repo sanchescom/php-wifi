@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Mac;
 
-use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\AbstractNetworks;
 use Sanchescom\WiFi\System\Separable;
 
 /**
- * Class NetworksCollection.
+ * Class Networks.
  */
-class NetworksCollection extends AbstractNetworksCollection
+class Networks extends AbstractNetworks
 {
     use Separable;
 

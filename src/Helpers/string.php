@@ -57,3 +57,21 @@ if (!function_exists('glue_commands')) {
         return implode(' && ', $commands);
     }
 }
+
+if (!function_exists('extract_after')) {
+    /**
+     * Get string content after.
+     *
+     * @param string $string
+     * @param string $char
+     *
+     * @return string
+     */
+    function extract_after(string $string, string $char = ":"): string
+    {
+        $title = strtok($string, $char) ?: '';
+        $value = substr($string, strlen($title));
+
+        return trim(ltrim($value, $char));
+    }
+}

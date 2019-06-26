@@ -7,9 +7,9 @@ namespace Sanchescom\WiFi\System;
 use Exception;
 
 /**
- * Class AbstractNetworksCollection.
+ * Class AbstractNetworks.
  */
-abstract class AbstractNetworksCollection
+abstract class AbstractNetworks
 {
     /**
      * @var AbstractNetwork[]
@@ -37,7 +37,7 @@ abstract class AbstractNetworksCollection
     abstract protected function getCommand(): string;
 
     /**
-     * AbstractNetworksCollection constructor.
+     * AbstractNetworks constructor.
      *
      * @param Command $command
      */
