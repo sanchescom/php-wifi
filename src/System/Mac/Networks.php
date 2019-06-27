@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Mac;
 
+use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\AbstractNetworks;
 use Sanchescom\WiFi\System\Separable;
 
@@ -30,11 +31,11 @@ class Networks extends AbstractNetworks
     }
 
     /**
-     * @return string
+     * @inheritdoc
      */
-    protected function getNetwork():? string
+    protected function getNetwork(): AbstractNetwork
     {
-        return Network::class;
+        return new Network($this->command);
     }
 
     /**

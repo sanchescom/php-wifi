@@ -6,7 +6,6 @@ namespace Sanchescom\WiFi\System\Windows;
 
 use Exception;
 use Sanchescom\WiFi\System\AbstractNetwork;
-use Sanchescom\WiFi\System\Command;
 use Sanchescom\WiFi\System\Frequency;
 
 /**
@@ -45,25 +44,23 @@ class Network extends AbstractNetwork
     }
 
     /**
-     * @param array   $network
-     * @param Command $command
+     * @param array $network
      *
      * @return Network
      */
-    public function createFromArray(array $network, Command $command): AbstractNetwork
+    public function createFromArray(array $network): AbstractNetwork
     {
-        $instance = new self($command);
-        $instance->ssid = $network[0];
-        $instance->bssid = $network[4];
-        $instance->channel = (int) $network[7];
-        $instance->security = $network[2];
-        $instance->securityFlags = $network[3];
-        $instance->quality = (int) $network[5];
-        $instance->frequency = $instance->getFrequency();
-        $instance->dbm = to_dbm((int) $network[5]);
-        $instance->connected = isset($network[10]);
+        $this->ssid = $network[0];
+        $this->bssid = $network[4];
+        $this->channel = (int) $network[7];
+        $this->security = $network[2];
+        $this->securityFlags = $network[3];
+        $this->quality = (int) $network[5];
+        $this->frequency = $this->getFrequency();
+        $this->dbm = to_dbm((int) $network[5]);
+        $this->connected = isset($network[10]);
 
-        return $instance;
+        return $this;
     }
 
     /**

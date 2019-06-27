@@ -27,9 +27,9 @@ abstract class AbstractNetworks
     abstract protected function extractingNetworks(string $output): array;
 
     /**
-     * @return string
+     * @return AbstractNetwork
      */
-    abstract protected function getNetwork():? string;
+    abstract protected function getNetwork(): AbstractNetwork;
 
     /**
      * @return string
@@ -70,13 +70,7 @@ abstract class AbstractNetworks
     protected function setNetworks(array $networks): void
     {
         $this->networks = array_map(function (array $network) {
-            return call_user_func_array([
-                $this->getNetwork(),
-                'createFromArray',
-            ], [
-                $network,
-                $this->command,
-            ]);
+            return $this->getNetwork()->createFromArray($network);
         }, $networks);
     }
 

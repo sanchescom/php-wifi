@@ -10,6 +10,18 @@ namespace Sanchescom\WiFi\System;
 abstract class AbstractNetwork
 {
     /** @var string */
+    const WPA2_SECURITY = 'WPA2';
+
+    /** @var string */
+    const WPA_SECURITY = 'WPA';
+
+    /** @var string */
+    const WEP_SECURITY = 'WEP';
+
+    /** @var string */
+    const UNKNOWN_SECURITY = 'Unknown';
+
+    /** @var string */
     public $bssid;
 
     /** @var string */
@@ -38,9 +50,9 @@ abstract class AbstractNetwork
 
     /** @var array */
     protected static $securityTypes = [
-        'WPA2',
-        'WPA',
-        'WEP',
+        self::WPA2_SECURITY,
+        self::WPA_SECURITY,
+        self::WEP_SECURITY,
     ];
 
     /** @var Command */
@@ -61,7 +73,7 @@ abstract class AbstractNetwork
      */
     public function getSecurityType(): string
     {
-        $securityType = 'Unknown';
+        $securityType = self::UNKNOWN_SECURITY;
 
         foreach (self::$securityTypes as $securityType) {
             if (strpos($this->security, $securityType) !== false) {
@@ -101,10 +113,9 @@ abstract class AbstractNetwork
     abstract public function disconnect(string $device): void;
 
     /**
-     * @param array   $network
-     * @param Command $command
+     * @param array $network
      *
      * @return AbstractNetwork
      */
-    abstract public function createFromArray(array $network, Command $command): self;
+    abstract public function createFromArray(array $network): self;
 }

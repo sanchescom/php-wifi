@@ -6,7 +6,6 @@ namespace Sanchescom\WiFi\System\Linux;
 
 use Exception;
 use Sanchescom\WiFi\System\AbstractNetwork;
-use Sanchescom\WiFi\System\Command;
 
 /**
  * Class Network.
@@ -40,24 +39,22 @@ class Network extends AbstractNetwork
     }
 
     /**
-     * @param array   $network
-     * @param Command $command
+     * @param array $network
      *
      * @return Network
      */
-    public function createFromArray(array $network, Command $command): AbstractNetwork
+    public function createFromArray(array $network): AbstractNetwork
     {
-        $instance = new self($command);
-        $instance->ssid = $network[1];
-        $instance->bssid = $network[2];
-        $instance->channel = (int) $network[4];
-        $instance->security = $network[7];
-        $instance->securityFlags = $network[8].' '.$network[9];
-        $instance->dbm = $network[6];
-        $instance->quality = to_quality($network[6]);
-        $instance->frequency = (int) $network[5];
-        $instance->connected = ($network[0] == self::POSITIVE_CONNECTION_FLAG);
+        $this->ssid = $network[1];
+        $this->bssid = $network[2];
+        $this->channel = (int) $network[4];
+        $this->security = $network[7];
+        $this->securityFlags = $network[8].' '.$network[9];
+        $this->dbm = $network[6];
+        $this->quality = to_quality($network[6]);
+        $this->frequency = (int) $network[5];
+        $this->connected = ($network[0] == self::POSITIVE_CONNECTION_FLAG);
 
-        return $instance;
+        return $this;
     }
 }
