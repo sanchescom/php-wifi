@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Windows;
 
+use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\AbstractNetworksCollection;
 use Sanchescom\WiFi\System\Separable;
 
@@ -44,11 +45,11 @@ class NetworksCollection extends AbstractNetworksCollection
     }
 
     /**
-     * @return string
+     * @inheritdoc
      */
-    protected function getNetwork(): ?string
+    protected function getNetwork(): AbstractNetwork
     {
-        return Network::class;
+        return new Network($this->command);
     }
 
     /**
