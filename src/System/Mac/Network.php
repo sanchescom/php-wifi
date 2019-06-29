@@ -4,64 +4,62 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Mac;
 
-use Exception;
-use pastuhov\Command\Command;
 use Sanchescom\WiFi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\Frequency;
 
 /**
  * Class Network.
  */
 class Network extends AbstractNetwork
 {
-    use UtilityTrait;
+    use Frequency;
 
     /**
      * @param string $password
      * @param string $device
      *
-     * @throws Exception
+     * @throws \Exception
      */
     public function connect(string $password, string $device): void
     {
-        Command::exec(
-            sprintf($this->getUtility().' -setairportnetwork %s %s %s', $device, $this->ssid, $password)
+        $this->command->execute(
+            sprintf('networksetup -setairportnetwork %s %s %s', $device, $this->ssid, $password)
         );
     }
 
     /**
      * @param string $device
      *
-     * @throws Exception
+     * @throws \Exception
      */
     public function disconnect(string $device): void
     {
-        Command::exec(
-            implode(' && ', [
-                sprintf($this->getUtility().' -removepreferredwirelessnetwork %s %s', $device, $this->ssid),
-                sprintf($this->getUtility().' -setairportpower %s %s', $device, 'off'),
-                sprintf($this->getUtility().' -setairportpower %s %s', $device, 'on'),
-            ])
+        $this->command->execute(
+            glue_commands(
+                sprintf('networksetup -removepreferredwirelessnetwork %s %s', $device, $this->ssid),
+                sprintf('networksetup -setairportpower %s %s', $device, 'off'),
+                sprintf('networksetup -setairportpower %s %s', $device, 'on')
+            )
         );
     }
 
     /**
      * @param array $network
      *
-     * @return Network
+     * @return \Sanchescom\WiFi\System\Mac\Network
      */
-    public static function createFromArray(array $network): AbstractNetwork
+    public function createFromArray(array $network): AbstractNetwork
     {
-        $instance = new self();
-        $instance->ssid = $network[0];
-        $instance->bssid = $network[1];
-        $instance->channel = (int) $network[3];
-        $instance->security = $network[6];
-        $instance->securityFlags = $network[5];
-        $instance->quality = $network[2];
-        $instance->frequency = $instance->getFrequency();
-        $instance->dbm = $instance->qualityToDBm();
-        $instance->connected = isset($network[7]);
+        $this->ssid = $network[0];
+        $this->bssid = $network[1];
+        $this->channel = (int) $network[3];
+        $this->security = $network[6];
+        $this->securityFlags = $network[5];
+        $this->quality = $network[2];
+        $this->frequency = $this->getFrequency();
+        $this->dbm = to_dbm((int) $network[2]);
+        $this->connected = isset($network[7]);
 
-        return $instance;
+        return $this;
     }
 }

@@ -9,84 +9,71 @@ namespace Sanchescom\WiFi\System;
  */
 abstract class AbstractNetwork
 {
-    /**
-     * @var string
-     */
+    /** @var string */
+    const WPA2_SECURITY = 'WPA2';
+
+    /** @var string */
+    const WPA_SECURITY = 'WPA';
+
+    /** @var string */
+    const WEP_SECURITY = 'WEP';
+
+    /** @var string */
+    const UNKNOWN_SECURITY = 'Unknown';
+
+    /** @var string */
     public $bssid;
 
-    /**
-     * @var string
-     */
+    /** @var string */
     public $ssid;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     public $channel;
 
-    /**
-     * @var float
-     */
+    /** @var float */
     public $quality;
 
-    /**
-     * @var float
-     */
+    /** @var float */
     public $dbm;
 
-    /**
-     * @var string
-     */
+    /** @var string */
     public $security;
 
-    /**
-     * @var string
-     */
+    /** @var string */
     public $securityFlags;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     public $frequency;
 
-    /**
-     * @var bool
-     */
+    /** @var bool */
     public $connected;
 
-    /**
-     * @var array
-     */
+    /** @var array */
     protected static $securityTypes = [
-        'WPA2',
-        'WPA',
-        'WEP',
+        self::WPA2_SECURITY,
+        self::WPA_SECURITY,
+        self::WEP_SECURITY,
     ];
 
-    /**
-     * @param string $password
-     * @param string $device
-     */
-    abstract public function connect(string $password, string $device): void;
+    /** @var Command */
+    protected $command;
 
     /**
-     * @param string $device
-     */
-    abstract public function disconnect(string $device): void;
-
-    /**
-     * @param array $network
+     * AbstractNetwork constructor.
      *
-     * @return AbstractNetwork
+     * @param \Sanchescom\WiFi\System\Command $command
      */
-    abstract public static function createFromArray(array $network): self;
+    public function __construct(Command $command)
+    {
+        $this->command = $command;
+    }
 
     /**
      * @return string
      */
     public function getSecurityType(): string
     {
-        $securityType = 'Unknown';
+        $securityType = self::UNKNOWN_SECURITY;
 
         foreach (self::$securityTypes as $securityType) {
             if (strpos($this->security, $securityType) !== false) {
@@ -95,14 +82,6 @@ abstract class AbstractNetwork
         }
 
         return $securityType;
-    }
-
-    /**
-     * @return int
-     */
-    public function getFrequency(): int
-    {
-        return $this->getFrequencyGenerator()->getFrequencyForChannel($this->channel);
     }
 
     /**
@@ -123,26 +102,20 @@ abstract class AbstractNetwork
     }
 
     /**
-     * @return FrequencyGenerator
+     * @param string $password
+     * @param string $device
      */
-    protected function getFrequencyGenerator(): FrequencyGenerator
-    {
-        return new FrequencyGenerator();
-    }
+    abstract public function connect(string $password, string $device): void;
 
     /**
-     * @return float
+     * @param string $device
      */
-    protected function dBmToQuality(): float
-    {
-        return 2 * ($this->dbm + 100);
-    }
+    abstract public function disconnect(string $device): void;
 
     /**
-     * @return float
+     * @param array $network
+     *
+     * @return \Sanchescom\WiFi\System\AbstractNetwork
      */
-    protected function qualityToDBm(): float
-    {
-        return ($this->quality / 2) - 100;
-    }
+    abstract public function createFromArray(array $network): self;
 }

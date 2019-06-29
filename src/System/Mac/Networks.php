@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Mac;
 
-use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\AbstractNetworks;
 use Sanchescom\WiFi\System\Separable;
-use Sanchescom\WiFi\System\UtilityInterface;
 
 /**
- * Class NetworksCollection.
+ * Class Networks.
  */
-class NetworksCollection extends AbstractNetworksCollection implements UtilityInterface
+class Networks extends AbstractNetworks
 {
     use Separable;
 
@@ -23,29 +23,19 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
     /**
      * @return string
      */
-    public function getUtility()
-    {
-        return '/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport';
-    }
-
-    /**
-     * @return string
-     */
     protected function getCommand(): string
     {
-        return implode(' && ', [
-            $this->getUtility().' -s',
-            'echo "'.$this->separator.'"',
-            $this->getUtility().' --getinfo',
-        ]);
+        $utility = '/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport';
+
+        return sprintf('%s -s && echo "%s" && %s --getinfo', $utility, $this->separator, $utility);
     }
 
     /**
-     * @return string
+     * {@inheritdoc}
      */
-    protected function getNetwork():? string
+    protected function getNetwork(): AbstractNetwork
     {
-        return Network::class;
+        return new Network($this->command);
     }
 
     /**
@@ -66,7 +56,7 @@ class NetworksCollection extends AbstractNetworksCollection implements UtilityIn
         array_walk($availableNetworks, function (&$networkData) use ($currentBssid) {
             $networkData = $this->extractingDataFromString($networkData);
 
-            if ($this->isConnected($networkData[self::BSSID_KEY], $currentBssid)) {
+            if (in_array($networkData[self::BSSID_KEY], $currentBssid)) {
                 array_push($networkData, true);
             }
         });

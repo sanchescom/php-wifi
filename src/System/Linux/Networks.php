@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Linux;
 
-use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\AbstractNetworks;
 
 /**
- * Class NetworksCollection.
+ * Class Networks.
  */
-class NetworksCollection extends AbstractNetworksCollection
+class Networks extends AbstractNetworks
 {
-    use UtilityTrait;
-
     /**
      * @var int
      */
@@ -23,28 +22,24 @@ class NetworksCollection extends AbstractNetworksCollection
      */
     protected function getCommand(): string
     {
-        $options =
-            ' --terse'.
-            ' --fields '.
-            'active,ssid,bssid,'.
-            'mode,chan,freq,'.
-            'signal,security,wpa-flags,'.
-            'rsn-flags'.
-            ' device'.
-            ' wifi'.
-            ' list';
-
-        return implode(' && ', [
-            $this->getUtility().$options,
-        ]);
+        return 'LANG=C nmcli '
+            .' --terse'
+            .' --fields '
+            .'active,ssid,bssid,'
+            .'mode,chan,freq,'
+            .'signal,security,wpa-flags,'
+            .'rsn-flags'
+            .' device'
+            .' wifi'
+            .' list';
     }
 
     /**
-     * @return string
+     * {@inheritdoc}
      */
-    protected function getNetwork():? string
+    protected function getNetwork(): AbstractNetwork
     {
-        return Network::class;
+        return new Network($this->command);
     }
 
     /**

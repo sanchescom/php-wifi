@@ -4,40 +4,31 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Windows;
 
-use Sanchescom\WiFi\System\AbstractNetworksCollection;
+use Sanchescom\WiFi\System\AbstractNetwork;
+use Sanchescom\WiFi\System\AbstractNetworks;
 use Sanchescom\WiFi\System\Separable;
 
 /**
- * Class NetworksCollection.
+ * Class Networks.
  * {@inheritdoc}
  */
-class NetworksCollection extends AbstractNetworksCollection
+class Networks extends AbstractNetworks
 {
-    use Separable, UtilityTrait;
+    use Separable;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     const BSSID_KEY = 4;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     const EXTRACT_BSSID_KEY = 1;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     const ZERO_KEY = 0;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     const NETWORK_DESCRIPTION_ROWS_AMOUNT = 11;
 
-    /**
-     * @var int
-     */
+    /** @var int */
     const NETWORK_DESCRIPTION_BLOCK_STEP = 1;
 
     /**
@@ -45,20 +36,20 @@ class NetworksCollection extends AbstractNetworksCollection
      */
     protected function getCommand(): string
     {
-        return implode(' && ', [
+        return glue_commands(
             'chcp 65001',
-            $this->getUtility().' show networks mode=Bssid',
+            'netsh wlan show networks mode=Bssid',
             'echo '.$this->separator,
-            $this->getUtility().' show interfaces',
-        ]);
+            'netsh wlan show interfaces'
+        );
     }
 
     /**
-     * @return string
+     * {@inheritdoc}
      */
-    protected function getNetwork(): ?string
+    protected function getNetwork(): AbstractNetwork
     {
-        return Network::class;
+        return new Network($this->command);
     }
 
     /**
@@ -84,7 +75,7 @@ class NetworksCollection extends AbstractNetworksCollection
 
                 list($i, $k) = $this->nextNetwork($k);
             } else {
-                $groupedNetworks[$k][] = $this->extractingDataFromString($availableNetworks[$j]);
+                $groupedNetworks[$k][] = extract_after($availableNetworks[$j]);
             }
         }
 
@@ -100,7 +91,7 @@ class NetworksCollection extends AbstractNetworksCollection
      */
     private function checkNetworkConnection(array &$groupedNetworks, array $currentBssid, int $networkBlockIndex): void
     {
-        if ($this->isConnected($groupedNetworks[$networkBlockIndex][self::BSSID_KEY], $currentBssid)) {
+        if (in_array($groupedNetworks[$networkBlockIndex][self::BSSID_KEY], $currentBssid)) {
             $groupedNetworks[$networkBlockIndex][] = true;
         }
     }
@@ -127,18 +118,5 @@ class NetworksCollection extends AbstractNetworksCollection
     private function nextNetwork(int $nextRowIndex): array
     {
         return [self::NETWORK_DESCRIPTION_ROWS_AMOUNT, $nextRowIndex + self::NETWORK_DESCRIPTION_BLOCK_STEP];
-    }
-
-    /**
-     * @param string $row
-     *
-     * @return string
-     */
-    private function extractingDataFromString(string $row): string
-    {
-        $title = strtok($row, ':') ?: '';
-        $value = substr($row, strlen($title));
-
-        return trim(ltrim($value, ':'));
     }
 }

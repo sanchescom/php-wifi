@@ -26,7 +26,6 @@ if (file_exists(__DIR__ . '/../../vendor/autoload.php')) {
 
 use splitbrain\phpcli\CLI;
 use splitbrain\phpcli\Options;
-use splitbrain\phpcli\TableFormatter;
 
 /**
  * Class Wifi.
@@ -75,13 +74,9 @@ class WiFi extends CLI
                     $networks = \Sanchescom\WiFi\WiFi::scan()->getAll();
                 }
 
-                $table = new TableFormatter($this->colors);
-                $table->setBorder(' | ');
-                $table->setMaxWidth(200);
-
-                echo $table->format(
-                    ['40', '20', '7', '7', '8', '10', '10', '*'],
-                    [
+                $table = new \LucidFrame\Console\ConsoleTable();
+                $table
+                    ->setHeaders([
                         'SSID',
                         'BSSID',
                         'Channel',
@@ -90,44 +85,42 @@ class WiFi extends CLI
                         'Frequency',
                         'Connected',
                         'Security',
-                    ]
-                );
+                    ]);
 
                 foreach ($networks as $network) {
-                    echo $table->format(
-                        ['40', '20', '7', '7', '8', '10', '10', '*'],
-                        [
-                            $network->ssid,
-                            $network->bssid,
-                            $network->channel,
-                            $network->quality,
-                            $network->dbm,
-                            $network->frequency,
-                            var_export($network->connected, true),
-                            $network->security,
-                        ]
-                    );
+                    $table->addRow([
+                        $network->ssid,
+                        $network->bssid,
+                        $network->channel,
+                        $network->quality,
+                        $network->dbm,
+                        $network->frequency,
+                        var_export($network->connected, true),
+                        $network->security,
+                    ]);
                 }
 
+                $table->hideBorder()->display();
                 break;
             case 'connect':
-                $networks = \Sanchescom\WiFi\WiFi::scan()
-                    ->getByBssid($options->getOpt('bssid'));
-
-                if ($networks) {
-                    $networks[0]->connect($options->getOpt('password'), $options->getOpt('device'));
-                } else {
-                    $this->error('Unknown network, try to find another one');
+                try {
+                    \Sanchescom\WiFi\WiFi::scan()
+                        ->getByBssid($options->getOpt('bssid'))
+                        ->connect(
+                                $options->getOpt('password'),
+                                $options->getOpt('device')
+                        );
+                } catch (Exception $exception) {
+                    $this->error($exception->getMessage());
                 }
                 break;
             case 'disconnect':
-                $networks = \Sanchescom\WiFi\WiFi::scan()
-                    ->getByBssid($options->getOpt('bssid'));
-
-                if ($networks) {
-                    $networks[0]->disconnect($options->getOpt('device'));
-                } else {
-                    $this->error('Unknown network, try to find another one');
+                try {
+                    \Sanchescom\WiFi\WiFi::scan()
+                        ->getByBssid($options->getOpt('bssid'))
+                        ->disconnect($options->getOpt('device'));
+                } catch (Exception $exception) {
+                    $this->error($exception->getMessage());
                 }
                 break;
             default:
@@ -135,8 +128,6 @@ class WiFi extends CLI
                 echo $options->help();
                 exit;
         }
-
-
     }
 }
 

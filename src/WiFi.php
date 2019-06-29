@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi;
 
-use Sanchescom\WiFi\Exceptions\UnknownSystem;
-use Sanchescom\WiFi\System\AbstractNetworksCollection;
-use Sanchescom\WiFi\System\Linux\NetworksCollection as LinuxNetworks;
-use Sanchescom\WiFi\System\Mac\NetworksCollection as MacNetworks;
-use Sanchescom\WiFi\System\Windows\NetworksCollection as WindowsNetworks;
+use Sanchescom\WiFi\Exceptions\UnknownSystemException;
+use Sanchescom\WiFi\System\AbstractNetworks;
+use Sanchescom\WiFi\System\Collection;
+use Sanchescom\WiFi\System\Command;
+use Sanchescom\WiFi\System\Linux\Networks as LinuxNetworks;
+use Sanchescom\WiFi\System\Mac\Networks as MacNetworks;
+use Sanchescom\WiFi\System\Windows\Networks as WindowsNetworks;
 
 /**
  * Class WiFi.
@@ -31,9 +33,9 @@ class WiFi
     const OS_OSX = 'DAR';
 
     /**
-     * @return AbstractNetworksCollection
+     * @return Collection
      */
-    public static function scan(): AbstractNetworksCollection
+    public static function scan(): Collection
     {
         return (new static())->getSystemNetwork()->scan();
     }
@@ -41,11 +43,11 @@ class WiFi
     /**
      * Getting instance on network collections depended on operation system.
      *
-     * @throws UnknownSystem
+     * @throws \Sanchescom\WiFi\Exceptions\UnknownSystemException
      *
-     * @return AbstractNetworksCollection
+     * @return \Sanchescom\WiFi\System\AbstractNetworks
      */
-    protected function getSystemNetwork(): AbstractNetworksCollection
+    protected function getSystemNetwork(): AbstractNetworks
     {
         if ($this->isWindows()) {
             return $this->windowsNetwork();
@@ -54,7 +56,7 @@ class WiFi
         } elseif ($this->isLinux()) {
             return $this->linuxNetwork();
         } else {
-            throw new UnknownSystem("Operation system doesn't support");
+            throw new UnknownSystemException();
         }
     }
 
@@ -83,26 +85,34 @@ class WiFi
     }
 
     /**
-     * @return WindowsNetworks
+     * @return \Sanchescom\WiFi\System\Windows\Networks
      */
-    protected function windowsNetwork(): AbstractNetworksCollection
+    protected function windowsNetwork(): AbstractNetworks
     {
-        return new WindowsNetworks();
+        return new WindowsNetworks($this->getCommandExecutor());
     }
 
     /**
-     * @return MacNetworks
+     * @return \Sanchescom\WiFi\System\Mac\Networks
      */
-    protected function macNetwork(): AbstractNetworksCollection
+    protected function macNetwork(): AbstractNetworks
     {
-        return new MacNetworks();
+        return new MacNetworks($this->getCommandExecutor());
     }
 
     /**
-     * @return LinuxNetworks
+     * @return \Sanchescom\WiFi\System\Linux\Networks
      */
-    protected function linuxNetwork(): AbstractNetworksCollection
+    protected function linuxNetwork(): AbstractNetworks
     {
-        return new LinuxNetworks();
+        return new LinuxNetworks($this->getCommandExecutor());
+    }
+
+    /**
+     * @return \Sanchescom\WiFi\System\Command
+     */
+    protected function getCommandExecutor()
+    {
+        return new Command();
     }
 }
