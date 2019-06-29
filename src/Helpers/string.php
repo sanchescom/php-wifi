@@ -67,7 +67,7 @@ if (!function_exists('extract_after')) {
      *
      * @return string
      */
-    function extract_after(string $string, string $char = ":"): string
+    function extract_after(string $string, string $char = ':'): string
     {
         $title = strtok($string, $char) ?: '';
         $value = substr($string, strlen($title));
