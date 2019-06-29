@@ -61,7 +61,7 @@ abstract class AbstractNetwork
     /**
      * AbstractNetwork constructor.
      *
-     * @param Command $command
+     * @param \Sanchescom\WiFi\System\Command $command
      */
     public function __construct(Command $command)
     {
@@ -115,7 +115,7 @@ abstract class AbstractNetwork
     /**
      * @param array $network
      *
-     * @return AbstractNetwork
+     * @return \Sanchescom\WiFi\System\AbstractNetwork
      */
     abstract public function createFromArray(array $network): self;
 }

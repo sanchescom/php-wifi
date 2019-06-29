@@ -35,7 +35,7 @@ class Networks extends AbstractNetworks
     }
 
     /**
-     * @inheritdoc
+     * {@inheritdoc}
      */
     protected function getNetwork(): AbstractNetwork
     {

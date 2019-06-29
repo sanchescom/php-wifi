@@ -11,7 +11,7 @@ use Tightenco\Collect\Support\Collection as BaseCollection;
 class Collection extends BaseCollection
 {
     /**
-     * @return AbstractNetwork[]
+     * @return \Sanchescom\WiFi\System\AbstractNetwork[]
      */
     public function getAll()
     {
@@ -19,11 +19,11 @@ class Collection extends BaseCollection
     }
 
     /**
-     * @param $ssid
+     * @param string $ssid
      *
-     * @return AbstractNetwork
+     * @return \Sanchescom\WiFi\System\AbstractNetwork
      */
-    public function getBySsid($ssid)
+    public function getBySsid(string $ssid)
     {
         return $this->where('ssid', $ssid)->firstOrFail();
     }
@@ -31,7 +31,7 @@ class Collection extends BaseCollection
     /**
      * @param string $bssid
      *
-     * @return AbstractNetwork
+     * @return \Sanchescom\WiFi\System\AbstractNetwork
      */
     public function getByBssid(string $bssid)
     {
@@ -39,7 +39,7 @@ class Collection extends BaseCollection
     }
 
     /**
-     * @return AbstractNetwork[]
+     * @return \Sanchescom\WiFi\System\AbstractNetwork[]
      */
     public function getConnected()
     {
@@ -47,9 +47,9 @@ class Collection extends BaseCollection
     }
 
     /**
-     * @throws NetworkNotFoundException
+     * @throws \Sanchescom\WiFi\Exceptions\NetworkNotFoundException
      *
-     * @return AbstractNetwork
+     * @return \Sanchescom\WiFi\System\AbstractNetwork
      */
     public function firstOrFail()
     {

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Linux;
 
-use Exception;
 use Sanchescom\WiFi\System\AbstractNetwork;
 
 /**
@@ -19,7 +18,7 @@ class Network extends AbstractNetwork
      * @param string $password
      * @param string $device
      *
-     * @throws Exception
+     * @throws \Exception
      */
     public function connect(string $password, string $device): void
     {
@@ -31,7 +30,7 @@ class Network extends AbstractNetwork
     /**
      * @param string $device
      *
-     * @throws Exception
+     * @throws \Exception
      */
     public function disconnect(string $device): void
     {
@@ -41,7 +40,7 @@ class Network extends AbstractNetwork
     /**
      * @param array $network
      *
-     * @return Network
+     * @return \Sanchescom\WiFi\System\Linux\Network
      */
     public function createFromArray(array $network): AbstractNetwork
     {

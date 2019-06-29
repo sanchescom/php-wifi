@@ -43,9 +43,9 @@ class WiFi
     /**
      * Getting instance on network collections depended on operation system.
      *
-     * @throws UnknownSystemException
+     * @throws \Sanchescom\WiFi\Exceptions\UnknownSystemException
      *
-     * @return AbstractNetworks
+     * @return \Sanchescom\WiFi\System\AbstractNetworks
      */
     protected function getSystemNetwork(): AbstractNetworks
     {
@@ -85,7 +85,7 @@ class WiFi
     }
 
     /**
-     * @return WindowsNetworks
+     * @return \Sanchescom\WiFi\System\Windows\Networks
      */
     protected function windowsNetwork(): AbstractNetworks
     {
@@ -93,7 +93,7 @@ class WiFi
     }
 
     /**
-     * @return MacNetworks
+     * @return \Sanchescom\WiFi\System\Mac\Networks
      */
     protected function macNetwork(): AbstractNetworks
     {
@@ -101,7 +101,7 @@ class WiFi
     }
 
     /**
-     * @return LinuxNetworks
+     * @return \Sanchescom\WiFi\System\Linux\Networks
      */
     protected function linuxNetwork(): AbstractNetworks
     {
@@ -109,7 +109,7 @@ class WiFi
     }
 
     /**
-     * @return Command
+     * @return \Sanchescom\WiFi\System\Command
      */
     protected function getCommandExecutor()
     {
