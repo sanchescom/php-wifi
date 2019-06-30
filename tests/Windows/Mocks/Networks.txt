@@ -1,0 +1,94 @@
+Active code page: 65001
+
+Interface name : Wireless
+There are 6 networks currently visible.
+
+SSID 1 : AlphaNet-foiEmE
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP
+    BSSID 1                 : 04:8d:38:22:78:9e
+         Signal             : 99%
+         Radio type         : 802.11n
+         Channel            : 7
+         Basic rates (Mbps) : 6.5 16 19.5 117
+         Other rates (Mbps) : 18 19.5 24 36 39 48 54 156
+
+SSID 2 : 957546
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP
+    BSSID 1                 : dc:fe:07:de:64:95
+         Signal             : 43%
+         Radio type         : 802.11n
+         Channel            : 11
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+
+SSID 3 : CYTA97F7F7
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP
+    BSSID 1                 : 70:9f:2d:97:f7:f7
+         Signal             : 48%
+         Radio type         : 802.11n
+         Channel            : 3
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+
+SSID 4 : DIRECT-2B-HP DeskJet 3830 series
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP
+    BSSID 1                 : 48:ba:4e:6d:cd:2c
+         Signal             : 18%
+         Radio type         : 802.11n
+         Channel            : 3
+         Basic rates (Mbps) : 6 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+
+SSID 5 : PAO13-2G
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP
+    BSSID 1                 : 2c:99:24:3c:a2:f9
+         Signal             : 43%
+         Radio type         : 802.11n
+         Channel            : 1
+         Basic rates (Mbps) : 1 2 5.5 6 11 12 24
+         Other rates (Mbps) : 9 18 36 48 54
+
+SSID 6 : Stop stealing my wifi cunts
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    Encryption              : CCMP
+    BSSID 1                 : 00:1d:d1:a5:96:70
+         Signal             : 20%
+         Radio type         : 802.11n
+         Channel            : 6
+         Basic rates (Mbps) : 1 2 5.5 11
+         Other rates (Mbps) : 6 9 12 18 24 36 48 54
+
+--separator--
+
+There is 1 interface on the system:
+
+    Name                   : Wireless
+    Description            : Intel(R) Centrino(R) Wireless-N 2230
+    GUID                   : 977397df-f447-4702-a9fe-539badd75a02
+    Physical address       : 68:17:29:b8:25:ae
+    State                  : connected
+    SSID                   : AlphaNet-foiEmE
+    BSSID                  : 04:8d:38:22:78:9e
+    Network type           : Infrastructure
+    Radio type             : 802.11n
+    Authentication         : WPA2-Personal
+    Cipher                 : CCMP
+    Connection mode        : Auto Connect
+    Channel                : 7
+    Receive rate (Mbps)    : 72
+    Transmit rate (Mbps)   : 72
+    Signal                 : 91%
+    Profile                : AlphaNet-foiEmE
+
+    Hosted network status  : Not available

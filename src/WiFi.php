@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi;
 
+use Sanchescom\WiFi\Contracts\CommandInterface;
 use Sanchescom\WiFi\Exceptions\UnknownSystemException;
 use Sanchescom\WiFi\System\AbstractNetworks;
 use Sanchescom\WiFi\System\Collection;
@@ -20,11 +21,6 @@ class WiFi
     /**
      * @var string
      */
-    const OS_WIN = 'WIN';
-
-    /**
-     * @var string
-     */
     const OS_LINUX = 'LINUX';
 
     /**
@@ -33,11 +29,38 @@ class WiFi
     const OS_OSX = 'DAR';
 
     /**
-     * @return Collection
+     * @var string
+     */
+    const OS_WIN = 'WIN';
+
+    /**
+     * @var string
+     */
+    protected static $commandClass = Command::class;
+
+    /**
+     * @var array
+     */
+    protected static $systems = [
+        self::OS_LINUX => LinuxNetworks::class,
+        self::OS_OSX => MacNetworks::class,
+        self::OS_WIN => WindowsNetworks::class,
+    ];
+
+    /**
+     * @param string $commandClass
+     */
+    public static function setCommandClass(string $commandClass): void
+    {
+        self::$commandClass = $commandClass;
+    }
+
+    /**
+     * @return \Sanchescom\WiFi\System\Collection
      */
     public static function scan(): Collection
     {
-        return (new static())->getSystemNetwork()->scan();
+        return (new static())->getSystemInstance()->scan();
     }
 
     /**
@@ -47,72 +70,31 @@ class WiFi
      *
      * @return \Sanchescom\WiFi\System\AbstractNetworks
      */
-    protected function getSystemNetwork(): AbstractNetworks
+    protected function getSystemInstance(): AbstractNetworks
     {
-        if ($this->isWindows()) {
-            return $this->windowsNetwork();
-        } elseif ($this->isMac()) {
-            return $this->macNetwork();
-        } elseif ($this->isLinux()) {
-            return $this->linuxNetwork();
-        } else {
+        $operationSystem = $this->getOperationSystem();
+
+        if (!array_key_exists($operationSystem, static::$systems)) {
             throw new UnknownSystemException();
         }
+
+        return new static::$systems[$operationSystem]($this->getCommandInstance());
     }
 
     /**
-     * @return bool
+     * @return \Sanchescom\WiFi\Contracts\CommandInterface
      */
-    protected function isWindows(): bool
+    protected function getCommandInstance(): CommandInterface
     {
-        return os_prefix() == self::OS_WIN;
+        return new static::$commandClass;
     }
-
     /**
-     * @return bool
+     * Getting prefix from operation system name.
+     *
+     * @return string
      */
-    protected function isMac(): bool
+    protected function getOperationSystem()
     {
-        return os_prefix() == self::OS_OSX;
-    }
-
-    /**
-     * @return bool
-     */
-    protected function isLinux(): bool
-    {
-        return os_prefix() == self::OS_LINUX;
-    }
-
-    /**
-     * @return \Sanchescom\WiFi\System\Windows\Networks
-     */
-    protected function windowsNetwork(): AbstractNetworks
-    {
-        return new WindowsNetworks($this->getCommandExecutor());
-    }
-
-    /**
-     * @return \Sanchescom\WiFi\System\Mac\Networks
-     */
-    protected function macNetwork(): AbstractNetworks
-    {
-        return new MacNetworks($this->getCommandExecutor());
-    }
-
-    /**
-     * @return \Sanchescom\WiFi\System\Linux\Networks
-     */
-    protected function linuxNetwork(): AbstractNetworks
-    {
-        return new LinuxNetworks($this->getCommandExecutor());
-    }
-
-    /**
-     * @return \Sanchescom\WiFi\System\Command
-     */
-    protected function getCommandExecutor()
-    {
-        return new Command();
+        return strtoupper(substr(PHP_OS, 0, 3));
     }
 }

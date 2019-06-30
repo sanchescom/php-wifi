@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System;
 
+use Sanchescom\WiFi\Contracts\CommandInterface;
+
 /**
  * Class AbstractNetworks.
  */
@@ -14,32 +16,15 @@ abstract class AbstractNetworks
      */
     protected $networks;
 
-    /** @var \Sanchescom\WiFi\System\Command */
+    /** @var \Sanchescom\WiFi\Contracts\CommandInterface */
     protected $command;
-
-    /**
-     * @param string $output
-     *
-     * @return array
-     */
-    abstract protected function extractingNetworks(string $output): array;
-
-    /**
-     * @return \Sanchescom\WiFi\System\AbstractNetwork
-     */
-    abstract protected function getNetwork(): AbstractNetwork;
-
-    /**
-     * @return string
-     */
-    abstract protected function getCommand(): string;
 
     /**
      * AbstractNetworks constructor.
      *
-     * @param \Sanchescom\WiFi\System\Command $command
+     * @param \Sanchescom\WiFi\Contracts\CommandInterface $command
      */
-    public function __construct(Command $command)
+    public function __construct(CommandInterface $command)
     {
         $this->command = $command;
     }
@@ -81,4 +66,21 @@ abstract class AbstractNetworks
     {
         return explode("\n", trim($networksString));
     }
+
+    /**
+     * @param string $output
+     *
+     * @return array
+     */
+    abstract protected function extractingNetworks(string $output): array;
+
+    /**
+     * @return \Sanchescom\WiFi\System\AbstractNetwork
+     */
+    abstract protected function getNetwork(): AbstractNetwork;
+
+    /**
+     * @return string
+     */
+    abstract protected function getCommand(): string;
 }
