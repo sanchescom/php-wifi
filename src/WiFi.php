@@ -19,7 +19,7 @@ use Sanchescom\WiFi\System\Windows\Networks as WindowsNetworks;
 class WiFi
 {
     /** @var string */
-    const OS_LINUX = 'LINUX';
+    const OS_LIN = 'LIN';
 
     /** @var string */
     const OS_OSX = 'DAR';
@@ -35,9 +35,9 @@ class WiFi
 
     /** @var array */
     protected static $systems = [
-        self::OS_LINUX => LinuxNetworks::class,
-        self::OS_OSX   => MacNetworks::class,
-        self::OS_WIN   => WindowsNetworks::class,
+        self::OS_LIN => LinuxNetworks::class,
+        self::OS_OSX => MacNetworks::class,
+        self::OS_WIN => WindowsNetworks::class,
     ];
 
     /**
