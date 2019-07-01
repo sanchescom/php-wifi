@@ -1,0 +1,26 @@
+language: php
+php:
+- '7.2'
+- '7.3'
+
+branches:
+  only:
+  - master
+
+install:
+- travis_retry composer install --prefer-source --no-interaction
+
+jobs:
+  include:
+  - stage: lint
+    script: ./vendor/bin/phpcs --standard=PSR2 --extensions=php src bin
+  - stage: test
+    script: ./vendor/bin/phpunit --configuration phpunit.xml --coverage-clover=coverage.xml
+
+after_success:
+# Submit coverage report to https://codecov.io
+- bash <(curl -s https://codecov.io/bash)
+
+cache:
+  directories:
+  - $HOME/.composer/cache
