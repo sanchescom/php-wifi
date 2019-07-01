@@ -5,9 +5,9 @@ namespace Sanchescom\WiFi\Test;
 use Sanchescom\WiFi\Exceptions\UnknownSystemException;
 use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\Collection;
+use Sanchescom\WiFi\Test\Linux\Mocks\NetworksCommand as LinuxNetworksCommand;
 use Sanchescom\WiFi\Test\Mac\Mocks\NetworksCommand as MacNetworksCommand;
 use Sanchescom\WiFi\Test\Windows\Mocks\NetworksCommand as WindowsNetworksCommand;
-use Sanchescom\WiFi\Test\Linux\Mocks\NetworksCommand as LinuxNetworksCommand;
 use Sanchescom\WiFi\WiFi;
 
 class NetworksTest extends BaseTestCase
