@@ -2,12 +2,13 @@
 
 namespace Sanchescom\WiFi\System;
 
+use Sanchescom\WiFi\Contracts\CommandInterface;
 use Sanchescom\WiFi\Exceptions\CommandException;
 
 /**
  * Class CommandExecutor.
  */
-class Command
+class Command implements CommandInterface
 {
     /**
      * @param string $command

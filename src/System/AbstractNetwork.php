@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System;
 
+use Sanchescom\WiFi\Contracts\CommandInterface;
+use Sanchescom\WiFi\Contracts\NetworkInterface;
+
 /**
  * Class AbstractNetwork.
  */
-abstract class AbstractNetwork
+abstract class AbstractNetwork implements NetworkInterface
 {
     /** @var string */
     const WPA2_SECURITY = 'WPA2';
@@ -55,15 +58,15 @@ abstract class AbstractNetwork
         self::WEP_SECURITY,
     ];
 
-    /** @var Command */
+    /** @var \Sanchescom\WiFi\Contracts\CommandInterface */
     protected $command;
 
     /**
      * AbstractNetwork constructor.
      *
-     * @param \Sanchescom\WiFi\System\Command $command
+     * @param \Sanchescom\WiFi\Contracts\CommandInterface $command
      */
-    public function __construct(Command $command)
+    public function __construct(CommandInterface $command)
     {
         $this->command = $command;
     }

@@ -1,0 +1,21 @@
+                            SSID BSSID             RSSI CHANNEL HT CC SECURITY (auth/unicast/group)
+   Offshore View Marine Services 00:19:e0:ff:1f:2e -88  6       N  CY WPA(PSK/TKIP,AES/TKIP) WPA2(PSK/TKIP,AES/TKIP)
+                Porto Bello Yard c0:a0:bb:57:18:dd -83  100,+1  Y  AU WPA(PSK/AES,TKIP/TKIP) WPA2(PSK/AES,TKIP/TKIP)
+                      FILUET-DSS e4:6f:13:46:44:01 -78  11      Y  US WPA2(PSK/AES/AES)
+                    Filuet-Intra e4:6f:13:46:44:00 -80  11      Y  US WPA2(PSK/AES/AES)
+--separator--
+     agrCtlRSSI: -56
+     agrExtRSSI: 0
+    agrCtlNoise: -98
+    agrExtNoise: 0
+          state: running
+        op mode: station
+     lastTxRate: 174
+        maxRate: 289
+lastAssocStatus: 0
+    802.11 auth: open
+      link auth: wpa2-psk
+          BSSID: c0:a0:bb:57:18:dd
+           SSID: Porto Bello Yard
+            MCS: 8
+        channel: 116
