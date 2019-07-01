@@ -1,0 +1,6 @@
+yes:AlphaNet-foiEmE:04\:8D\:38\:22\:78\:9E:Infra:7:2442 MHz:72:WPA1 WPA2:pair_tkip pair_ccmp group_tkip psk:pair_tkip pair_ccmp group_tkip psk
+no:CYTA97F7F7:70\:9F\:2D\:97\:F7\:F7:Infra:3:2422 MHz:45:WPA1 WPA2:pair_tkip pair_ccmp group_tkip psk:pair_tkip pair_ccmp group_tkip psk
+no:PAO13-2G:2C\:99\:24\:3C\:A2\:F9:Infra:1:2412 MHz:35:WPA2:(none):pair_ccmp group_ccmp psk
+no:DIRECT-2B-HP DeskJet 3830 series:48\:BA\:4E\:6D\:CD\:2C:Infra:3:2422 MHz:34:WPA2:(none):pair_ccmp group_ccmp psk
+no:957546:DC\:FE\:07\:DE\:64\:95:Infra:11:2462 MHz:24:WPA1 WPA2:pair_ccmp group_ccmp psk:pair_ccmp group_ccmp psk
+no:Stop stealing my wifi cunts:00\:1D\:D1\:A5\:96\:70:Infra:6:2437 MHz:10:WPA2:(none):pair_ccmp group_ccmp psk

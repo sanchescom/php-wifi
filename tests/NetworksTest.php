@@ -6,6 +6,7 @@ use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\Collection;
 use Sanchescom\WiFi\Test\Mac\Mocks\NetworksCommand as MacNetworksCommand;
 use Sanchescom\WiFi\Test\Windows\Mocks\NetworksCommand as WindowsNetworksCommand;
+use Sanchescom\WiFi\Test\Linux\Mocks\NetworksCommand as LinuxNetworksCommand;
 use Sanchescom\WiFi\WiFi;
 
 class NetworksTest extends BaseTestCase
@@ -33,7 +34,18 @@ class NetworksTest extends BaseTestCase
     {
         $wifi = new WiFi();
         $wifi::setCommandClass(MacNetworksCommand::class);
-        $wifi::setPhpOperationSystem('DARWIN');
+        $wifi::setPhpOperationSystem('Darwin');
+        $this->assets($wifi::scan());
+    }
+
+    /**
+     * @test
+     */
+    public function it_should_return_networks_in_linux()
+    {
+        $wifi = new WiFi();
+        $wifi::setCommandClass(LinuxNetworksCommand::class);
+        $wifi::setPhpOperationSystem('Linux');
         $this->assets($wifi::scan());
     }
 
