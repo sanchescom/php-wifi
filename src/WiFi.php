@@ -89,6 +89,7 @@ class WiFi
     {
         return new static::$commandClass();
     }
+
     /**
      * Getting prefix from operation system name.
      *

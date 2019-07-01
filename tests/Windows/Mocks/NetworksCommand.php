@@ -11,4 +11,5 @@ class NetworksCommand extends NetworksCommandAbstract
 {
     /** @var string */
     protected static $mock = __DIR__.'/Networks.txt';
+
 }
