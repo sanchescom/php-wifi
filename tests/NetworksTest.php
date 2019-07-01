@@ -2,6 +2,7 @@
 
 namespace Sanchescom\WiFi\Test;
 
+use Sanchescom\WiFi\Exceptions\UnknownSystemException;
 use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\Collection;
 use Sanchescom\WiFi\Test\Mac\Mocks\NetworksCommand as MacNetworksCommand;
@@ -46,6 +47,18 @@ class NetworksTest extends BaseTestCase
         $wifi = new WiFi();
         $wifi::setCommandClass(LinuxNetworksCommand::class);
         $wifi::setPhpOperationSystem('Linux');
+        $this->assets($wifi::scan());
+    }
+
+    /**
+     * @test
+     */
+    public function it_should_throw_exception_if_unknown_os()
+    {
+        $this->expectException(UnknownSystemException::class);
+
+        $wifi = new WiFi();
+        $wifi::setPhpOperationSystem('Unknown');
         $this->assets($wifi::scan());
     }
 
