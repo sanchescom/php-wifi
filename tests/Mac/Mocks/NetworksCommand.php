@@ -1,6 +1,6 @@
 <?php
 
-namespace Sanchescom\WiFi\Test\Windows\Mocks;
+namespace Sanchescom\WiFi\Test\Mac\Mocks;
 
 use Sanchescom\WiFi\Test\NetworksCommandAbstract;
 
