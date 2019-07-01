@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Windows;
 
+use Sanchescom\WiFi\Contracts\FrequencyInterface;
 use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\Frequency;
 
 /**
  * Class Network.
  */
-class Network extends AbstractNetwork
+class Network extends AbstractNetwork implements FrequencyInterface
 {
     use Frequency;
 

@@ -18,29 +18,22 @@ use Sanchescom\WiFi\System\Windows\Networks as WindowsNetworks;
  */
 class WiFi
 {
-    /**
-     * @var string
-     */
+    /** @var string */
     const OS_LINUX = 'LINUX';
 
-    /**
-     * @var string
-     */
+    /** @var string */
     const OS_OSX = 'DAR';
 
-    /**
-     * @var string
-     */
+    /** @var string */
     const OS_WIN = 'WIN';
 
-    /**
-     * @var string
-     */
+    /** @var string */
     protected static $commandClass = Command::class;
 
-    /**
-     * @var array
-     */
+    /** @var string */
+    protected static $phpOperationSystem = PHP_OS;
+
+    /** @var array */
     protected static $systems = [
         self::OS_LINUX => LinuxNetworks::class,
         self::OS_OSX => MacNetworks::class,
@@ -53,6 +46,14 @@ class WiFi
     public static function setCommandClass(string $commandClass): void
     {
         self::$commandClass = $commandClass;
+    }
+
+    /**
+     * @param string $phpOperationSystem
+     */
+    public static function setPhpOperationSystem(string $phpOperationSystem): void
+    {
+        self::$phpOperationSystem = $phpOperationSystem;
     }
 
     /**
@@ -95,6 +96,6 @@ class WiFi
      */
     protected function getOperationSystem()
     {
-        return strtoupper(substr(PHP_OS, 0, 3));
+        return strtoupper(substr(self::$phpOperationSystem, 0, 3));
     }
 }

@@ -9,6 +9,9 @@ use Sanchescom\WiFi\Contracts\CommandInterface;
  */
 abstract class NetworksCommandAbstract implements CommandInterface
 {
+    /** @var string */
+    protected static $mock = '';
+
     /**
      * @param string $command
      *
@@ -16,6 +19,6 @@ abstract class NetworksCommandAbstract implements CommandInterface
      */
     public function execute(string $command)
     {
-        return file_get_contents(__DIR__ . '/Networks.txt');
+        return file_get_contents(static::$mock);
     }
 }

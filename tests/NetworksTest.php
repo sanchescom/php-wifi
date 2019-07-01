@@ -1,9 +1,9 @@
 <?php
 
-namespace Sanchescom\WiFi\Test\Windows;
+namespace Sanchescom\WiFi\Test;
 
+use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\Collection;
-use Sanchescom\WiFi\Test\BaseTestCase;
 use Sanchescom\WiFi\Test\Windows\Mocks\NetworksCommand as WindowsNetworksCommand;
 use Sanchescom\WiFi\Test\Mac\Mocks\NetworksCommand as MacNetworksCommand;
 use Sanchescom\WiFi\WiFi;
@@ -22,8 +22,8 @@ class NetworksTest extends BaseTestCase
     {
         $wifi = new WiFi();
         $wifi::setCommandClass(WindowsNetworksCommand::class);
-
-        $this->assertInstanceOf(Collection::class, $wifi::scan());
+        $wifi::setPhpOperationSystem('WINNT');
+        $this->assets($wifi::scan());
     }
 
     /**
@@ -33,7 +33,16 @@ class NetworksTest extends BaseTestCase
     {
         $wifi = new WiFi();
         $wifi::setCommandClass(MacNetworksCommand::class);
+        $wifi::setPhpOperationSystem('DARWIN');
+        $this->assets($wifi::scan());
+    }
 
-        $this->assertInstanceOf(Collection::class, $wifi::scan());
+    /**
+     * @param $networks
+     */
+    protected function assets($networks)
+    {
+        $this->assertInstanceOf(Collection::class, $networks);
+        $this->assertContainsOnlyInstancesOf(AbstractNetwork::class, $networks);
     }
 }
