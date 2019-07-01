@@ -10,5 +10,5 @@ use Sanchescom\WiFi\Test\NetworksCommandAbstract;
 class NetworksCommand extends NetworksCommandAbstract
 {
     /** @var string */
-    protected static $mock = __DIR__ . '/Networks.txt';
+    protected static $mock = __DIR__.'/Networks.txt';
 }

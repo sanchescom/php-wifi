@@ -36,8 +36,8 @@ class WiFi
     /** @var array */
     protected static $systems = [
         self::OS_LINUX => LinuxNetworks::class,
-        self::OS_OSX => MacNetworks::class,
-        self::OS_WIN => WindowsNetworks::class,
+        self::OS_OSX   => MacNetworks::class,
+        self::OS_WIN   => WindowsNetworks::class,
     ];
 
     /**
@@ -87,7 +87,7 @@ class WiFi
      */
     protected function getCommandInstance(): CommandInterface
     {
-        return new static::$commandClass;
+        return new static::$commandClass();
     }
     /**
      * Getting prefix from operation system name.
