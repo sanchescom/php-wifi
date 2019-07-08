@@ -9,8 +9,8 @@ use Sanchescom\WiFi\Exceptions\UnknownSystemException;
 use Sanchescom\WiFi\System\AbstractNetworks;
 use Sanchescom\WiFi\System\Collection;
 use Sanchescom\WiFi\System\Command;
-use Sanchescom\WiFi\System\Linux\Networks as LinuxNetworks;
 use Sanchescom\WiFi\System\Darwin\Networks as DarwinNetworks;
+use Sanchescom\WiFi\System\Linux\Networks as LinuxNetworks;
 use Sanchescom\WiFi\System\Windows\Networks as WindowsNetworks;
 
 /**
@@ -35,8 +35,8 @@ class WiFi
 
     /** @var array */
     protected static $systems = [
-        self::OS_LINUX => LinuxNetworks::class,
-        self::OS_DARWIN => DarwinNetworks::class,
+        self::OS_LINUX   => LinuxNetworks::class,
+        self::OS_DARWIN  => DarwinNetworks::class,
         self::OS_WINDOWS => WindowsNetworks::class,
     ];
 
