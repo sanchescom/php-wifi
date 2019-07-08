@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\WiFi\System\Mac;
+namespace Sanchescom\WiFi\System\Darwin;
 
 use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\AbstractNetworks;

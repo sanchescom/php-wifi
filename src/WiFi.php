@@ -10,7 +10,7 @@ use Sanchescom\WiFi\System\AbstractNetworks;
 use Sanchescom\WiFi\System\Collection;
 use Sanchescom\WiFi\System\Command;
 use Sanchescom\WiFi\System\Linux\Networks as LinuxNetworks;
-use Sanchescom\WiFi\System\Mac\Networks as MacNetworks;
+use Sanchescom\WiFi\System\Darwin\Networks as DarwinNetworks;
 use Sanchescom\WiFi\System\Windows\Networks as WindowsNetworks;
 
 /**
@@ -19,26 +19,34 @@ use Sanchescom\WiFi\System\Windows\Networks as WindowsNetworks;
 class WiFi
 {
     /** @var string */
-    const OS_LIN = 'LIN';
+    const OS_LINUX = 'Linux';
 
     /** @var string */
-    const OS_OSX = 'DAR';
+    const OS_DARWIN = 'Darwin';
 
     /** @var string */
-    const OS_WIN = 'WIN';
+    const OS_WINDOWS = 'Windows';
 
     /** @var string */
     protected static $commandClass = Command::class;
 
     /** @var string */
-    protected static $phpOperationSystem = PHP_OS;
+    protected static $phpOperationSystem = PHP_OS_FAMILY;
 
     /** @var array */
     protected static $systems = [
-        self::OS_LIN => LinuxNetworks::class,
-        self::OS_OSX => MacNetworks::class,
-        self::OS_WIN => WindowsNetworks::class,
+        self::OS_LINUX => LinuxNetworks::class,
+        self::OS_DARWIN => DarwinNetworks::class,
+        self::OS_WINDOWS => WindowsNetworks::class,
     ];
+
+    /**
+     * @return \Sanchescom\WiFi\System\Collection
+     */
+    public static function scan(): Collection
+    {
+        return (new static())->getSystemInstance()->scan();
+    }
 
     /**
      * @param string $commandClass
@@ -57,14 +65,6 @@ class WiFi
     }
 
     /**
-     * @return \Sanchescom\WiFi\System\Collection
-     */
-    public static function scan(): Collection
-    {
-        return (new static())->getSystemInstance()->scan();
-    }
-
-    /**
      * Getting instance on network collections depended on operation system.
      *
      * @throws \Sanchescom\WiFi\Exceptions\UnknownSystemException
@@ -73,13 +73,11 @@ class WiFi
      */
     protected function getSystemInstance(): AbstractNetworks
     {
-        $operationSystem = $this->getOperationSystem();
-
-        if (!array_key_exists($operationSystem, static::$systems)) {
+        if (!array_key_exists(static::$phpOperationSystem, static::$systems)) {
             throw new UnknownSystemException();
         }
 
-        return new static::$systems[$operationSystem]($this->getCommandInstance());
+        return new static::$systems[static::$phpOperationSystem]($this->getCommandInstance());
     }
 
     /**
@@ -88,15 +86,5 @@ class WiFi
     protected function getCommandInstance(): CommandInterface
     {
         return new static::$commandClass();
-    }
-
-    /**
-     * Getting prefix from operation system name.
-     *
-     * @return string
-     */
-    protected function getOperationSystem()
-    {
-        return strtoupper(substr(self::$phpOperationSystem, 0, 3));
     }
 }

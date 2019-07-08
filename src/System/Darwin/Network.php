@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\WiFi\System\Mac;
+namespace Sanchescom\WiFi\System\Darwin;
 
 use Sanchescom\WiFi\Contracts\FrequencyInterface;
 use Sanchescom\WiFi\System\AbstractNetwork;
@@ -47,7 +47,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
     /**
      * @param array $network
      *
-     * @return \Sanchescom\WiFi\System\Mac\Network
+     * @return \Sanchescom\WiFi\System\Darwin\Network
      */
     public function createFromArray(array $network): AbstractNetwork
     {

@@ -6,7 +6,7 @@ use Sanchescom\WiFi\Exceptions\UnknownSystemException;
 use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\Collection;
 use Sanchescom\WiFi\Test\Linux\Mocks\NetworksCommand as LinuxNetworksCommand;
-use Sanchescom\WiFi\Test\Mac\Mocks\NetworksCommand as MacNetworksCommand;
+use Sanchescom\WiFi\Test\Darwin\Mocks\NetworksCommand as DarwinNetworksCommand;
 use Sanchescom\WiFi\Test\Windows\Mocks\NetworksCommand as WindowsNetworksCommand;
 use Sanchescom\WiFi\WiFi;
 
@@ -24,17 +24,17 @@ class NetworksTest extends BaseTestCase
     {
         $wifi = new WiFi();
         $wifi::setCommandClass(WindowsNetworksCommand::class);
-        $wifi::setPhpOperationSystem('WINNT');
+        $wifi::setPhpOperationSystem('Windows');
         $this->assets($wifi::scan());
     }
 
     /**
      * @test
      */
-    public function it_should_return_networks_in_mac()
+    public function it_should_return_networks_in_darwin()
     {
         $wifi = new WiFi();
-        $wifi::setCommandClass(MacNetworksCommand::class);
+        $wifi::setCommandClass(DarwinNetworksCommand::class);
         $wifi::setPhpOperationSystem('Darwin');
         $this->assets($wifi::scan());
     }
