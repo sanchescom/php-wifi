@@ -212,9 +212,11 @@ class NetworksTest extends BaseTestCase
 
         $network->connect('123', 'someDevice');
 
+        $windowsPath = 'src'.DIRECTORY_SEPARATOR.'System'.DIRECTORY_SEPARATOR.'Windows';
+
         $this->assertEquals(
             $network->getCommand()->getLastCommand(),
-            'netsh wlan add profile filename="'.str_replace('tests', 'src\System\Windows', __DIR__).
+            'netsh wlan add profile filename="'.str_replace('tests', $windowsPath, __DIR__).
             '/../../../tmp/AlphaNet-foiEmE.xml" && '.
             'netsh wlan connect interface="someDevice" ssid="AlphaNet-foiEmE" name="AlphaNet-foiEmE"'
         );
