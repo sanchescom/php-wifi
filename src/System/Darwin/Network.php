@@ -23,7 +23,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
      */
     public function connect(string $password, string $device): void
     {
-        $this->command->execute(
+        $this->getCommand()->execute(
             sprintf('networksetup -setairportnetwork %s %s %s', $device, $this->ssid, $password)
         );
     }
@@ -35,7 +35,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
      */
     public function disconnect(string $device): void
     {
-        $this->command->execute(
+        $this->getCommand()->execute(
             glue_commands(
                 sprintf('networksetup -removepreferredwirelessnetwork %s %s', $device, $this->ssid),
                 sprintf('networksetup -setairportpower %s %s', $device, 'off'),

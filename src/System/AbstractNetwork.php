@@ -88,6 +88,14 @@ abstract class AbstractNetwork implements NetworkInterface
     }
 
     /**
+     * @return CommandInterface
+     */
+    public function getCommand(): CommandInterface
+    {
+        return $this->command;
+    }
+
+    /**
      * @return string
      */
     public function __toString(): string

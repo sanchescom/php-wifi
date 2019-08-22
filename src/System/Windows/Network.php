@@ -28,7 +28,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
             sprintf('netsh wlan connect interface="%s" ssid="%s" name="%s"', $device, $this->ssid, $this->ssid)
         );
 
-        $this->command->execute($command);
+        $this->getCommand()->execute($command);
 
         $this->getProfileService()->delete();
     }
@@ -40,7 +40,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
      */
     public function disconnect(string $device): void
     {
-        $this->command->execute(sprintf(' disconnect interface="%s"', $device));
+        $this->getCommand()->execute(sprintf('netsh wlan disconnect interface="%s"', $device));
     }
 
     /**
