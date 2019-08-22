@@ -13,4 +13,9 @@ interface CommandInterface
      * @return string
      */
     public function execute(string $command);
+
+    /**
+     * @return string
+     */
+    public function getLastCommand();
 }

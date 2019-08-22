@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Sanchescom\WiFi\System\Mac;
+namespace Sanchescom\WiFi\System\Darwin;
 
 use Sanchescom\WiFi\Contracts\FrequencyInterface;
 use Sanchescom\WiFi\System\AbstractNetwork;
@@ -23,7 +23,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
      */
     public function connect(string $password, string $device): void
     {
-        $this->command->execute(
+        $this->getCommand()->execute(
             sprintf('networksetup -setairportnetwork %s %s %s', $device, $this->ssid, $password)
         );
     }
@@ -35,7 +35,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
      */
     public function disconnect(string $device): void
     {
-        $this->command->execute(
+        $this->getCommand()->execute(
             glue_commands(
                 sprintf('networksetup -removepreferredwirelessnetwork %s %s', $device, $this->ssid),
                 sprintf('networksetup -setairportpower %s %s', $device, 'off'),
@@ -47,7 +47,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
     /**
      * @param array $network
      *
-     * @return \Sanchescom\WiFi\System\Mac\Network
+     * @return \Sanchescom\WiFi\System\Darwin\Network
      */
     public function createFromArray(array $network): AbstractNetwork
     {

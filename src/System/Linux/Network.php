@@ -24,7 +24,7 @@ class Network extends AbstractNetwork
     {
         $format = 'LANG=C nmcli -w 10 device wifi connect "%s" password "%s" ifname "%s"';
 
-        $this->command->execute(sprintf($format, $this->ssid, $password, $device));
+        $this->getCommand()->execute(sprintf($format, $this->ssid, $password, $device));
     }
 
     /**
@@ -34,7 +34,7 @@ class Network extends AbstractNetwork
      */
     public function disconnect(string $device): void
     {
-        $this->command->execute(sprintf('LANG=C nmcli device disconnect %s', $device));
+        $this->getCommand()->execute(sprintf('LANG=C nmcli device disconnect %s', $device));
     }
 
     /**

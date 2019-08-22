@@ -10,6 +10,9 @@ use Sanchescom\WiFi\Exceptions\CommandException;
  */
 class Command implements CommandInterface
 {
+    /** @var string */
+    protected $lastCommand;
+
     /**
      * @param string $command
      *
@@ -21,7 +24,7 @@ class Command implements CommandInterface
 
         exec($command, $output, $code);
 
-        $output = count($output) === 0
+        $output = $this->lastCommand = count($output) === 0
             ? $code
             : implode(PHP_EOL, $output);
 
@@ -30,5 +33,13 @@ class Command implements CommandInterface
         }
 
         return $output;
+    }
+
+    /**
+     * @return string
+     */
+    public function getLastCommand()
+    {
+        return $this->lastCommand;
     }
 }
