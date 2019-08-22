@@ -130,6 +130,7 @@ class NetworksTest extends BaseTestCase
     /**
      * @depends it_should_return_networks_in_linux
      * @test
+     *
      * @param $networks
      */
     public function it_should_connect_in_linux(Collection $networks)
@@ -147,6 +148,7 @@ class NetworksTest extends BaseTestCase
     /**
      * @depends it_should_return_networks_in_linux
      * @test
+     *
      * @param $networks
      */
     public function it_should_disconnect_in_linux(Collection $networks)
@@ -164,6 +166,7 @@ class NetworksTest extends BaseTestCase
     /**
      * @depends it_should_return_networks_in_darwin
      * @test
+     *
      * @param $networks
      */
     public function it_should_connect_in_darwin(Collection $networks)
@@ -181,6 +184,7 @@ class NetworksTest extends BaseTestCase
     /**
      * @depends it_should_return_networks_in_darwin
      * @test
+     *
      * @param $networks
      */
     public function it_should_disconnect_in_darwin(Collection $networks)
@@ -199,6 +203,7 @@ class NetworksTest extends BaseTestCase
     /**
      * @depends it_should_return_networks_in_windows
      * @test
+     *
      * @param $networks
      */
     public function it_should_connect_in_windows(Collection $networks)
@@ -218,6 +223,7 @@ class NetworksTest extends BaseTestCase
     /**
      * @depends it_should_return_networks_in_windows
      * @test
+     *
      * @param $networks
      */
     public function it_should_disconnect_in_windows(Collection $networks)
