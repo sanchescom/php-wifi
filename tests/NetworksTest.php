@@ -119,7 +119,7 @@ class NetworksTest extends BaseTestCase
 
         $this->assertEquals($ssid, self::SSID);
         $this->assertEquals(strtolower($network->bssid), strtolower(self::BSSID));
-        $this->assertIsString((string)$network);
+        $this->assertIsString((string) $network);
 
         try {
             $this->assertEquals($networks->getBySsid('123')->ssid, self::SSID);
