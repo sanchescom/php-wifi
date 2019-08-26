@@ -112,13 +112,14 @@ class NetworksTest extends BaseTestCase
         $ssid = $networks->getBySsid(self::SSID)->ssid;
 
         try {
-            $bssid = $networks->getByBssid(strtolower(self::BSSID))->bssid;
+            $network = $networks->getByBssid(strtolower(self::BSSID));
         } catch (NetworkNotFoundException $exception) {
-            $bssid = $networks->getByBssid(strtoupper(self::BSSID))->bssid;
+            $network = $networks->getByBssid(strtoupper(self::BSSID));
         }
 
         $this->assertEquals($ssid, self::SSID);
-        $this->assertEquals(strtolower($bssid), strtolower(self::BSSID));
+        $this->assertEquals(strtolower($network->bssid), strtolower(self::BSSID));
+        $this->assertIsString((string)$network);
 
         try {
             $this->assertEquals($networks->getBySsid('123')->ssid, self::SSID);
