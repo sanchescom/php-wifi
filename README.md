@@ -25,6 +25,8 @@ $ composer require sanchescom/php-wifi
 ``` php
 <?php
 
+include __DIR__ . '/vendor/autoload.php';
+
 use Sanchescom\WiFi\WiFi;
 
 class Example
@@ -52,7 +54,7 @@ class Example
         try {
             WiFi::scan()->getBySsid($ssid)->connect($password, $this->device);
         } catch (Exception $exception) {
-            echo $this->error($exception->getMessage());
+            echo $exception->getMessage();
         }
     }
 
