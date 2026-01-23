@@ -12,54 +12,28 @@ use Sanchescom\WiFi\Contracts\NetworkInterface;
  */
 abstract class AbstractNetwork implements NetworkInterface
 {
-    /** @var string */
-    const WPA2_SECURITY = 'WPA2';
+    public const WPA2_SECURITY = 'WPA2';
+    public const WPA_SECURITY = 'WPA';
+    public const WEP_SECURITY = 'WEP';
+    public const UNKNOWN_SECURITY = 'Unknown';
 
-    /** @var string */
-    const WPA_SECURITY = 'WPA';
+    public string $bssid;
+    public string $ssid;
+    public int $channel;
+    public float $quality;
+    public float $dbm;
+    public string $security;
+    public string $securityFlags;
+    public int $frequency;
+    public bool $connected;
 
-    /** @var string */
-    const WEP_SECURITY = 'WEP';
-
-    /** @var string */
-    const UNKNOWN_SECURITY = 'Unknown';
-
-    /** @var string */
-    public $bssid;
-
-    /** @var string */
-    public $ssid;
-
-    /** @var int */
-    public $channel;
-
-    /** @var float */
-    public $quality;
-
-    /** @var float */
-    public $dbm;
-
-    /** @var string */
-    public $security;
-
-    /** @var string */
-    public $securityFlags;
-
-    /** @var int */
-    public $frequency;
-
-    /** @var bool */
-    public $connected;
-
-    /** @var array */
-    protected static $securityTypes = [
+    protected static array $securityTypes = [
         self::WPA2_SECURITY,
         self::WPA_SECURITY,
         self::WEP_SECURITY,
     ];
 
-    /** @var \Sanchescom\WiFi\Contracts\CommandInterface */
-    protected $command;
+    protected CommandInterface $command;
 
     /**
      * AbstractNetwork constructor.

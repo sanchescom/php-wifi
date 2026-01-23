@@ -11,9 +11,9 @@ if (!function_exists('trim_first')) {
     function trim_first(array $array): array
     {
         array_walk($array, function (&$item) {
-            list($firstElement) = $item;
+            $firstElement = $item[0] ?? null;
 
-            $item = trim($firstElement);
+            $item = $firstElement !== null ? trim($firstElement) : null;
         });
 
         return $array;

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Sanchescom\WiFi\System;
 
 use Sanchescom\WiFi\Contracts\CommandInterface;
@@ -10,35 +12,28 @@ use Sanchescom\WiFi\Exceptions\CommandException;
  */
 class Command implements CommandInterface
 {
-    /** @var string */
-    protected $lastCommand;
+    protected string $lastCommand = '';
 
-    /**
-     * @param string $command
-     *
-     * @return string
-     */
-    public function execute(string $command)
+    public function execute(string $command): string|int
     {
         $command .= ' 2>&1';
 
         exec($command, $output, $code);
 
-        $output = $this->lastCommand = count($output) === 0
+        $result = count($output) === 0
             ? $code
             : implode(PHP_EOL, $output);
 
+        $this->lastCommand = is_int($result) ? (string)$result : $result;
+
         if ($code !== 0) {
-            throw new CommandException($command, $output, $code);
+            throw new CommandException($command, (string)$result, $code);
         }
 
-        return $output;
+        return $result;
     }
 
-    /**
-     * @return string
-     */
-    public function getLastCommand()
+    public function getLastCommand(): string
     {
         return $this->lastCommand;
     }

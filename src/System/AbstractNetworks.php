@@ -12,18 +12,12 @@ use Sanchescom\WiFi\Contracts\CommandInterface;
 abstract class AbstractNetworks
 {
     /**
-     * @var \Sanchescom\WiFi\System\AbstractNetwork[]
+     * @var AbstractNetwork[]
      */
-    protected $networks;
+    protected array $networks = [];
 
-    /** @var \Sanchescom\WiFi\Contracts\CommandInterface */
-    protected $command;
+    protected CommandInterface $command;
 
-    /**
-     * AbstractNetworks constructor.
-     *
-     * @param \Sanchescom\WiFi\Contracts\CommandInterface $command
-     */
     public function __construct(CommandInterface $command)
     {
         $this->command = $command;

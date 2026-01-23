@@ -1,9 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Sanchescom\WiFi\System;
 
+use Illuminate\Support\Collection as BaseCollection;
 use Sanchescom\WiFi\Exceptions\NetworkNotFoundException;
-use Tightenco\Collect\Support\Collection as BaseCollection;
 
 /**
  * Class Collection.
@@ -11,52 +13,138 @@ use Tightenco\Collect\Support\Collection as BaseCollection;
 class Collection extends BaseCollection
 {
     /**
-     * @return \Sanchescom\WiFi\System\AbstractNetwork[]
+     * Get all networks as array.
+     *
+     * @return AbstractNetwork[]
      */
-    public function getAll()
+    public function getAll(): array
     {
         return $this->all();
     }
 
     /**
-     * @param string $ssid
+     * Find network by SSID.
      *
-     * @return \Sanchescom\WiFi\System\AbstractNetwork
+     * @throws NetworkNotFoundException
      */
-    public function getBySsid(string $ssid)
+    public function getBySsid(string $ssid): AbstractNetwork
     {
-        return $this->where('ssid', $ssid)->firstOrFail();
+        $network = $this->where('ssid', $ssid)->first();
+
+        if ($network === null) {
+            throw new NetworkNotFoundException();
+        }
+
+        return $network;
     }
 
     /**
-     * @param string $bssid
+     * Find network by BSSID (MAC address).
      *
-     * @return \Sanchescom\WiFi\System\AbstractNetwork
+     * @throws NetworkNotFoundException
      */
-    public function getByBssid(string $bssid)
+    public function getByBssid(string $bssid): AbstractNetwork
     {
-        return $this->where('bssid', $bssid)->firstOrFail();
+        $network = $this->where('bssid', $bssid)->first();
+
+        if ($network === null) {
+            throw new NetworkNotFoundException();
+        }
+
+        return $network;
     }
 
     /**
-     * @return \Sanchescom\WiFi\System\AbstractNetwork[]
+     * Get all currently connected networks.
+     *
+     * @return AbstractNetwork[]
      */
-    public function getConnected()
+    public function getConnected(): array
     {
         return $this->where('connected', true)->all();
     }
 
     /**
-     * @throws \Sanchescom\WiFi\Exceptions\NetworkNotFoundException
+     * Get networks filtered by security type (WPA2, WPA, WEP).
      *
-     * @return \Sanchescom\WiFi\System\AbstractNetwork
+     * @return self
      */
-    public function firstOrFail()
+    public function getBySecurity(string $securityType): self
     {
-        if ($this->isEmpty()) {
+        return $this->filter(function (AbstractNetwork $network) use ($securityType) {
+            return str_contains($network->security, $securityType);
+        });
+    }
+
+    /**
+     * Get networks with signal strength above specified dBm.
+     *
+     * @return self
+     */
+    public function getByMinSignalStrength(float $minDbm): self
+    {
+        return $this->filter(function (AbstractNetwork $network) use ($minDbm) {
+            return $network->dbm >= $minDbm;
+        });
+    }
+
+    /**
+     * Get networks on specific channel.
+     *
+     * @return self
+     */
+    public function getByChannel(int $channel): self
+    {
+        return $this->where('channel', $channel);
+    }
+
+    /**
+     * Get networks on 2.4GHz band (channels 1-14).
+     *
+     * @return self
+     */
+    public function get24GhzNetworks(): self
+    {
+        return $this->filter(function (AbstractNetwork $network) {
+            return $network->channel >= 1 && $network->channel <= 14;
+        });
+    }
+
+    /**
+     * Get networks on 5GHz band (channels > 14).
+     *
+     * @return self
+     */
+    public function get5GhzNetworks(): self
+    {
+        return $this->filter(function (AbstractNetwork $network) {
+            return $network->channel > 14;
+        });
+    }
+
+    /**
+     * Sort networks by signal strength (strongest first).
+     *
+     * @return self
+     */
+    public function sortBySignalStrength(): self
+    {
+        return $this->sortByDesc('dbm');
+    }
+
+    /**
+     * Get the strongest network.
+     *
+     * @throws NetworkNotFoundException
+     */
+    public function getStrongest(): AbstractNetwork
+    {
+        $network = $this->sortBySignalStrength()->first();
+
+        if ($network === null) {
             throw new NetworkNotFoundException();
         }
 
-        return $this->first();
+        return $network;
     }
 }

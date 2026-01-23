@@ -51,14 +51,14 @@ class Network extends AbstractNetwork implements FrequencyInterface
      */
     public function createFromArray(array $network): AbstractNetwork
     {
-        $this->ssid = $network[0];
-        $this->bssid = $network[1];
-        $this->channel = (int) $network[3];
-        $this->security = $network[6];
-        $this->securityFlags = $network[5];
-        $this->quality = $network[2];
+        $this->ssid = $network[0] ?? '';
+        $this->bssid = $network[1] ?? '';
+        $this->channel = (int) ($network[3] ?? 0);
+        $this->security = $network[6] ?? '';
+        $this->securityFlags = $network[5] ?? '';
+        $this->quality = (float) ($network[2] ?? 0.0);
         $this->frequency = $this->getFrequency();
-        $this->dbm = to_dbm((int) $network[2]);
+        $this->dbm = (float) to_dbm((int) ($network[2] ?? 0));
         $this->connected = isset($network[7]);
 
         return $this;
