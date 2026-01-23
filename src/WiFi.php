@@ -6,6 +6,7 @@ namespace Sanchescom\WiFi;
 
 use Sanchescom\WiFi\Contracts\CommandInterface;
 use Sanchescom\WiFi\Exceptions\UnknownSystemException;
+use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\AbstractNetworks;
 use Sanchescom\WiFi\System\Collection;
 use Sanchescom\WiFi\System\Command;
@@ -18,30 +19,21 @@ use Sanchescom\WiFi\System\Windows\Networks as WindowsNetworks;
  */
 class WiFi
 {
-    /** @var string */
-    const OS_LINUX = 'Linux';
+    public const OS_LINUX = 'Linux';
+    public const OS_DARWIN = 'Darwin';
+    public const OS_WINDOWS = 'Windows';
 
-    /** @var string */
-    const OS_DARWIN = 'Darwin';
+    protected static string $commandClass = Command::class;
+    protected static string $phpOperationSystem = PHP_OS_FAMILY;
 
-    /** @var string */
-    const OS_WINDOWS = 'Windows';
-
-    /** @var string */
-    protected static $commandClass = Command::class;
-
-    /** @var string */
-    protected static $phpOperationSystem = PHP_OS_FAMILY;
-
-    /** @var array */
-    protected static $systems = [
+    protected static array $systems = [
         self::OS_LINUX   => LinuxNetworks::class,
         self::OS_DARWIN  => DarwinNetworks::class,
         self::OS_WINDOWS => WindowsNetworks::class,
     ];
 
     /**
-     * @return \Sanchescom\WiFi\System\Collection
+     * Scan for available WiFi networks.
      */
     public static function scan(): Collection
     {
@@ -49,16 +41,54 @@ class WiFi
     }
 
     /**
-     * @param string $commandClass
+     * Get all connected networks.
+     *
+     * @return AbstractNetwork[]
      */
+    public static function getConnected(): array
+    {
+        return static::scan()->getConnected();
+    }
+
+    /**
+     * Find strongest available network.
+     *
+     * @throws \Sanchescom\WiFi\Exceptions\NetworkNotFoundException
+     */
+    public static function getStrongestNetwork(): AbstractNetwork
+    {
+        return static::scan()->getStrongest();
+    }
+
+    /**
+     * Get networks by security type.
+     */
+    public static function getNetworksBySecurity(string $securityType): Collection
+    {
+        return static::scan()->getBySecurity($securityType);
+    }
+
+    /**
+     * Get networks on 2.4GHz band.
+     */
+    public static function get24GhzNetworks(): Collection
+    {
+        return static::scan()->get24GhzNetworks();
+    }
+
+    /**
+     * Get networks on 5GHz band.
+     */
+    public static function get5GhzNetworks(): Collection
+    {
+        return static::scan()->get5GhzNetworks();
+    }
+
     public static function setCommandClass(string $commandClass): void
     {
         self::$commandClass = $commandClass;
     }
 
-    /**
-     * @param string $phpOperationSystem
-     */
     public static function setPhpOperationSystem(string $phpOperationSystem): void
     {
         self::$phpOperationSystem = $phpOperationSystem;

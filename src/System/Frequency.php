@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Sanchescom\WiFi\System;
 
 /**
@@ -7,10 +9,7 @@ namespace Sanchescom\WiFi\System;
  */
 trait Frequency
 {
-    /**
-     * @var array
-     */
-    protected static $frequencies = [];
+    protected static array $frequencies = [];
 
     /**
      * Array description:
@@ -25,10 +24,8 @@ trait Frequency
      *      ],
      * ];
      * </code>.
-     *
-     * @var array[int][int]int
      */
-    protected $frequencySettings = [
+    protected array $frequencySettings = [
         [2412, 1, 14, 5, 1],
         [5180, 36, 64, 10, 2],
         [5500, 100, 144, 10, 2],
@@ -36,17 +33,11 @@ trait Frequency
         [5825, 165, 173, 20, 4],
     ];
 
-    /**
-     * @return mixed
-     */
-    public function getFrequency()
+    public function getFrequency(): int
     {
-        return $this->generateFrequencies()[$this->channel];
+        return $this->generateFrequencies()[$this->channel] ?? 0;
     }
 
-    /**
-     * @return array
-     */
     protected function generateFrequencies(): array
     {
         if (empty(self::$frequencies)) {
@@ -58,22 +49,18 @@ trait Frequency
         return self::$frequencies;
     }
 
-    /**
-     * @param array $frequencySetting
-     */
     protected function setGeneratedFrequencies(array $frequencySetting): void
     {
-        list(
+        [
             $frequencyStart,
             $channelStart,
             $channelEnd,
             $frequencyStep,
             $frequencyIncreasing
-            ) = $frequencySetting;
+        ] = $frequencySetting;
 
         for ($i = $channelStart; $i <= $channelEnd; $i += $frequencyIncreasing) {
             self::$frequencies[$i] = $frequencyStart;
-
             $frequencyStart += $frequencyStep;
         }
     }
