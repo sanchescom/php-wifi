@@ -1,0 +1,11 @@
+# Keep development-only paths out of `composer require` installs.
+# Shipped on purpose: src/, bin/, templates/ (read by Windows\Profile at
+# runtime), tmp/.gitkeep (Windows\Profile writes there and
+# file_put_contents does not create directories), composer.json, the docs.
+/.github               export-ignore
+/.gitattributes        export-ignore
+/.gitignore            export-ignore
+/tests                 export-ignore
+/phpstan.neon          export-ignore
+/phpstan-baseline.neon export-ignore
+/phpunit.xml           export-ignore
