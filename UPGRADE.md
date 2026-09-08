@@ -2,7 +2,7 @@
 
 ## Overview
 
-Version 2.0 brings PHP 8.1+ support, modern syntax, extended functionality, and macOS improvements.
+Version 2.0 brings PHP 8.2+ support, modern syntax, extended functionality, and macOS improvements.
 
 ## Breaking Changes
 

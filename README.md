@@ -260,7 +260,7 @@ The library includes a command-line interface for managing WiFi networks directl
 |--------|------------|-------------|
 | `connect()` | `string $password, string $device` | Connect to the network |
 | `disconnect()` | `string $device` | Disconnect from the network |
-| `getSecurityType()` | - | Get security type (WPA2/WPA/WEP) |
+| `getSecurityType()` | - | Get security type (WPA3/WPA2/WPA/WEP/Unknown) |
 
 ## Contributing
 
@@ -297,6 +297,9 @@ Versions up to and including 2.0.0 were published under GPL-3.0. 2.0.1 relicense
   `system_profiler` never reports BSSIDs for other networks, so `bssid` is
   always empty on macOS, `getByBssid()` cannot find anything, and the CLI's
   `connect --bssid` does not work on macOS — use `getBySsid()`.
+- `system_profiler` reports a signal level for the current network and only
+  some of the others; networks without one are reported as `-100 dBm` /
+  `0 %`, not as unknown.
 - **Connection management** uses `networksetup` (built in). Default device:
   `en0`; find yours with `networksetup -listallhardwareports`.
 - The legacy `airport` output format is still parsed for older systems; the

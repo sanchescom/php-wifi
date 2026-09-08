@@ -42,6 +42,12 @@ broken or unsafe.
   BSSID per SSID — most users want one row per network, not one per radio.
 - **Dependency hygiene.** Pint or PSR-12 in place of PSR-2; raise PHPStan
   from level 5 to 6 and retire the one-entry baseline.
+- **Fix colon-escaping in the Linux parser.** `nmcli --terse` escapes `:`
+  inside an SSID as `\:`; `Linux\Networks` un-escapes the whole line *before*
+  splitting on `:`, so an SSID containing a colon shifts every field after
+  it.
+- **CI: a `--prefer-lowest` job** to prove the widened
+  `illuminate/collections ^11.0` floor actually resolves.
 
 ## 3.0 — only if a consumer exists
 

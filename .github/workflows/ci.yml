@@ -27,6 +27,7 @@ jobs:
           coverage: none
       - run: composer require --no-interaction --no-update "illuminate/collections:${{ matrix.collections }}"
       - run: composer update --prefer-dist --no-interaction
+      - run: composer validate --strict
       - run: composer lint
       - run: composer analyse
       - run: composer test

@@ -15,8 +15,9 @@ All notable changes to this project will be documented in this file.
 - **Linux:** `nmcli` reports signal as a percentage; it was stored as dBm and quality was derived from it (`+95 dBm`, `390 %`). Both fields are now correct.
 - **macOS:** the dBm reading from `system_profiler` (and from the legacy `airport` table) was converted as if it were a percentage (`-59 dBm` became `-129.5 dBm`).
 - **macOS:** every network was reported `connected: true` when SSIDs are redacted; only the current network is now, and never when its name is `<redacted>`.
-- **macOS:** the `awdl0` interface block was parsed as extra networks.
-- **Windows:** `WPA3 Personal` networks selected the WPA (TKIP) profile template; a `WPA3.xml` (WPA3SAE) template is added.
+- **macOS:** the `awdl0` interface block was parsed as extra networks; only the first Wi-Fi interface (`Card Type:`) is scanned.
+- **macOS:** networks for which `system_profiler` reports no `Signal / Noise` line were reported as `0 dBm` / `100 %` — the strongest possible reading — and so won `getStrongest()`; they now report `-100 dBm` / `0 %`.
+- **Windows:** `WPA3-Personal` networks selected the WPA (TKIP) profile template; a `WPA3.xml` (WPA3SAE) template is added.
 - Test suite: PHPUnit 11 configuration and attributes (12 deprecations removed); `failOnWarning`/`failOnNotice`/`failOnDeprecation` enforced.
 
 ### Added
