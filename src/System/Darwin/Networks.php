@@ -135,18 +135,60 @@ class Networks extends AbstractNetworks
     /**
      * Extract current network SSID from output.
      *
+     * Scoped to the same Wi-Fi interface slice used for network parsing, so
+     * a "Current Network Information:" block belonging to another interface
+     * (e.g. awdl0) is never mistaken for the Wi-Fi interface's own.
+     *
      * @param string $output
      * @return string|null
      */
     protected function extractCurrentSSID(string $output): ?string
     {
-        if (preg_match('/Current Network Information:\s*\n\s*(.+?):/m', $output, $matches)) {
+        $wifiInterface = $this->wifiInterfaceSlice($output);
+
+        if (preg_match('/Current Network Information:\s*\n\s*(.+?):/m', $wifiInterface, $matches)) {
             $ssid = trim($matches[1]);
 
             return $ssid === self::REDACTED ? null : $ssid;
         }
 
         return null;
+    }
+
+    /**
+     * Return the slice of `system_profiler` output belonging to the first
+     * Wi-Fi interface (the first block with a `Card Type:` line), from that
+     * line up to (not including) the next 8-space-indented interface
+     * header. Returns '' when no interface has a `Card Type:` line.
+     *
+     * @param string $output
+     * @return string
+     */
+    protected function wifiInterfaceSlice(string $output): string
+    {
+        $lines = explode("\n", $output);
+        $start = null;
+        $end = count($lines);
+
+        foreach ($lines as $index => $line) {
+            if ($start === null) {
+                if (preg_match('/^\s{10}Card Type:/', $line)) {
+                    $start = $index;
+                }
+                continue;
+            }
+            // 8-space indent = interface header ("en0:", "awdl0:")
+            if (preg_match('/^\s{8}\S+:\s*$/', $line)) {
+                $end = $index;
+                break;
+            }
+        }
+
+        if ($start === null) {
+            return '';
+        }
+
+        return implode("\n", array_slice($lines, $start, $end - $start));
     }
 
     /**
@@ -159,28 +201,10 @@ class Networks extends AbstractNetworks
     protected function parseSystemProfilerNetworks(string $output, ?string $currentSSID): array
     {
         $networks = [];
-        $lines = explode("\n", $output);
+        $lines = explode("\n", $this->wifiInterfaceSlice($output));
         $currentNetwork = null;
-        $inWifiInterface = false;
-        $seenWifiInterface = false;
 
         foreach ($lines as $line) {
-            // 8-space indent = interface header ("en0:", "awdl0:")
-            if (preg_match('/^\s{8}(\S+):\s*$/', $line)) {
-                if ($seenWifiInterface) {
-                    break;
-                }
-                $inWifiInterface = false;
-                continue;
-            }
-            if (!$inWifiInterface && preg_match('/^\s{10}Card Type:/', $line)) {
-                $inWifiInterface = true;
-                $seenWifiInterface = true;
-                continue;
-            }
-            if (!$inWifiInterface) {
-                continue;
-            }
             // Match network name (it's at the beginning of a block, followed by :)
             if (preg_match('/^\s{12}(.+?):\s*$/', $line, $matches)) {
                 // Save previous network if exists
@@ -232,7 +256,7 @@ class Networks extends AbstractNetworks
     protected function formatNetworkData(array $network, ?string $currentSSID): array
     {
         $ssid = $network['ssid'] ?? '';
-        $signal = $network['signal'] ?? '0';
+        $signal = $network['signal'] ?? '-100';
         $channel = $network['channel'] ?? '0';
         $security = $network['security'] ?? 'Unknown';
 

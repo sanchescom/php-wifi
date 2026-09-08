@@ -72,6 +72,8 @@ abstract class AbstractNetwork implements NetworkInterface
     /**
      * Set both signal properties from a 0-100 quality percentage.
      *
+     * @see to_dbm() in src/Helpers/calculate.php - same formula; the helper stays for BC.
+     *
      * @param float $quality
      */
     protected function setSignalFromQuality(float $quality): void
@@ -82,6 +84,8 @@ abstract class AbstractNetwork implements NetworkInterface
 
     /**
      * Set both signal properties from a dBm reading.
+     *
+     * @see to_quality() in src/Helpers/calculate.php - same formula; the helper stays for BC.
      *
      * @param float $dbm
      */
