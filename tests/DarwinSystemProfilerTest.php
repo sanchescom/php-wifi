@@ -6,6 +6,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Sanchescom\WiFi\System\Collection;
 use Sanchescom\WiFi\Test\Darwin\Mocks\SystemProfilerCommand;
 use Sanchescom\WiFi\Test\Darwin\Mocks\SystemProfilerRedactedCommand;
+use Sanchescom\WiFi\Test\Darwin\Mocks\SystemProfilerWithAwdlCommand;
 use Sanchescom\WiFi\WiFi;
 
 class DarwinSystemProfilerTest extends BaseTestCase
@@ -62,5 +63,14 @@ class DarwinSystemProfilerTest extends BaseTestCase
         $this->assertSame(6, $networks->count());
         $this->assertSame(['<redacted>'], $networks->pluck('ssid')->unique()->values()->all());
         $this->assertSame([], $networks->getConnected());
+    }
+
+    #[Test]
+    public function it_ignores_networks_listed_under_other_interfaces(): void
+    {
+        $networks = $this->scan(SystemProfilerWithAwdlCommand::class);
+
+        $this->assertSame(6, $networks->count());
+        $this->assertNotContains('Peer-To-Peer-Ghost', $networks->pluck('ssid')->all());
     }
 }
