@@ -278,7 +278,9 @@ See also the list of [contributors](https://github.com/sanchescom/php-wifi/contr
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
+This project is licensed under the MIT License — see the [LICENSE.md](LICENSE.md) file for details.
+
+Versions up to and including 2.0.0 were published under GPL-3.0. 2.0.1 relicenses the package to MIT; the change is made by the sole author and copyright holder.
 
 ## Platform Support
 
