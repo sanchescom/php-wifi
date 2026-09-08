@@ -21,7 +21,7 @@ broken or unsafe.
   and an XML body built with `str_replace` and no escaping. Write to
   `sys_get_temp_dir()` under a random name, escape the SSID for XML, delete
   in a `finally`.
-- **Add a WPA3 profile template and 6 GHz channels.** `Frequency` maps
+- **Add 6 GHz channels.** `Frequency` maps
   channel 165 to 5825 MHz; on macOS 26 channel 165 is a 6 GHz / 160 MHz
   network (`Channel: 165 (6GHz, 160MHz)` in the raw output). Add the 6 GHz
   table, add `get6GhzNetworks()`, and stop `get5GhzNetworks()` meaning
@@ -30,15 +30,7 @@ broken or unsafe.
   `system_profiler` returns `<redacted>`, the scan should not yield six
   identical networks named `<redacted>`. Options, in order of preference:
   a `ssidRedacted` flag on the network plus a documented
-  `LocationServicesRequired` condition; or throwing. Document that BSSIDs
-  are never available from `system_profiler`, so `getByBssid()` and the CLI's
-  `connect --bssid` cannot work on macOS at all, and that the only path is
-  `getBySsid()` with Location Services granted to the host process (Terminal,
-  the web server, …).
-- **Cover the `system_profiler` parser with a fixture.** The Darwin test
-  fixture is still the old `airport` table, so the parser 2.0.0 shipped as
-  its headline feature has never been executed by a test. Capture the real
-  output from a Mac with and without Location Services and test both.
+  `LocationServicesRequired` condition; or throwing.
 - **Document Linux privileges.** Three of the closed issues (#15, #20, #21)
   are the same problem: `nmcli device wifi connect` needs a polkit rule or
   membership in `netdev`, and a PHP-FPM worker has neither. A README section
@@ -48,10 +40,8 @@ broken or unsafe.
   on macOS both say which interface is Wi-Fi; make `$device` optional.
 - **Collapse duplicate SSIDs** (#10). `groupBySsid()` returning the strongest
   BSSID per SSID — most users want one row per network, not one per radio.
-- **Dependency hygiene.** `.gitattributes` with `export-ignore` for
-  `tests/`, `tmp/`, `.github/`; PHPStan config and a `composer analyse`
-  script (PHPStan is a dev dependency today with nothing configured); Pint
-  or PSR-12 in place of PSR-2.
+- **Dependency hygiene.** Pint or PSR-12 in place of PSR-2; raise PHPStan
+  from level 5 to 6 and retire the one-entry baseline.
 
 ## 3.0 — only if a consumer exists
 
