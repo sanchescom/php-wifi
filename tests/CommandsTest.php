@@ -2,6 +2,7 @@
 
 namespace Sanchescom\WiFi\Test;
 
+use PHPUnit\Framework\Attributes\Test;
 use Sanchescom\WiFi\Exceptions\CommandException;
 use Sanchescom\WiFi\System\Command;
 
@@ -16,9 +17,7 @@ class CommandsTest extends BaseTestCase
         parent::setUp();
     }
 
-    /**
-     * @test
-     */
+    #[Test]
     public function it_should_execute_commands()
     {
         $command = new Command();

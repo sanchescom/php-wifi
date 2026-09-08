@@ -30,7 +30,8 @@ class Networks extends AbstractNetworks
     {
         // system_profiler is the official macOS tool for WiFi info
         return sprintf(
-            'system_profiler SPAirPortDataType 2>/dev/null && echo "%s" && system_profiler SPAirPortDataType 2>/dev/null',
+            'system_profiler SPAirPortDataType 2>/dev/null && echo "%s" && '.
+            'system_profiler SPAirPortDataType 2>/dev/null',
             $this->separator
         );
     }
@@ -159,9 +160,8 @@ class Networks extends AbstractNetworks
                 }
                 // Start new network
                 $currentNetwork = ['ssid' => trim($matches[1])];
-            }
-            // Parse network properties
-            elseif ($currentNetwork && preg_match('/^\s{14}(.+?):\s*(.+)$/', $line, $matches)) {
+            } elseif ($currentNetwork && preg_match('/^\s{14}(.+?):\s*(.+)$/', $line, $matches)) {
+                // Parse network properties
                 $key = trim($matches[1]);
                 $value = trim($matches[2]);
 
@@ -225,5 +225,4 @@ class Networks extends AbstractNetworks
 
         return $formatted;
     }
-
 }

@@ -2,6 +2,8 @@
 
 namespace Sanchescom\WiFi\Test;
 
+use PHPUnit\Framework\Attributes\Depends;
+use PHPUnit\Framework\Attributes\Test;
 use Sanchescom\WiFi\Exceptions\NetworkNotFoundException;
 use Sanchescom\WiFi\Exceptions\UnknownSystemException;
 use Sanchescom\WiFi\System\AbstractNetwork;
@@ -25,9 +27,7 @@ class NetworksTest extends BaseTestCase
         parent::setUp();
     }
 
-    /**
-     * @test
-     */
+    #[Test]
     public function it_should_return_networks_in_windows()
     {
         $wifi = new WiFi();
@@ -42,9 +42,7 @@ class NetworksTest extends BaseTestCase
         return $networks;
     }
 
-    /**
-     * @test
-     */
+    #[Test]
     public function it_should_return_networks_in_darwin()
     {
         $wifi = new WiFi();
@@ -59,9 +57,7 @@ class NetworksTest extends BaseTestCase
         return $networks;
     }
 
-    /**
-     * @test
-     */
+    #[Test]
     public function it_should_return_networks_in_linux()
     {
         $wifi = new WiFi();
@@ -76,9 +72,7 @@ class NetworksTest extends BaseTestCase
         return $networks;
     }
 
-    /**
-     * @test
-     */
+    #[Test]
     public function it_should_throw_exception_if_unknown_os()
     {
         $this->expectException(UnknownSystemException::class);
@@ -89,18 +83,12 @@ class NetworksTest extends BaseTestCase
         $this->assetsContains($wifi::scan());
     }
 
-    /**
-     * @param $networks
-     */
     protected function assetsContains($networks)
     {
         $this->assertInstanceOf(Collection::class, $networks);
         $this->assertContainsOnlyInstancesOf(AbstractNetwork::class, $networks);
     }
 
-    /**
-     * @param $networks
-     */
     protected function assetsCollections(Collection $networks)
     {
         $this->assertIsArray($networks->getAll());
@@ -128,12 +116,8 @@ class NetworksTest extends BaseTestCase
         }
     }
 
-    /**
-     * @depends it_should_return_networks_in_linux
-     * @test
-     *
-     * @param $networks
-     */
+    #[Test]
+    #[Depends('it_should_return_networks_in_linux')]
     public function it_should_connect_in_linux(Collection $networks)
     {
         $network = $networks->firstOrFail();
@@ -146,12 +130,8 @@ class NetworksTest extends BaseTestCase
         );
     }
 
-    /**
-     * @depends it_should_return_networks_in_linux
-     * @test
-     *
-     * @param $networks
-     */
+    #[Test]
+    #[Depends('it_should_return_networks_in_linux')]
     public function it_should_disconnect_in_linux(Collection $networks)
     {
         $network = $networks->firstOrFail();
@@ -164,12 +144,8 @@ class NetworksTest extends BaseTestCase
         );
     }
 
-    /**
-     * @depends it_should_return_networks_in_darwin
-     * @test
-     *
-     * @param $networks
-     */
+    #[Test]
+    #[Depends('it_should_return_networks_in_darwin')]
     public function it_should_connect_in_darwin(Collection $networks)
     {
         $network = $networks->firstOrFail();
@@ -182,12 +158,8 @@ class NetworksTest extends BaseTestCase
         );
     }
 
-    /**
-     * @depends it_should_return_networks_in_darwin
-     * @test
-     *
-     * @param $networks
-     */
+    #[Test]
+    #[Depends('it_should_return_networks_in_darwin')]
     public function it_should_disconnect_in_darwin(Collection $networks)
     {
         $network = $networks->firstOrFail();
@@ -201,12 +173,8 @@ class NetworksTest extends BaseTestCase
         );
     }
 
-    /**
-     * @depends it_should_return_networks_in_windows
-     * @test
-     *
-     * @param $networks
-     */
+    #[Test]
+    #[Depends('it_should_return_networks_in_windows')]
     public function it_should_connect_in_windows(Collection $networks)
     {
         $network = $networks->firstOrFail();
@@ -223,12 +191,8 @@ class NetworksTest extends BaseTestCase
         );
     }
 
-    /**
-     * @depends it_should_return_networks_in_windows
-     * @test
-     *
-     * @param $networks
-     */
+    #[Test]
+    #[Depends('it_should_return_networks_in_windows')]
     public function it_should_disconnect_in_windows(Collection $networks)
     {
         $network = $networks->firstOrFail();

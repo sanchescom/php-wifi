@@ -1,2 +1,9 @@
-.idea
+/.idea
 /vendor
+/composer.lock
+/.phpunit.cache
+/.phpunit.result.cache
+/.superpowers
+/tmp/*
+!/tmp/.gitkeep
+.DS_Store
