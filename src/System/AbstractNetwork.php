@@ -12,6 +12,7 @@ use Sanchescom\WiFi\Contracts\NetworkInterface;
  */
 abstract class AbstractNetwork implements NetworkInterface
 {
+    public const WPA3_SECURITY = 'WPA3';
     public const WPA2_SECURITY = 'WPA2';
     public const WPA_SECURITY = 'WPA';
     public const WEP_SECURITY = 'WEP';
@@ -28,6 +29,7 @@ abstract class AbstractNetwork implements NetworkInterface
     public bool $connected;
 
     protected static array $securityTypes = [
+        self::WPA3_SECURITY,
         self::WPA2_SECURITY,
         self::WPA_SECURITY,
         self::WEP_SECURITY,
@@ -50,15 +52,13 @@ abstract class AbstractNetwork implements NetworkInterface
      */
     public function getSecurityType(): string
     {
-        $securityType = self::UNKNOWN_SECURITY;
-
         foreach (self::$securityTypes as $securityType) {
             if (strpos($this->security, $securityType) !== false) {
-                break;
+                return $securityType;
             }
         }
 
-        return $securityType;
+        return self::UNKNOWN_SECURITY;
     }
 
     /**
