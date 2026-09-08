@@ -49,8 +49,7 @@ class Network extends AbstractNetwork
         $this->channel = (int) $network[4];
         $this->security = $network[7];
         $this->securityFlags = $network[8].' '.$network[9];
-        $this->dbm = (float) $network[6];
-        $this->quality = (float) to_quality((int) $network[6]);
+        $this->setSignalFromQuality((float) $network[6]);
         $this->frequency = (int) $network[5];
         $this->connected = ($network[0] == self::POSITIVE_CONNECTION_FLAG);
 

@@ -70,6 +70,28 @@ abstract class AbstractNetwork implements NetworkInterface
     }
 
     /**
+     * Set both signal properties from a 0-100 quality percentage.
+     *
+     * @param float $quality
+     */
+    protected function setSignalFromQuality(float $quality): void
+    {
+        $this->quality = max(0.0, min(100.0, $quality));
+        $this->dbm = $this->quality / 2 - 100;
+    }
+
+    /**
+     * Set both signal properties from a dBm reading.
+     *
+     * @param float $dbm
+     */
+    protected function setSignalFromDbm(float $dbm): void
+    {
+        $this->dbm = $dbm;
+        $this->quality = max(0.0, min(100.0, 2 * ($dbm + 100)));
+    }
+
+    /**
      * @return string
      */
     public function __toString(): string

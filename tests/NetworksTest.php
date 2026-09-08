@@ -73,6 +73,36 @@ class NetworksTest extends BaseTestCase
     }
 
     #[Test]
+    #[Depends('it_should_return_networks_in_linux')]
+    public function it_should_report_linux_signal_in_both_units(Collection $networks): void
+    {
+        $network = $networks->getBySsid(self::SSID);
+
+        $this->assertSame(72.0, $network->quality);
+        $this->assertSame(-64.0, $network->dbm);
+    }
+
+    #[Test]
+    #[Depends('it_should_return_networks_in_windows')]
+    public function it_should_report_windows_signal_in_both_units(Collection $networks): void
+    {
+        $network = $networks->getBySsid(self::SSID);
+
+        $this->assertSame(99.0, $network->quality);
+        $this->assertSame(-50.5, $network->dbm);
+    }
+
+    #[Test]
+    #[Depends('it_should_return_networks_in_darwin')]
+    public function it_should_report_darwin_signal_in_both_units(Collection $networks): void
+    {
+        $network = $networks->getBySsid(self::SSID);
+
+        $this->assertSame(-83.0, $network->dbm);
+        $this->assertSame(34.0, $network->quality);
+    }
+
+    #[Test]
     public function it_should_throw_exception_if_unknown_os()
     {
         $this->expectException(UnknownSystemException::class);

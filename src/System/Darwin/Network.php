@@ -56,9 +56,8 @@ class Network extends AbstractNetwork implements FrequencyInterface
         $this->channel = (int) ($network[3] ?? 0);
         $this->security = $network[6] ?? '';
         $this->securityFlags = $network[5] ?? '';
-        $this->quality = (float) ($network[2] ?? 0.0);
+        $this->setSignalFromDbm((float) ($network[2] ?? 0));
         $this->frequency = $this->getFrequency();
-        $this->dbm = (float) to_dbm((int) ($network[2] ?? 0));
         $this->connected = isset($network[7]);
 
         return $this;
