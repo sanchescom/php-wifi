@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.1] - 2026-09-08
+
+### Changed
+- **License:** MIT (was GPL-3.0). All code is by the copyright holder.
+- `php` constraint is now `^8.2` — 8.4 and 8.5 install; 8.1 could never resolve 2.0.0 because `illuminate/collections` 11 already required 8.2.
+- `illuminate/collections` constraint is now `^11.0 || ^12.0 || ^13.0`, so the package coexists with Laravel 11, 12 and 13 applications.
+- `getSecurityType()` recognises `WPA3` (new constant `AbstractNetwork::WPA3_SECURITY`) and returns `Unknown` instead of `WEP` when nothing matches.
+- Composer scripts renamed: `check-style` → `lint`, `fix-style` → `fix`; new `analyse` (PHPStan).
+
+### Fixed
+- **Linux:** `nmcli` reports signal as a percentage; it was stored as dBm and quality was derived from it (`+95 dBm`, `390 %`). Both fields are now correct.
+- **macOS:** the dBm reading from `system_profiler` (and from the legacy `airport` table) was converted as if it were a percentage (`-59 dBm` became `-129.5 dBm`).
+- **macOS:** every network was reported `connected: true` when SSIDs are redacted; only the current network is now, and never when its name is `<redacted>`.
+- **macOS:** the `awdl0` interface block was parsed as extra networks.
+- **Windows:** `WPA3 Personal` networks selected the WPA (TKIP) profile template; a `WPA3.xml` (WPA3SAE) template is added.
+- Test suite: PHPUnit 11 configuration and attributes (12 deprecations removed); `failOnWarning`/`failOnNotice`/`failOnDeprecation` enforced.
+
+### Added
+- GitHub Actions CI: PHP 8.2–8.5 × `illuminate/collections` 11/12/13 (Travis configuration removed).
+- `.gitattributes` so `composer require` no longer ships tests and tooling.
+- Real `system_profiler` fixtures (macOS 26.5), redacted and named, covering the parser 2.0.0 introduced.
+
 ## [2.0.0] - 2025-11-15
 
 ### Breaking Changes

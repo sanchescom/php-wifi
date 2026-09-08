@@ -14,8 +14,10 @@ Version 2.0 brings PHP 8.1+ support, modern syntax, extended functionality, and 
 
 **Now (v2.0):**
 ```json
-"php": "^8.1 || ^8.2 || ^8.3"
+"php": "^8.2"
 ```
+
+2.0.1 widened this to any 8.2+ release (8.4, 8.5) and allows illuminate/collections 11–13.
 
 ### 2. Collection Library
 **Before:** `tightenco/collect`
@@ -47,6 +49,19 @@ WARNING: The airport command line tool is deprecated and will be removed in a fu
 - Uses `system_profiler SPAirPortDataType` (official Apple tool)
 - Dual-format parser for backward compatibility
 - Zero deprecation warnings
+
+## macOS in 2.0.1
+
+`system_profiler` scanning has real limits that 2.0.0's docs did not
+mention:
+
+- Apple gates Wi-Fi details behind Location Services: unless the process
+  running PHP has been granted Location Services, every SSID comes back as
+  the literal string `<redacted>`.
+- `system_profiler` never reports BSSIDs for other networks, so `bssid` is
+  always empty on macOS.
+- Because of that, `getByBssid()` cannot find anything and the CLI's
+  `connect --bssid` does not work on macOS — use `getBySsid()`.
 
 ## New Features
 
@@ -104,7 +119,7 @@ composer update sanchescom/php-wifi
 composer test
 
 # Check code style
-composer check-style
+composer lint
 
 # Test WiFi scanning
 ./vendor/bin/wifi list

@@ -1,17 +1,16 @@
-[![Build Status](https://travis-ci.org/sanchescom/php-wifi.svg?branch=master)](https://travis-ci.org/sanchescom/php-wifi)
-[![codecov](https://codecov.io/gh/sanchescom/php-wifi/branch/master/graph/badge.svg)](https://codecov.io/gh/sanchescom/php-wifi)
-[![Maintainability](https://api.codeclimate.com/v1/badges/852384730259754d4008/maintainability)](https://codeclimate.com/github/sanchescom/php-wifi/maintainability)
-[![StyleCI](https://github.styleci.io/repos/175257648/shield?branch=master)](https://github.styleci.io/repos/168349832)
-[![Quality Score](https://img.shields.io/scrutinizer/g/sanchescom/laravel-phpsocket.io.svg?style=flat-square)](https://scrutinizer-ci.com/g/sanchescom/php-wifi)
+[![CI](https://github.com/sanchescom/php-wifi/actions/workflows/ci.yml/badge.svg)](https://github.com/sanchescom/php-wifi/actions/workflows/ci.yml)
+[![Latest Version](https://img.shields.io/packagist/v/sanchescom/php-wifi.svg)](https://packagist.org/packages/sanchescom/php-wifi)
+[![PHP Version](https://img.shields.io/packagist/php-v/sanchescom/php-wifi.svg)](https://packagist.org/packages/sanchescom/php-wifi)
+[![License](https://img.shields.io/packagist/l/sanchescom/php-wifi.svg)](LICENSE.md)
 
 # PHP WiFi
 
-A modern, cross-platform PHP library for managing WiFi networks. Built with PHP 8.1+ and fully typed for better IDE support and type safety.
+A modern, cross-platform PHP library for managing WiFi networks. Built with PHP 8.2+ and fully typed for better IDE support and type safety.
 
 ## Features
 
 - **Cross-platform support**: Works on Linux, macOS, and Windows
-- **Modern PHP 8.1+**: Fully typed properties, strict types, and modern syntax
+- **Modern PHP 8.2+**: Fully typed properties, strict types, and modern syntax
 - **Rich API**: Scan networks, connect/disconnect, filter by various parameters
 - **Powerful filtering**: Filter by security type, signal strength, frequency band, and more
 - **Collection-based**: Fluent interface with Laravel-style collections
@@ -19,7 +18,8 @@ A modern, cross-platform PHP library for managing WiFi networks. Built with PHP 
 
 ## Requirements
 
-- PHP 8.1, 8.2, or 8.3
+- PHP 8.2, 8.3, 8.4 or 8.5
+- illuminate/collections 11, 12 or 13 (pulled in automatically; the constraint lets the package coexist with Laravel 11–13 applications)
 - Operating System: Linux, macOS (Darwin), or Windows
 - Appropriate system utilities (networksetup on macOS, nmcli on Linux, netsh on Windows)
 
@@ -289,10 +289,18 @@ Versions up to and including 2.0.0 were published under GPL-3.0. 2.0.1 relicense
 - Default device: `wlan0` or `wlan1`
 
 ### macOS
-- **Scanning**: Uses `system_profiler SPAirPortDataType` (official Apple tool, no deprecation warnings)
-- **Backward Compatibility**: Automatically supports old `airport` format if needed
-- **Connection management**: Requires `networksetup` (built-in)
-- Default device: `en0` or `en1`
+
+- **Scanning** uses `system_profiler SPAirPortDataType`. Apple gates Wi-Fi
+  details behind Location Services: unless the process that runs PHP
+  (Terminal, your web server, a LaunchAgent…) has been granted Location
+  Services, every SSID comes back as the literal string `<redacted>`.
+  `system_profiler` never reports BSSIDs for other networks, so `bssid` is
+  always empty on macOS, `getByBssid()` cannot find anything, and the CLI's
+  `connect --bssid` does not work on macOS — use `getBySsid()`.
+- **Connection management** uses `networksetup` (built in). Default device:
+  `en0`; find yours with `networksetup -listallhardwareports`.
+- The legacy `airport` output format is still parsed for older systems; the
+  `airport` binary itself was removed by Apple in macOS 14.4.
 
 ### Windows
 - Requires `netsh` (built-in)
@@ -305,9 +313,7 @@ Versions up to and including 2.0.0 were published under GPL-3.0. 2.0.1 relicense
 - **Extended Functionality**: New filtering and sorting methods
 - **Better Type Safety**: Full type hints throughout the codebase
 - **Improved Collections**: Switched to `illuminate/collections` with fluent interface
-- **macOS Improvements**:
-  - Migrated to official `system_profiler` tool (no more deprecation warnings!)
-  - Dual-format parser supports both new and legacy formats
+- **macOS**: scanning moved from the removed `airport` binary to `system_profiler` (see Platform Support for what that can and cannot report)
 - **New Features**:
   - Filter networks by frequency band (2.4GHz / 5GHz)
   - Filter by signal strength
@@ -334,11 +340,19 @@ composer test
 
 ```bash
 # Check code style
-composer check-style
+composer lint
 
 # Fix code style automatically
-composer fix-style
+composer fix
 ```
+
+## Static Analysis
+
+```bash
+composer analyse
+```
+
+Runs PHPStan at level 5.
 
 ## Platform-Specific Notes
 

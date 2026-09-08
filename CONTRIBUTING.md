@@ -6,7 +6,7 @@ We accept contributions via Pull Requests on [Github](https://github.com/sanches
 
 ## Pull Requests
 
-- **[PSR-2 Coding Standard](https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-2-coding-style-guide.md)** - Check the code style with ``$ composer check-style`` and fix it with ``$ composer fix-style``.
+- **[PSR-2 Coding Standard](https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-2-coding-style-guide.md)** - Check the code style with ``$ composer lint`` and fix it with ``$ composer fix``. Run ``$ composer analyse`` for static analysis (PHPStan).
 
 - **Add tests!** - Your patch won't be accepted if it doesn't have tests.
 
@@ -30,15 +30,15 @@ First, install the dependencies:
 $ composer install
 ```
 
-Then run PHPUnit:
+Then run the test suite:
 
 ```bash
-$ vendor/bin/phpunit
+$ composer test
 ```
 
 If the test suite passes on your local machine you should be good to go.
 
-When you make a pull request, the tests will automatically be run again by [Travis CI](https://travis-ci.org/) on multiple PHP versions.
+When you make a pull request, the tests will automatically be run again by [GitHub Actions](https://github.com/sanchescom/php-wifi/actions/workflows/ci.yml) on multiple PHP versions.
 
 
 **Happy coding**!
