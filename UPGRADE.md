@@ -110,7 +110,7 @@ composer require sanchescom/php-wifi
 composer update sanchescom/php-wifi
 ```
 
-**Note:** You may need to update your PHP version to 8.1+ first.
+**Note:** You may need to update your PHP version to 8.2+ first.
 
 ## Testing After Upgrade
 
@@ -127,7 +127,7 @@ composer lint
 
 ## Compatibility
 
-Most v1.x code will work without changes. The main requirement is PHP 8.1+.
+Most v1.x code will work without changes. The main requirement is PHP 8.2+.
 
 ### Working v1.x Code Example
 

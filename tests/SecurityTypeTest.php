@@ -18,6 +18,7 @@ class SecurityTypeTest extends BaseTestCase
             'macOS WPA2'          => ['WPA2 Personal', 'WPA2'],
             'airport mixed'       => ['WPA(PSK/TKIP,AES/TKIP) WPA2(PSK/TKIP,AES/TKIP)', 'WPA2'],
             'netsh WPA2'          => ['WPA2-Personal', 'WPA2'],
+            'netsh WPA3'          => ['WPA3-Personal', 'WPA3'],
             'nmcli WPA1 only'     => ['WPA1', 'WPA'],
             'WEP'                 => ['WEP', 'WEP'],
             'open'                => ['', 'Unknown'],
