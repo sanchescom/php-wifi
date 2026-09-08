@@ -21,6 +21,14 @@ class Networks extends AbstractNetworks
     const BSSID_KEY = 1;
 
     /**
+     * What macOS prints instead of an SSID when the calling process has no
+     * Location Services permission.
+     *
+     * @var string
+     */
+    const REDACTED = '<redacted>';
+
+    /**
      * Get the WiFi scan command for macOS.
      * Uses system_profiler which is the official macOS tool.
      *
@@ -133,8 +141,11 @@ class Networks extends AbstractNetworks
     protected function extractCurrentSSID(string $output): ?string
     {
         if (preg_match('/Current Network Information:\s*\n\s*(.+?):/m', $output, $matches)) {
-            return trim($matches[1]);
+            $ssid = trim($matches[1]);
+
+            return $ssid === self::REDACTED ? null : $ssid;
         }
+
         return null;
     }
 
@@ -150,8 +161,26 @@ class Networks extends AbstractNetworks
         $networks = [];
         $lines = explode("\n", $output);
         $currentNetwork = null;
+        $inWifiInterface = false;
+        $seenWifiInterface = false;
 
         foreach ($lines as $line) {
+            // 8-space indent = interface header ("en0:", "awdl0:")
+            if (preg_match('/^\s{8}(\S+):\s*$/', $line)) {
+                if ($seenWifiInterface) {
+                    break;
+                }
+                $inWifiInterface = false;
+                continue;
+            }
+            if (!$inWifiInterface && preg_match('/^\s{10}Card Type:/', $line)) {
+                $inWifiInterface = true;
+                $seenWifiInterface = true;
+                continue;
+            }
+            if (!$inWifiInterface) {
+                continue;
+            }
             // Match network name (it's at the beginning of a block, followed by :)
             if (preg_match('/^\s{12}(.+?):\s*$/', $line, $matches)) {
                 // Save previous network if exists
@@ -219,7 +248,7 @@ class Networks extends AbstractNetworks
         ];
 
         // Mark as connected if this is the current network
-        if ($currentSSID && $ssid === $currentSSID) {
+        if ($currentSSID !== null && $ssid !== self::REDACTED && $ssid === $currentSSID) {
             $formatted[] = true;
         }
 
