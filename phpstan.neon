@@ -3,3 +3,4 @@ parameters:
     paths:
         - src/Shell
         - src/Exception
+        - src/Value
