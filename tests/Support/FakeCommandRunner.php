@@ -4,18 +4,20 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\Test\Support;
 
+use LogicException;
 use RuntimeException;
 use Sanchescom\WiFi\Shell\Command;
 use Sanchescom\WiFi\Shell\CommandResult;
 use Sanchescom\WiFi\Shell\CommandRunner;
 
 /**
- * Maps a substring of Command::describe() to a fixture. Checked in
- * declaration order; first match wins — so list the MOST SPECIFIC needle
- * first ("connection show --active" before "connection show"; never a bare
- * "connect", which also matches "connection …"). A fixture is either a file
- * path or an array {output: string|path, exit?: int, stderr?: string}. Lines
- * starting with "# SYNTHETIC:" are stripped from file fixtures.
+ * Maps a substring of Command::describe() to a fixture. The LONGEST matching
+ * needle wins ("connection show --active" beats "connection show" for a
+ * command that contains both, regardless of which was declared first);
+ * declaration order is only a tie-break between equal-length needles. A
+ * fixture is either a file path or an array {output: string|path, exit?:
+ * int, stderr?: string}. Lines starting with "# SYNTHETIC:" are stripped
+ * from file fixtures.
  */
 final class FakeCommandRunner implements CommandRunner
 {
@@ -32,10 +34,18 @@ final class FakeCommandRunner implements CommandRunner
         $this->commands[] = $command;
         $described = $command->describe();
 
-        foreach ($this->fixtures as $needle => $fixture) {
-            if (!str_contains($described, $needle)) {
+        /** @var list<int|string> $needles */
+        $needles = array_keys($this->fixtures);
+        usort($needles, static fn (int|string $a, int|string $b): int => strlen((string) $b) <=> strlen((string) $a));
+
+        foreach ($needles as $needle) {
+            $needleString = (string) $needle;
+
+            if (!str_contains($described, $needleString)) {
                 continue;
             }
+
+            $fixture = $this->fixtures[$needle];
             $spec = is_string($fixture) ? ['output' => $fixture] : $fixture;
             $output = is_file($spec['output']) ? (string) file_get_contents($spec['output']) : $spec['output'];
             $output = preg_replace('/^# SYNTHETIC:[^\n]*\n/', '', $output) ?? $output;
@@ -48,6 +58,10 @@ final class FakeCommandRunner implements CommandRunner
 
     public function last(): Command
     {
+        if ($this->commands === []) {
+            throw new LogicException('No command has been run.');
+        }
+
         return $this->commands[count($this->commands) - 1];
     }
 }

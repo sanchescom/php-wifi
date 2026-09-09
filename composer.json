@@ -36,8 +36,7 @@
         "test": "./vendor/bin/phpunit",
         "lint": "./vendor/bin/phpcs -p --standard=PSR12 ./src",
         "fix": "./vendor/bin/phpcbf --standard=PSR12 ./src",
-        "analyse": "./vendor/bin/phpstan analyse",
-        "analyse:new": "./vendor/bin/phpstan analyse --level=max src/Shell"
+        "analyse": "./vendor/bin/phpstan analyse"
     },
     "config": {
         "sort-packages": true

@@ -1,0 +1,2 @@
+# SYNTHETIC: crafted for FakeCommandRunnerTest, not a real nmcli capture
+Home:802-11-wireless:wlan0:yes

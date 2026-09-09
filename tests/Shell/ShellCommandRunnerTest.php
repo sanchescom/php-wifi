@@ -30,4 +30,16 @@ final class ShellCommandRunnerTest extends TestCase
         $this->assertNotSame(0, $result->exitCode);
         $this->assertTrue($result->stdout === '' || $result->stderr !== '');
     }
+
+    #[Test]
+    public function a_large_stderr_payload_does_not_deadlock_before_stdout_is_read(): void
+    {
+        $result = (new ShellCommandRunner())->run(new Command(
+            'sh',
+            ['-c', 'head -c 200000 /dev/zero | tr "\0" e 1>&2; printf OUT']
+        ));
+
+        $this->assertSame('OUT', $result->stdout);
+        $this->assertSame(200000, strlen($result->stderr));
+    }
 }
