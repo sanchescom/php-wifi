@@ -6,3 +6,4 @@ parameters:
         - src/Value
         - src/Parser
         - src/Backend
+        - src/Wifi3.php

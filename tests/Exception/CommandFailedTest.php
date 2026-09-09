@@ -41,4 +41,37 @@ final class CommandFailedTest extends TestCase
         $this->assertStringContainsString('polkit', $e->getMessage());
         $this->assertFalse(PermissionDenied::looksLike(new CommandResult(1, '', 'No network with SSID')));
     }
+
+    #[Test]
+    public function permission_denied_on_darwin_points_at_admin_privileges_instead_of_polkit(): void
+    {
+        $result = new CommandResult(1, '', 'Not authorized to control Wi-Fi.');
+
+        $e = PermissionDenied::fromResult(new Command('networksetup', ['-setairportnetwork', 'en0', 'x']), $result, Os::Darwin);
+
+        $this->assertStringContainsString('administrator', $e->getMessage());
+        $this->assertStringNotContainsString('polkit', $e->getMessage());
+    }
+
+    #[Test]
+    public function permission_denied_on_windows_points_at_admin_privileges_instead_of_polkit(): void
+    {
+        $result = new CommandResult(1, '', 'Insufficient privileges to perform this operation.');
+
+        $e = PermissionDenied::fromResult(new Command('netsh', ['wlan', 'connect']), $result, Os::Windows);
+
+        $this->assertStringContainsString('administrator', $e->getMessage());
+        $this->assertStringNotContainsString('polkit', $e->getMessage());
+    }
+
+    #[Test]
+    public function permission_denied_on_linux_still_points_at_polkit(): void
+    {
+        $result = new CommandResult(4, '', 'Not authorized to control networking.');
+
+        $e = PermissionDenied::fromResult(new Command('nmcli', ['device', 'wifi', 'connect', 'x']), $result, Os::Linux);
+
+        $this->assertStringContainsString('polkit', $e->getMessage());
+        $this->assertStringNotContainsString('administrator', $e->getMessage());
+    }
 }

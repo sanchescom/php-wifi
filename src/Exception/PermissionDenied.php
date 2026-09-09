@@ -18,8 +18,10 @@ final class PermissionDenied extends CommandFailed
     public static function fromResult(Command $command, CommandResult $result, Os $os): static
     {
         $base = parent::fromResult($command, $result, $os);
-        $pointer = ' The process is not allowed to control NetworkManager'
-            . ' — see README → Linux → Privileges (polkit).';
+        $pointer = $os === Os::Linux
+            ? ' The process is not allowed to control NetworkManager'
+                . ' — see README → Linux → Privileges (polkit).'
+            : ' Run the command with sufficient privileges (administrator).';
 
         return new static($command, $result, $base->getMessage() . $pointer);
     }

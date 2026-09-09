@@ -52,6 +52,11 @@ final class NetworksetupBackend implements Backend
         $this->run(new Command('networksetup', $arguments, secretIndexes: $secretIndexes));
     }
 
+    /**
+     * If the second `-setairportpower … on` call fails after the first
+     * `off` call has already succeeded, the radio is left powered off and
+     * the thrown `CommandFailed` names the `on` command, not the `off` one.
+     */
     public function disconnect(Device $device): void
     {
         $this->run(new Command('networksetup', ['-setairportpower', $device->name, 'off']));
