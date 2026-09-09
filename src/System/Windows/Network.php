@@ -25,7 +25,12 @@ class Network extends AbstractNetwork implements FrequencyInterface
     {
         $command = glue_commands(
             sprintf('netsh wlan add profile filename="%s"', $this->getProfileService()->create($password)),
-            sprintf('netsh wlan connect interface="%s" ssid="%s" name="%s"', $device, $this->ssid, $this->ssid)
+            sprintf(
+                'netsh wlan connect interface=%s ssid=%s name=%s',
+                $this->quote($device),
+                $this->quote($this->ssid),
+                $this->quote($this->ssid)
+            )
         );
 
         $this->getCommand()->execute($command);
@@ -40,7 +45,19 @@ class Network extends AbstractNetwork implements FrequencyInterface
      */
     public function disconnect(string $device): void
     {
-        $this->getCommand()->execute(sprintf('netsh wlan disconnect interface="%s"', $device));
+        $this->getCommand()->execute(sprintf('netsh wlan disconnect interface=%s', $this->quote($device)));
+    }
+
+    /**
+     * Quote a value for cmd.exe. cmd has no single quotes and expands %VAR%
+     * and !VAR! even inside double quotes, so the three characters that can
+     * break out of the argument are replaced with a space — the same thing
+     * PHP's escapeshellarg() does on Windows, done here so the result does
+     * not depend on the host PHP runs on.
+     */
+    protected function quote(string $value): string
+    {
+        return '"' . str_replace(['"', '%', '!'], ' ', $value) . '"';
     }
 
     /**

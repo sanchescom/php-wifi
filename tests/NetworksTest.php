@@ -156,7 +156,8 @@ class NetworksTest extends BaseTestCase
 
         $this->assertEquals(
             $network->getCommand()->getLastCommand(),
-            'LANG=C nmcli -w 10 device wifi connect "AlphaNet-foiEmE" password "123" ifname "someDevice"'
+            'LANG=C nmcli -w 10 device wifi connect '.escapeshellarg('AlphaNet-foiEmE')
+            .' password '.escapeshellarg('123').' ifname '.escapeshellarg('someDevice')
         );
     }
 
@@ -170,7 +171,7 @@ class NetworksTest extends BaseTestCase
 
         $this->assertEquals(
             $network->getCommand()->getLastCommand(),
-            'LANG=C nmcli device disconnect someDevice'
+            'LANG=C nmcli device disconnect '.escapeshellarg('someDevice')
         );
     }
 
@@ -184,7 +185,8 @@ class NetworksTest extends BaseTestCase
 
         $this->assertEquals(
             $network->getCommand()->getLastCommand(),
-            'networksetup -setairportnetwork someDevice Offshore View Marine Services 123'
+            'networksetup -setairportnetwork '.escapeshellarg('someDevice').' '
+            .escapeshellarg('Offshore View Marine Services').' '.escapeshellarg('123')
         );
     }
 
@@ -198,8 +200,10 @@ class NetworksTest extends BaseTestCase
 
         $this->assertEquals(
             $network->getCommand()->getLastCommand(),
-            'networksetup -removepreferredwirelessnetwork someDevice Offshore View Marine Services && '.
-            'networksetup -setairportpower someDevice off && networksetup -setairportpower someDevice on'
+            'networksetup -removepreferredwirelessnetwork '.escapeshellarg('someDevice').' '
+            .escapeshellarg('Offshore View Marine Services')
+            .' && networksetup -setairportpower '.escapeshellarg('someDevice').' off'
+            .' && networksetup -setairportpower '.escapeshellarg('someDevice').' on'
         );
     }
 
