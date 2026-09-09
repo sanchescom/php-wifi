@@ -40,7 +40,7 @@ abstract class AbstractNetworks
     }
 
     /**
-     * @param array $networks
+     * @param array<int, array<int, string>> $networks
      *
      * @return void
      */
@@ -54,7 +54,7 @@ abstract class AbstractNetworks
     /**
      * @param string $networksString
      *
-     * @return array
+     * @return array<int, string>
      */
     protected function explodeAvailableNetworks(string $networksString): array
     {
@@ -64,7 +64,7 @@ abstract class AbstractNetworks
     /**
      * @param string $output
      *
-     * @return array
+     * @return array<int, array<int, string>>
      */
     abstract protected function extractingNetworks(string $output): array;
 

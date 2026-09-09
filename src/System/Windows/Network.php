@@ -44,7 +44,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
     }
 
     /**
-     * @param array $network
+     * @param array<int, string> $network
      *
      * @return \Sanchescom\WiFi\System\Windows\Network
      */

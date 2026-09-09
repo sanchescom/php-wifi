@@ -9,6 +9,9 @@ namespace Sanchescom\WiFi\System;
  */
 trait Frequency
 {
+    /**
+     * @var array<int, int>
+     */
     protected static array $frequencies = [];
 
     /**
@@ -24,6 +27,8 @@ trait Frequency
      *      ],
      * ];
      * </code>.
+     *
+     * @var array<int, array<int, int>>
      */
     protected array $frequencySettings = [
         [2412, 1, 14, 5, 1],
@@ -38,6 +43,9 @@ trait Frequency
         return $this->generateFrequencies()[$this->channel] ?? 0;
     }
 
+    /**
+     * @return array<int, int>
+     */
     protected function generateFrequencies(): array
     {
         if (empty(self::$frequencies)) {
@@ -49,6 +57,9 @@ trait Frequency
         return self::$frequencies;
     }
 
+    /**
+     * @param array<int, int> $frequencySetting
+     */
     protected function setGeneratedFrequencies(array $frequencySetting): void
     {
         [

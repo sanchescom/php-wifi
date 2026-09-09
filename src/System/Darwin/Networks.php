@@ -18,7 +18,7 @@ class Networks extends AbstractNetworks
     /**
      * @var int
      */
-    const BSSID_KEY = 1;
+    public const BSSID_KEY = 1;
 
     /**
      * What macOS prints instead of an SSID when the calling process has no
@@ -26,7 +26,7 @@ class Networks extends AbstractNetworks
      *
      * @var string
      */
-    const REDACTED = '<redacted>';
+    public const REDACTED = '<redacted>';
 
     /**
      * Get the WiFi scan command for macOS.
@@ -38,7 +38,7 @@ class Networks extends AbstractNetworks
     {
         // system_profiler is the official macOS tool for WiFi info
         return sprintf(
-            'system_profiler SPAirPortDataType 2>/dev/null && echo "%s" && '.
+            'system_profiler SPAirPortDataType 2>/dev/null && echo "%s" && ' .
             'system_profiler SPAirPortDataType 2>/dev/null',
             $this->separator
         );
@@ -58,7 +58,7 @@ class Networks extends AbstractNetworks
      *
      * @param string $output
      *
-     * @return array
+     * @return array<int, array<int, bool|string>>
      */
     public function extractingNetworks($output): array
     {
@@ -80,7 +80,7 @@ class Networks extends AbstractNetworks
      *
      * @param string $networks
      * @param string $current
-     * @return array
+     * @return array<int, array<int, bool|string>>
      */
     protected function parseAirportNetworks(string $networks, string $current): array
     {
@@ -107,18 +107,18 @@ class Networks extends AbstractNetworks
      * Extract network data from airport format string.
      *
      * @param string $networkData
-     * @return array
+     * @return array<int, string>
      */
     protected function extractingDataFromAirportString(string $networkData): array
     {
         $extractedProperties = [];
 
-        $pattern = '/(.*?)'.
-        '(\w{2}:\w{2}:\w{2}:\w{2}:\w{2}:\w{2})\s{1,}'.
-        '([-+]?[0-9]*)\s{1,}'.
-        '([^a-zA-Z]*)'.
-        '(\w{1,})\s{1,}'.
-        '([\w-]+)'.
+        $pattern = '/(.*?)' .
+        '(\w{2}:\w{2}:\w{2}:\w{2}:\w{2}:\w{2})\s{1,}' .
+        '([-+]?[0-9]*)\s{1,}' .
+        '([^a-zA-Z]*)' .
+        '(\w{1,})\s{1,}' .
+        '([\w-]+)' .
         '(.*)/';
 
         preg_match_all(
@@ -196,7 +196,7 @@ class Networks extends AbstractNetworks
      *
      * @param string $output
      * @param string|null $currentSSID
-     * @return array
+     * @return array<int, array<int, bool|string>>
      */
     protected function parseSystemProfilerNetworks(string $output, ?string $currentSSID): array
     {
@@ -249,9 +249,9 @@ class Networks extends AbstractNetworks
     /**
      * Format network data into expected array format.
      *
-     * @param array $network
+     * @param array<string, string> $network
      * @param string|null $currentSSID
-     * @return array
+     * @return array<int, bool|string>
      */
     protected function formatNetworkData(array $network, ?string $currentSSID): array
     {

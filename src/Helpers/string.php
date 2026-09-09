@@ -7,7 +7,7 @@ if (!function_exists('extract_bssid')) {
      * @param string $string
      * @param int    $matchColumn
      *
-     * @return array
+     * @return array<int, string>
      */
     function extract_bssid(string $string, int $matchColumn): array
     {
@@ -37,7 +37,7 @@ if (!function_exists('to_hex')) {
         $hex = '';
 
         for ($i = 0; $i < $len; $i++) {
-            $hex .= substr('0'.dechex(ord($string[$i])), -2);
+            $hex .= substr('0' . dechex(ord($string[$i])), -2);
         }
 
         return strtoupper($hex);

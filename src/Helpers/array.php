@@ -4,9 +4,9 @@ if (!function_exists('trim_first')) {
     /**
      * Trimming first element in each array.
      *
-     * @param array $array
+     * @param array<int, array<int, string>> $array
      *
-     * @return array
+     * @return array<int, string>
      */
     function trim_first(array $array): array
     {

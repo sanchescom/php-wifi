@@ -31,3 +31,19 @@ jobs:
       - run: composer lint
       - run: composer analyse
       - run: composer test
+
+  lowest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    name: PHP 8.2 / lowest dependencies
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - run: composer update --prefer-lowest --prefer-stable --prefer-dist --no-interaction
+      - run: composer validate --strict
+      - run: composer lint
+      - run: composer analyse
+      - run: composer test

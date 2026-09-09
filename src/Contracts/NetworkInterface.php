@@ -21,7 +21,7 @@ interface NetworkInterface
     public function disconnect(string $device): void;
 
     /**
-     * @param array $network
+     * @param array<int, string> $network
      *
      * @return \Sanchescom\WiFi\System\AbstractNetwork
      */

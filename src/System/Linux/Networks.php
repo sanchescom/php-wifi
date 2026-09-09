@@ -15,7 +15,7 @@ class Networks extends AbstractNetworks
     /**
      * @var int
      */
-    const BSSID_KEY = 0;
+    public const BSSID_KEY = 0;
 
     /**
      * @return string
@@ -23,15 +23,15 @@ class Networks extends AbstractNetworks
     protected function getCommand(): string
     {
         return 'LANG=C nmcli '
-            .' --terse'
-            .' --fields '
-            .'active,ssid,bssid,'
-            .'mode,chan,freq,'
-            .'signal,security,wpa-flags,'
-            .'rsn-flags'
-            .' device'
-            .' wifi'
-            .' list';
+            . ' --terse'
+            . ' --fields '
+            . 'active,ssid,bssid,'
+            . 'mode,chan,freq,'
+            . 'signal,security,wpa-flags,'
+            . 'rsn-flags'
+            . ' device'
+            . ' wifi'
+            . ' list';
     }
 
     /**
@@ -45,7 +45,7 @@ class Networks extends AbstractNetworks
     /**
      * @param string $output
      *
-     * @return array
+     * @return array<int, array<int, string>>
      */
     public function extractingNetworks($output): array
     {
@@ -61,7 +61,7 @@ class Networks extends AbstractNetworks
     /**
      * @param string $networkData
      *
-     * @return array
+     * @return array<int, string>
      */
     protected function extractingDataFromString($networkData): array
     {

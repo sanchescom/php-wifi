@@ -16,6 +16,8 @@ use Sanchescom\WiFi\System\Windows\Networks as WindowsNetworks;
 
 /**
  * Class WiFi.
+ *
+ * @phpstan-consistent-constructor
  */
 class WiFi
 {
@@ -26,6 +28,9 @@ class WiFi
     protected static string $commandClass = Command::class;
     protected static string $phpOperationSystem = PHP_OS_FAMILY;
 
+    /**
+     * @var array<string, class-string<AbstractNetworks>>
+     */
     protected static array $systems = [
         self::OS_LINUX   => LinuxNetworks::class,
         self::OS_DARWIN  => DarwinNetworks::class,

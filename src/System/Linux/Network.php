@@ -38,7 +38,7 @@ class Network extends AbstractNetwork
     }
 
     /**
-     * @param array $network
+     * @param array<int, string> $network
      *
      * @return \Sanchescom\WiFi\System\Linux\Network
      */
@@ -48,7 +48,7 @@ class Network extends AbstractNetwork
         $this->bssid = $network[2];
         $this->channel = (int) $network[4];
         $this->security = $network[7];
-        $this->securityFlags = $network[8].' '.$network[9];
+        $this->securityFlags = $network[8] . ' ' . $network[9];
         $this->setSignalFromQuality((float) $network[6]);
         $this->frequency = (int) $network[5];
         $this->connected = ($network[0] == self::POSITIVE_CONNECTION_FLAG);

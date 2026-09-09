@@ -10,7 +10,7 @@ trait Separable
     /**
      * @param string $output
      *
-     * @return array
+     * @return array<int, string>
      */
     protected function explodeOutput(string $output): array
     {

@@ -9,6 +9,8 @@ use Sanchescom\WiFi\Exceptions\NetworkNotFoundException;
 
 /**
  * Class Collection.
+ *
+ * @extends BaseCollection<int, AbstractNetwork>
  */
 class Collection extends BaseCollection
 {

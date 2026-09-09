@@ -62,7 +62,7 @@ class Profile
      */
     protected function getTmpFileName(): string
     {
-        return __DIR__.'/../../../tmp/'.$this->ssid.'.xml';
+        return __DIR__ . '/../../../tmp/' . $this->ssid . '.xml';
     }
 
     /**
@@ -70,7 +70,7 @@ class Profile
      */
     protected function getTemplateFileName(): string
     {
-        return __DIR__.'/../../../templates/'.$this->securityType.'.xml';
+        return __DIR__ . '/../../../templates/' . $this->securityType . '.xml';
     }
 
     /**

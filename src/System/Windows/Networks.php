@@ -17,19 +17,19 @@ class Networks extends AbstractNetworks
     use Separable;
 
     /** @var int */
-    const BSSID_KEY = 4;
+    public const BSSID_KEY = 4;
 
     /** @var int */
-    const EXTRACT_BSSID_KEY = 1;
+    public const EXTRACT_BSSID_KEY = 1;
 
     /** @var int */
-    const ZERO_KEY = 0;
+    public const ZERO_KEY = 0;
 
     /** @var int */
-    const NETWORK_DESCRIPTION_ROWS_AMOUNT = 11;
+    public const NETWORK_DESCRIPTION_ROWS_AMOUNT = 11;
 
     /** @var int */
-    const NETWORK_DESCRIPTION_BLOCK_STEP = 1;
+    public const NETWORK_DESCRIPTION_BLOCK_STEP = 1;
 
     /**
      * @return string
@@ -39,7 +39,7 @@ class Networks extends AbstractNetworks
         return glue_commands(
             'chcp 65001',
             'netsh wlan show networks mode=Bssid',
-            'echo '.$this->separator,
+            'echo ' . $this->separator,
             'netsh wlan show interfaces'
         );
     }
@@ -55,7 +55,7 @@ class Networks extends AbstractNetworks
     /**
      * @param string $output
      *
-     * @return array
+     * @return array<int, array<int, bool|string>>
      */
     protected function extractingNetworks(string $output): array
     {
@@ -85,9 +85,9 @@ class Networks extends AbstractNetworks
     /**
      * Checking which network currently connected and set a flag.
      *
-     * @param array $groupedNetworks
-     * @param array $currentBssid
-     * @param int   $networkBlockIndex
+     * @param array<int, array<int, bool|string>> $groupedNetworks
+     * @param array<int, string>                  $currentBssid
+     * @param int                                 $networkBlockIndex
      */
     private function checkNetworkConnection(array &$groupedNetworks, array $currentBssid, int $networkBlockIndex): void
     {
@@ -113,7 +113,7 @@ class Networks extends AbstractNetworks
      *
      * @param int $nextRowIndex
      *
-     * @return array
+     * @return array<int, int>
      */
     private function nextNetwork(int $nextRowIndex): array
     {

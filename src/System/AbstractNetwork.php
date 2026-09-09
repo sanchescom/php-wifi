@@ -28,6 +28,9 @@ abstract class AbstractNetwork implements NetworkInterface
     public int $frequency;
     public bool $connected;
 
+    /**
+     * @var array<int, string>
+     */
     protected static array $securityTypes = [
         self::WPA3_SECURITY,
         self::WPA2_SECURITY,
@@ -124,7 +127,7 @@ abstract class AbstractNetwork implements NetworkInterface
     abstract public function disconnect(string $device): void;
 
     /**
-     * @param array $network
+     * @param array<int, string> $network
      *
      * @return \Sanchescom\WiFi\System\AbstractNetwork
      */
