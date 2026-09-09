@@ -10,5 +10,5 @@ use Sanchescom\WiFi\Test\NetworksCommandAbstract;
 class NetworksColonCommand extends NetworksCommandAbstract
 {
     /** @var string */
-    protected static $mock = __DIR__.'/NetworksColon.txt';
+    protected static $mock = __DIR__.'/../../Fixtures/linux/NetworksColon.txt';
 }

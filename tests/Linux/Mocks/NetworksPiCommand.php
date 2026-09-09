@@ -10,5 +10,5 @@ use Sanchescom\WiFi\Test\NetworksCommandAbstract;
 class NetworksPiCommand extends NetworksCommandAbstract
 {
     /** @var string */
-    protected static $mock = __DIR__.'/NetworksPi.txt';
+    protected static $mock = __DIR__.'/../../Fixtures/linux/NetworksPi.txt';
 }

@@ -10,8 +10,8 @@ use Sanchescom\WiFi\Test\NetworksCommandAbstract;
 class NetworksCommand extends NetworksCommandAbstract
 {
     /** @var string */
-    protected static $mock = __DIR__.'/Networks.txt';
+    protected static $mock = __DIR__.'/../../Fixtures/linux/Networks.txt';
 
     /** @var array<string, string> */
-    protected static array $mocks = ['-f DEVICE,TYPE device' => __DIR__.'/Devices.txt'];
+    protected static array $mocks = ['-f DEVICE,TYPE device' => __DIR__.'/../../Fixtures/linux/Devices.txt'];
 }

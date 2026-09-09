@@ -1,0 +1,6 @@
+# SYNTHETIC: nmcli -t -f NAME,TYPE,DEVICE,ACTIVE connection show
+Wired connection 1:802-3-ethernet:eth0:yes
+BELL340:802-11-wireless:wlan0:yes
+Cafe\: Corner:802-11-wireless::no
+Hotspot:802-11-wireless::no
+lo:loopback:lo:yes

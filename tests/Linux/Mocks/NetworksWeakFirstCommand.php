@@ -10,5 +10,5 @@ use Sanchescom\WiFi\Test\NetworksCommandAbstract;
 class NetworksWeakFirstCommand extends NetworksCommandAbstract
 {
     /** @var string */
-    protected static $mock = __DIR__.'/NetworksWeakFirst.txt';
+    protected static $mock = __DIR__.'/../../Fixtures/linux/NetworksWeakFirst.txt';
 }

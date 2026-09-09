@@ -4,3 +4,4 @@ parameters:
         - src/Shell
         - src/Exception
         - src/Value
+        - src/Parser
