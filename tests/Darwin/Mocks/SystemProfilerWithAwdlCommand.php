@@ -7,7 +7,7 @@ use Sanchescom\WiFi\Test\NetworksCommandAbstract;
 class SystemProfilerWithAwdlCommand extends NetworksCommandAbstract
 {
     /** @var string */
-    protected static $mock = __DIR__.'/SystemProfilerWithAwdl.txt';
+    protected static $mock = __DIR__.'/../../Fixtures/darwin/SystemProfilerWithAwdl.txt';
 
     /**
      * The real Darwin command runs system_profiler twice with a separator
