@@ -1,0 +1,83 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Sanchescom\WiFi\Backend;
+
+use Sanchescom\WiFi\Exception\CommandFailed;
+use Sanchescom\WiFi\Exception\DeviceNotFound;
+use Sanchescom\WiFi\Exception\PermissionDenied;
+use Sanchescom\WiFi\Parser\Darwin\AirportParser;
+use Sanchescom\WiFi\Parser\Darwin\HardwarePortsParser;
+use Sanchescom\WiFi\Parser\Darwin\SystemProfilerParser;
+use Sanchescom\WiFi\Shell\Command;
+use Sanchescom\WiFi\Shell\CommandResult;
+use Sanchescom\WiFi\Shell\CommandRunner;
+use Sanchescom\WiFi\Shell\Os;
+use Sanchescom\WiFi\Value\Credentials;
+use Sanchescom\WiFi\Value\Device;
+use Sanchescom\WiFi\Value\NetworkCollection;
+
+/**
+ * macOS backend driving Wi-Fi through `networksetup` and `system_profiler`.
+ * No known-networks or hotspot support is exposed on this platform.
+ */
+final class NetworksetupBackend implements Backend
+{
+    public function __construct(private readonly CommandRunner $runner)
+    {
+    }
+
+    public function scan(): NetworkCollection
+    {
+        $result = $this->run(new Command('system_profiler', ['SPAirPortDataType']));
+
+        $parser = SystemProfilerParser::looksLikeAirport($result->stdout)
+            ? new AirportParser()
+            : new SystemProfilerParser();
+
+        return new NetworkCollection($parser->parse($result->stdout));
+    }
+
+    public function connect(string $ssid, Credentials $credentials, Device $device): void
+    {
+        $arguments = ['-setairportnetwork', $device->name, $ssid];
+        $secretIndexes = [];
+
+        if ($credentials->password !== null) {
+            $secretIndexes[] = count($arguments);
+            $arguments[] = $credentials->password;
+        }
+
+        $this->run(new Command('networksetup', $arguments, secretIndexes: $secretIndexes));
+    }
+
+    public function disconnect(Device $device): void
+    {
+        $this->run(new Command('networksetup', ['-setairportpower', $device->name, 'off']));
+        $this->run(new Command('networksetup', ['-setairportpower', $device->name, 'on']));
+    }
+
+    public function detectDevice(): Device
+    {
+        $result = $this->run(new Command('networksetup', ['-listallhardwareports']));
+
+        return (new HardwarePortsParser())->parse($result->stdout)
+            ?? throw DeviceNotFound::onThisSystem('networksetup -listallhardwareports reported no Wi-Fi hardware port');
+    }
+
+    private function run(Command $command): CommandResult
+    {
+        $result = $this->runner->run($command);
+
+        if ($result->isSuccessful()) {
+            return $result;
+        }
+
+        if (PermissionDenied::looksLike($result)) {
+            throw PermissionDenied::fromResult($command, $result, Os::Darwin);
+        }
+
+        throw CommandFailed::fromResult($command, $result, Os::Darwin);
+    }
+}
