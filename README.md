@@ -214,7 +214,9 @@ The library includes a command-line interface for managing WiFi networks directl
 ```
 
 `--unique` keeps the strongest radio per SSID, which is not necessarily the
-one you are connected to, so combine it with `--connected` with care.
+one you are connected to, so combine it with `--connected` with care. On
+macOS without Location Services every row stays as-is: names come back as
+`<redacted>`, so there is nothing identifying left to merge.
 
 ### Connect to a network
 ```bash
@@ -382,6 +384,9 @@ ResultActive=yes
 ### Windows
 - Requires `netsh` (built-in)
 - Automatically detects WiFi interface
+- Device auto-detection reads the English `Name :` label from `netsh wlan
+  show interfaces`; on a localised Windows install, pass `--device` (or
+  `$device`) explicitly instead of relying on detection.
 
 ## What's New in v2.0
 

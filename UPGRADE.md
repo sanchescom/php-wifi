@@ -15,6 +15,17 @@ This is not theoretical: the project's own test suite has two anonymous
 signatures were widened to `?string $device = null`. This is the only
 source-level change a subclass author needs to make.
 
+#### Windows subclasses
+
+`Windows\Network::getProfileService()` now declares its return type as
+`: Profile` (2.0.1 had none), and `Windows\Profile::$ssid` /
+`$securityType` are now typed `string`. A subclass that overrides
+`getProfileService()` must declare the same `: Profile` return type, and a
+subclass of `Profile` must not redeclare `$ssid` or `$securityType`
+without the `string` type — PHP forbids dropping a parent's return type or
+narrowing/removing a parent's property type, and fatals at class load
+("declaration must be compatible") if either is done.
+
 ### Everything else
 
 - Command strings are now quoted (`escapeshellarg()` on Linux/macOS, `"`,

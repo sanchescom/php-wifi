@@ -17,6 +17,8 @@ All notable changes to this project will be documented in this file.
 - **Windows profile** is written to a random file under `sys_get_temp_dir()` (was `vendor/…/tmp/<ssid>.xml`), with the SSID and passphrase XML-escaped, and deleted in a `finally`. The package's `tmp/` directory is gone.
 - Band filters (`get24GhzNetworks()`, `get5GhzNetworks()`) select by frequency instead of channel number; a network whose channel is unknown (`frequency === 0`) is in no band.
 - Coding standard PSR-12 (was PSR-2); PHPStan level 6 with no baseline.
+- `Windows\Network::getProfileService()` now declares its return type as `: Profile`, and `Windows\Profile::$ssid` / `$securityType` are now typed `string`; see UPGRADE.md if you subclass either.
+- Dev dependencies: `phpunit/phpunit` ^11.5 (was ^11.0), `phpstan/phpstan` ^2.2 (was ^2.0) — the first versions clean at PHPStan level 6 / PHPUnit 11 config.
 
 ### Fixed
 - Linux: an SSID containing `:` shifted every field after it (`nmcli --terse` escapes it as `\:`).
