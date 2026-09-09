@@ -1,0 +1,5 @@
+no:BELL340:02\:00\:00\:00\:00\:01:Infra:1:2412 MHz:100:WPA2:(none):pair_ccmp group_ccmp psk
+no:[LG_WashTower]ef1f:02\:00\:00\:00\:00\:02:Infra:11:2462 MHz:77:WPA2:(none):pair_ccmp group_ccmp psk
+no:VTECH_5764_9764:02\:00\:00\:00\:00\:03:Infra:1:2412 MHz:72:WPA2:(none):pair_tkip pair_ccmp group_tkip psk
+no:BELL340:02\:00\:00\:00\:00\:04:Infra:157:5785 MHz:69:WPA2:(none):pair_ccmp group_ccmp psk
+no::02\:00\:00\:00\:00\:05:Infra:157:5785 MHz:67:WPA2:(none):pair_ccmp group_ccmp psk

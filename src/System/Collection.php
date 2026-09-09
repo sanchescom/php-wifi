@@ -11,6 +11,7 @@ use Sanchescom\WiFi\Exceptions\NetworkNotFoundException;
  * Class Collection.
  *
  * @extends BaseCollection<int, AbstractNetwork>
+ * @phpstan-consistent-constructor
  */
 class Collection extends BaseCollection
 {
@@ -156,5 +157,28 @@ class Collection extends BaseCollection
     public function hasRedactedSsids(): bool
     {
         return $this->contains(fn (AbstractNetwork $n) => $n->ssidRedacted);
+    }
+
+    /**
+     * One network per SSID — the radio with the strongest signal — in order of
+     * first appearance. Hidden networks (empty SSID) are not merged.
+     */
+    public function uniqueBySsid(): self
+    {
+        $strongest = [];
+        $hidden = [];
+
+        foreach ($this as $network) {
+            if ($network->ssid === '') {
+                $hidden[] = $network;
+                continue;
+            }
+
+            if (!isset($strongest[$network->ssid]) || $network->dbm > $strongest[$network->ssid]->dbm) {
+                $strongest[$network->ssid] = $network;
+            }
+        }
+
+        return new static(array_merge(array_values($strongest), $hidden));
     }
 }
