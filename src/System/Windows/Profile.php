@@ -4,95 +4,81 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Windows;
 
+use RuntimeException;
+
 /**
- * Class Service.
+ * Renders a netsh WLAN profile for one network into a temporary file.
  */
 class Profile
 {
-    /**
-     * @var string
-     */
-    protected $ssid;
+    protected string $ssid;
 
-    /**
-     * @var string
-     */
-    protected $securityType;
+    protected string $securityType;
 
-    /**
-     * Service constructor.
-     *
-     * @param string $ssid
-     * @param string $securityType
-     */
-    public function __construct(string $ssid, string $securityType)
+    protected string $directory;
+
+    protected ?string $fileName = null;
+
+    public function __construct(string $ssid, string $securityType, ?string $directory = null)
     {
         $this->ssid = $ssid;
         $this->securityType = $securityType;
+        $this->directory = $directory ?? sys_get_temp_dir();
     }
 
     /**
-     * @param string $password
-     *
-     * @return string
+     * Write the profile and return its path. The file holds the passphrase in
+     * clear text, exactly as netsh requires; delete() it as soon as netsh has
+     * read it.
      */
     public function create(string $password): string
     {
-        file_put_contents($this->getTmpFileName(), $this->renderTemplate($password));
+        $file = $this->getTmpFileName();
 
-        return $this->getTmpFileName();
+        if (file_put_contents($file, $this->renderTemplate($password)) === false) {
+            throw new RuntimeException('Unable to write the WLAN profile to ' . $file);
+        }
+
+        return $file;
     }
 
-    /**
-     * Delete tmp profile file created for chosen network.
-     */
     public function delete(): bool
     {
-        $tmpProfile = $this->getTmpFileName();
-
-        if (file_exists($tmpProfile)) {
-            return unlink($tmpProfile);
+        if ($this->fileName !== null && file_exists($this->fileName)) {
+            return unlink($this->fileName);
         }
 
         return false;
     }
 
-    /**
-     * @return string
-     */
     protected function getTmpFileName(): string
     {
-        return __DIR__ . '/../../../tmp/' . $this->ssid . '.xml';
+        if ($this->fileName === null) {
+            $file = tempnam($this->directory, 'php-wifi-');
+
+            if ($file === false) {
+                throw new RuntimeException('Unable to create a temporary file in ' . $this->directory);
+            }
+
+            $this->fileName = $file;
+        }
+
+        return $this->fileName;
     }
 
-    /**
-     * @return string
-     */
     protected function getTemplateFileName(): string
     {
         return __DIR__ . '/../../../templates/' . $this->securityType . '.xml';
     }
 
-    /**
-     * @param string $password
-     *
-     * @return string
-     */
     protected function renderTemplate(string $password): string
     {
         $content = file_get_contents($this->getTemplateFileName()) ?: '';
+        $xml = static fn (string $value): string => htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
 
         return str_replace(
-            [
-                '{ssid}',
-                '{hex}',
-                '{key}',
-            ],
-            [
-                $this->ssid,
-                to_hex($this->ssid),
-                $password,
-            ],
+            ['{ssid}', '{hex}', '{key}'],
+            [$xml($this->ssid), to_hex($this->ssid), $xml($password)],
             $content
         );
     }

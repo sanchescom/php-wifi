@@ -23,19 +23,21 @@ class Network extends AbstractNetwork implements FrequencyInterface
      */
     public function connect(string $password, string $device): void
     {
-        $command = glue_commands(
-            sprintf('netsh wlan add profile filename="%s"', $this->getProfileService()->create($password)),
-            sprintf(
-                'netsh wlan connect interface=%s ssid=%s name=%s',
-                $this->quote($device),
-                $this->quote($this->ssid),
-                $this->quote($this->ssid)
-            )
-        );
+        $profile = $this->getProfileService();
 
-        $this->getCommand()->execute($command);
-
-        $this->getProfileService()->delete();
+        try {
+            $this->getCommand()->execute(glue_commands(
+                sprintf('netsh wlan add profile filename=%s', $this->quote($profile->create($password))),
+                sprintf(
+                    'netsh wlan connect interface=%s ssid=%s name=%s',
+                    $this->quote($device),
+                    $this->quote($this->ssid),
+                    $this->quote($this->ssid)
+                )
+            ));
+        } finally {
+            $profile->delete();
+        }
     }
 
     /**
@@ -79,10 +81,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
         return $this;
     }
 
-    /**
-     * @return Profile
-     */
-    protected function getProfileService()
+    protected function getProfileService(): Profile
     {
         return new Profile($this->ssid, $this->getSecurityType());
     }

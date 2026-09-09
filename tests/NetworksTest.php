@@ -215,13 +215,11 @@ class NetworksTest extends BaseTestCase
 
         $network->connect('123', 'someDevice');
 
-        $windowsPath = 'src'.DIRECTORY_SEPARATOR.'System'.DIRECTORY_SEPARATOR.'Windows';
-
-        $this->assertEquals(
-            $network->getCommand()->getLastCommand(),
-            'netsh wlan add profile filename="'.str_replace('tests', $windowsPath, __DIR__).
-            '/../../../tmp/AlphaNet-foiEmE.xml" && '.
-            'netsh wlan connect interface="someDevice" ssid="AlphaNet-foiEmE" name="AlphaNet-foiEmE"'
+        // "(?:/private)?": on macOS tempnam() may return the /private/var form of a /var temp dir
+        $this->assertMatchesRegularExpression(
+            '#^netsh wlan add profile filename="(?:/private)?' . preg_quote(sys_get_temp_dir(), '#') . '/php-wifi-[^"]+" && '
+            . 'netsh wlan connect interface="someDevice" ssid="AlphaNet-foiEmE" name="AlphaNet-foiEmE"$#',
+            $network->getCommand()->getLastCommand()
         );
     }
 
