@@ -18,7 +18,7 @@ final class DeviceListParser
                 continue;
             }
 
-            $fields = $this->fields($line);
+            $fields = TerseLine::split($line);
 
             if (count($fields) < 2) {
                 continue;
@@ -32,16 +32,5 @@ final class DeviceListParser
         }
 
         return null;
-    }
-
-    /** @return list<string> */
-    private function fields(string $line): array
-    {
-        $fields = preg_split('/(?<!\\\\):/', $line) ?: [];
-
-        return array_map(
-            static fn (string $field): string => trim(str_replace('\\:', ':', $field)),
-            $fields,
-        );
     }
 }

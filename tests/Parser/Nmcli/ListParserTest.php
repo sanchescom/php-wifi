@@ -82,6 +82,20 @@ final class ListParserTest extends TestCase
         $this->assertNull($weird->signal);
     }
 
+    #[Test]
+    public function a_field_ending_in_an_escaped_backslash_does_not_swallow_the_real_separator(): void
+    {
+        $output = <<<'TXT'
+        no:Foo\\:11\:22\:33\:44\:55\:69:Infra:6:2437 MHz:50:WPA2:(none):pair_ccmp group_ccmp psk
+        TXT;
+
+        $networks = (new ListParser())->parse($output);
+
+        $this->assertCount(1, $networks);
+        $this->assertSame('Foo\\', $networks[0]->ssid);
+        $this->assertSame('11:22:33:44:55:69', (string) $networks[0]->bssid);
+    }
+
     /** @param list<Network> $networks */
     private function findBySsid(array $networks, string $ssid): Network
     {

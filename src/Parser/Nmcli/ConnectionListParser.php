@@ -23,7 +23,7 @@ final class ConnectionListParser
                 continue;
             }
 
-            $fields = $this->fields($line);
+            $fields = TerseLine::split($line);
 
             if (count($fields) !== 4) {
                 continue;
@@ -44,21 +44,5 @@ final class ConnectionListParser
         }
 
         return $networks;
-    }
-
-    /**
-     * nmcli escapes a literal ':' inside NAME as '\:', so split on colons
-     * that are not preceded by a backslash and un-escape each field.
-     *
-     * @return list<string>
-     */
-    private function fields(string $line): array
-    {
-        $fields = preg_split('/(?<!\\\\):/', $line) ?: [];
-
-        return array_map(
-            static fn (string $field): string => trim(str_replace('\\:', ':', $field)),
-            $fields,
-        );
     }
 }

@@ -26,7 +26,7 @@ final class ListParser implements NetworkParser
                 continue;
             }
 
-            $fields = $this->fields($line);
+            $fields = TerseLine::split($line);
 
             if (count($fields) !== 10) {
                 continue;
@@ -52,22 +52,5 @@ final class ListParser implements NetworkParser
         }
 
         return $networks;
-    }
-
-    /**
-     * Split one `nmcli --terse` line into its fields. nmcli escapes a literal
-     * ':' inside a field as '\:', so split on colons that are not preceded by
-     * a backslash and un-escape each field afterwards.
-     *
-     * @return list<string>
-     */
-    private function fields(string $line): array
-    {
-        $fields = preg_split('/(?<!\\\\):/', $line) ?: [];
-
-        return array_map(
-            static fn (string $field): string => trim(str_replace('\\:', ':', $field)),
-            $fields,
-        );
     }
 }
