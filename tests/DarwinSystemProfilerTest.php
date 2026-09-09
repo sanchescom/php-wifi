@@ -119,4 +119,16 @@ class DarwinSystemProfilerTest extends BaseTestCase
         $this->assertSame(2, $networks->get5GhzNetworks()->count());
         $this->assertSame(3, $networks->get24GhzNetworks()->count());
     }
+
+    #[Test]
+    public function redacted_networks_carry_the_flag(): void
+    {
+        $redacted = $this->scan(SystemProfilerRedactedCommand::class);
+        $named = $this->scan(SystemProfilerCommand::class);
+
+        $this->assertTrue($redacted->hasRedactedSsids());
+        $this->assertSame([true], $redacted->pluck('ssidRedacted')->unique()->values()->all());
+        $this->assertFalse($named->hasRedactedSsids());
+        $this->assertSame([false], $named->pluck('ssidRedacted')->unique()->values()->all());
+    }
 }

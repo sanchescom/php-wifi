@@ -29,6 +29,12 @@ abstract class AbstractNetwork implements NetworkInterface
     public bool $connected;
 
     /**
+     * True when the OS hid the network name from this process (macOS without
+     * Location Services prints "<redacted>"); $ssid then holds that literal.
+     */
+    public bool $ssidRedacted = false;
+
+    /**
      * @var array<int, string>
      */
     protected static array $securityTypes = [

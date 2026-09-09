@@ -58,7 +58,7 @@ class Networks extends AbstractNetworks
      *
      * @param string $output
      *
-     * @return array<int, array<int, bool|string>>
+     * @return array<int, array<int|string, bool|string>>
      */
     public function extractingNetworks($output): array
     {
@@ -196,7 +196,7 @@ class Networks extends AbstractNetworks
      *
      * @param string $output
      * @param string|null $currentSSID
-     * @return array<int, array<int, bool|string>>
+     * @return array<int, array<int|string, bool|string>>
      */
     protected function parseSystemProfilerNetworks(string $output, ?string $currentSSID): array
     {
@@ -252,7 +252,7 @@ class Networks extends AbstractNetworks
      *
      * @param array<string, string> $network
      * @param string|null $currentSSID
-     * @return array<int, bool|string>
+     * @return array<int|string, bool|string>
      */
     protected function formatNetworkData(array $network, ?string $currentSSID): array
     {
@@ -271,6 +271,8 @@ class Networks extends AbstractNetworks
             '',                       // 5: Security flags
             $security,                // 6: Security
         ];
+
+        $formatted['redacted'] = ($ssid === self::REDACTED);
 
         // Mark as connected if this is the current network
         if ($currentSSID !== null && $ssid !== self::REDACTED && $ssid === $currentSSID) {

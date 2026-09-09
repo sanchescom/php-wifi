@@ -149,4 +149,12 @@ class Collection extends BaseCollection
 
         return $network;
     }
+
+    /**
+     * Whether any network's name was hidden by the OS (see AbstractNetwork::$ssidRedacted).
+     */
+    public function hasRedactedSsids(): bool
+    {
+        return $this->contains(fn (AbstractNetwork $n) => $n->ssidRedacted);
+    }
 }

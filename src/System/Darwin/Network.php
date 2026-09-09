@@ -48,7 +48,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
     }
 
     /**
-     * @param array<int, string> $network
+     * @param array<int|string, bool|string> $network
      *
      * @return \Sanchescom\WiFi\System\Darwin\Network
      */
@@ -65,6 +65,7 @@ class Network extends AbstractNetwork implements FrequencyInterface
             ? $this->frequencyFor6GhzChannel($this->channel)
             : $this->getFrequency();
         $this->connected = isset($network[7]);
+        $this->ssidRedacted = (bool) ($network['redacted'] ?? false);
 
         return $this;
     }

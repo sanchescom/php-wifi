@@ -68,10 +68,16 @@ class WiFi extends CLI
     {
         switch ($options->getCmd()) {
             case 'list':
+                $collection = \Sanchescom\WiFi\WiFi::scan();
+
                 if ($options->getOpt('connected')) {
-                    $networks = \Sanchescom\WiFi\WiFi::scan()->getConnected();
+                    $networks = $collection->getConnected();
                 } else {
-                    $networks = \Sanchescom\WiFi\WiFi::scan()->getAll();
+                    $networks = $collection->getAll();
+                }
+
+                if ($collection->hasRedactedSsids()) {
+                    fwrite(STDERR, "Network names were hidden by macOS. Grant Location Services to the process running PHP to see SSIDs.\n");
                 }
 
                 $table = new \LucidFrame\Console\ConsoleTable();
