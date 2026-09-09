@@ -220,9 +220,10 @@ class Networks extends AbstractNetworks
 
                 switch ($key) {
                     case 'Channel':
-                        // Extract channel number: "157 (5GHz, 80MHz)" -> 157
-                        if (preg_match('/^(\d+)/', $value, $channelMatch)) {
+                        // "157 (5GHz, 80MHz)" -> channel 157, band 5
+                        if (preg_match('/^(\d+)(?:\s*\((\d+(?:\.\d+)?)GHz)?/', $value, $channelMatch)) {
                             $currentNetwork['channel'] = $channelMatch[1];
+                            $currentNetwork['band'] = $channelMatch[2] ?? '';
                         }
                         break;
                     case 'Security':
@@ -266,7 +267,7 @@ class Networks extends AbstractNetworks
             '',                       // 1: BSSID (not available in system_profiler)
             $signal,                  // 2: Signal/Quality
             $channel,                 // 3: Channel
-            '',                       // 4: unused
+            $network['band'] ?? '',   // 4: band in GHz ('2', '5', '6') when system_profiler prints it
             '',                       // 5: Security flags
             $security,                // 6: Security
         ];

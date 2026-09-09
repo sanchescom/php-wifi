@@ -104,4 +104,19 @@ class DarwinSystemProfilerTest extends BaseTestCase
         $this->assertSame([], $networks->getConnected());
         $this->assertContains('Peer-To-Peer-Ghost', $networks->pluck('ssid')->all());
     }
+
+    #[Test]
+    public function a_6ghz_network_gets_a_6ghz_frequency_and_band(): void
+    {
+        $networks = $this->scan(SystemProfilerCommand::class);
+        $sixGhz = $networks->get6GhzNetworks();
+
+        $this->assertSame(1, $sixGhz->count());
+        $network = $sixGhz->first();
+        $this->assertSame(165, $network->channel);
+        $this->assertSame(6775, $network->frequency);
+        $this->assertFalse($networks->get5GhzNetworks()->contains(fn ($n) => $n->channel === 165 && $n->frequency > 5925));
+        $this->assertSame(2, $networks->get5GhzNetworks()->count());
+        $this->assertSame(3, $networks->get24GhzNetworks()->count());
+    }
 }

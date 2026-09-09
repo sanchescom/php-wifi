@@ -83,6 +83,15 @@ class NetworksTest extends BaseTestCase
     }
 
     #[Test]
+    #[Depends('it_should_return_networks_in_linux')]
+    public function it_should_filter_bands_by_frequency(Collection $networks): void
+    {
+        $this->assertSame(6, $networks->get24GhzNetworks()->count());
+        $this->assertSame(0, $networks->get5GhzNetworks()->count());
+        $this->assertSame(0, $networks->get6GhzNetworks()->count());
+    }
+
+    #[Test]
     #[Depends('it_should_return_networks_in_windows')]
     public function it_should_report_windows_signal_in_both_units(Collection $networks): void
     {

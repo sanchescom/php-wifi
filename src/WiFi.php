@@ -89,6 +89,14 @@ class WiFi
         return static::scan()->get5GhzNetworks();
     }
 
+    /**
+     * Get networks on the 6 GHz band.
+     */
+    public static function get6GhzNetworks(): Collection
+    {
+        return static::scan()->get6GhzNetworks();
+    }
+
     public static function setCommandClass(string $commandClass): void
     {
         self::$commandClass = $commandClass;

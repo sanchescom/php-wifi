@@ -101,27 +101,27 @@ class Collection extends BaseCollection
     }
 
     /**
-     * Get networks on 2.4GHz band (channels 1-14).
-     *
-     * @return self
+     * Networks on the 2.4 GHz band (2400–2499 MHz).
      */
     public function get24GhzNetworks(): self
     {
-        return $this->filter(function (AbstractNetwork $network) {
-            return $network->channel >= 1 && $network->channel <= 14;
-        });
+        return $this->filter(fn (AbstractNetwork $n) => $n->frequency >= 2400 && $n->frequency < 2500);
     }
 
     /**
-     * Get networks on 5GHz band (channels > 14).
-     *
-     * @return self
+     * Networks on the 5 GHz band (4900–5924 MHz).
      */
     public function get5GhzNetworks(): self
     {
-        return $this->filter(function (AbstractNetwork $network) {
-            return $network->channel > 14;
-        });
+        return $this->filter(fn (AbstractNetwork $n) => $n->frequency >= 4900 && $n->frequency < 5925);
+    }
+
+    /**
+     * Networks on the 6 GHz band (5925 MHz and above).
+     */
+    public function get6GhzNetworks(): self
+    {
+        return $this->filter(fn (AbstractNetwork $n) => $n->frequency >= 5925);
     }
 
     /**

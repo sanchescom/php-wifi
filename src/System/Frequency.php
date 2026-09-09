@@ -44,6 +44,16 @@ trait Frequency
     }
 
     /**
+     * 6 GHz (Wi-Fi 6E/7) channels 1–233: 5950 MHz + 5 MHz per channel number.
+     * Channel numbers overlap the 2.4/5 GHz tables, so the caller must know
+     * the band; the table lookup in getFrequency() cannot.
+     */
+    protected function frequencyFor6GhzChannel(int $channel): int
+    {
+        return 5950 + 5 * $channel;
+    }
+
+    /**
      * @return array<int, int>
      */
     protected function generateFrequencies(): array
