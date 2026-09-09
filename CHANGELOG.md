@@ -19,9 +19,12 @@ All notable changes to this project will be documented in this file.
 - Coding standard PSR-12 (was PSR-2); PHPStan level 6 with no baseline.
 - `Windows\Network::getProfileService()` now declares its return type as `: Profile`, and `Windows\Profile::$ssid` / `$securityType` are now typed `string`; see UPGRADE.md if you subclass either.
 - Dev dependencies: `phpunit/phpunit` ^11.5 (was ^11.0), `phpstan/phpstan` ^2.2 (was ^2.0) — the first versions clean at PHPStan level 6 / PHPUnit 11 config.
+- `Windows\Profile::create()` throws `InvalidArgumentException` for a security type outside `WPA3`/`WPA2`/`WPA`/`WEP`/`Unknown` (the library itself only ever passes one of those).
 
 ### Fixed
 - Linux: an SSID containing `:` shifted every field after it (`nmcli --terse` escapes it as `\:`).
+- Windows: an SSID or passphrase that is not valid UTF-8 rendered an empty XML element in the profile; it now renders U+FFFD for the invalid bytes.
+- Windows: a value ending in an odd number of backslashes could swallow the closing quote of a `netsh` argument; the run is now doubled.
 
 ## [2.0.1] - 2026-09-08
 
