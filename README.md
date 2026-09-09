@@ -62,12 +62,10 @@ foreach ($networks->getAll() as $network) {
 
 use Sanchescom\WiFi\WiFi;
 
-$device = 'en0'; // macOS: en0, en1; Linux: wlan0, wlan1; Windows: use netsh
-
 try {
     // Connect to a specific network
     $network = WiFi::scan()->getBySsid('My-WiFi-Network');
-    $network->connect('password123', $device);
+    $network->connect('password123');
 
     echo "Connected successfully!\n";
 } catch (Exception $e) {
@@ -77,9 +75,11 @@ try {
 // Disconnect from all connected networks
 $connectedNetworks = WiFi::getConnected();
 foreach ($connectedNetworks as $network) {
-    $network->disconnect($device);
+    $network->disconnect();
 }
 ```
+
+The wireless device is detected automatically (`nmcli`, `networksetup`, `netsh`); pass it as the second/first argument to override.
 
 ## Advanced Usage
 
@@ -96,6 +96,9 @@ $networks5ghz = WiFi::scan()->get5GhzNetworks();
 // Get only 2.4GHz networks
 $networks24ghz = WiFi::scan()->get24GhzNetworks();
 
+// Get only 6GHz networks
+$networks6ghz = WiFi::scan()->get6GhzNetworks();
+
 // Filter by security type
 $wpa2Networks = WiFi::scan()->getBySecurity('WPA2');
 
@@ -111,6 +114,10 @@ $strongWPA2Networks = WiFi::scan()
     ->getByMinSignalStrength(-50)
     ->get5GhzNetworks();
 ```
+
+Band filters use the reported frequency (`nmcli`) or the channel plus the
+band `system_profiler` prints. On Windows, `netsh` gives channels only, so
+6 GHz networks there are reported on their 5 GHz table frequency.
 
 ### Finding Specific Networks
 
@@ -201,14 +208,25 @@ The library includes a command-line interface for managing WiFi networks directl
 ./vendor/bin/wifi list --connected
 ```
 
+### List one row per SSID (strongest radio)
+```bash
+./vendor/bin/wifi list --unique
+```
+
+`--unique` keeps the strongest radio per SSID, which is not necessarily the
+one you are connected to, so combine it with `--connected` with care.
+
 ### Connect to a network
 ```bash
-./vendor/bin/wifi connect --bssid=4c:49:e3:f5:35:17 --password=12345 --device=en1
+./vendor/bin/wifi connect --bssid=4c:49:e3:f5:35:17 --password=12345
 ```
+
+`--device` is optional; the wireless device is detected automatically.
+Pass `--device=en1` (or the platform equivalent) to override it.
 
 ### Disconnect from a network
 ```bash
-./vendor/bin/wifi disconnect --bssid=4c:49:e3:f5:35:17 --device=en1
+./vendor/bin/wifi disconnect --bssid=4c:49:e3:f5:35:17
 ```
 
 ## API Reference
@@ -222,6 +240,7 @@ The library includes a command-line interface for managing WiFi networks directl
 | `WiFi::getStrongestNetwork()` | `AbstractNetwork` | Get the strongest available network |
 | `WiFi::get24GhzNetworks()` | `Collection` | Get all 2.4GHz networks |
 | `WiFi::get5GhzNetworks()` | `Collection` | Get all 5GHz networks |
+| `WiFi::get6GhzNetworks()` | `Collection` | Get all 6GHz networks |
 | `WiFi::getNetworksBySecurity(string $type)` | `Collection` | Get networks by security type |
 
 ### Collection Methods
@@ -237,6 +256,9 @@ The library includes a command-line interface for managing WiFi networks directl
 | `getByChannel(int $channel)` | `Collection` | Filter by channel |
 | `get24GhzNetworks()` | `Collection` | Get 2.4GHz networks |
 | `get5GhzNetworks()` | `Collection` | Get 5GHz networks |
+| `get6GhzNetworks()` | `Collection` | Get 6GHz networks |
+| `uniqueBySsid()` | `Collection` | One row per SSID (strongest radio) |
+| `hasRedactedSsids()` | `bool` | Whether any network's SSID was hidden by the OS |
 | `sortBySignalStrength()` | `Collection` | Sort by signal strength |
 | `getStrongest()` | `AbstractNetwork` | Get strongest network |
 
@@ -253,14 +275,24 @@ The library includes a command-line interface for managing WiFi networks directl
 | `$security` | `string` | Security type |
 | `$securityFlags` | `string` | Security flags |
 | `$connected` | `bool` | Connection status |
+| `$ssidRedacted` | `bool` | Name hidden by the OS (macOS without Location Services) |
 
 ### Network Methods
 
 | Method | Parameters | Description |
 |--------|------------|-------------|
-| `connect()` | `string $password, string $device` | Connect to the network |
-| `disconnect()` | `string $device` | Disconnect from the network |
+| `connect()` | `string $password, ?string $device = null` | Connect to the network |
+| `disconnect()` | `?string $device = null` | Disconnect from the network |
 | `getSecurityType()` | - | Get security type (WPA3/WPA2/WPA/WEP/Unknown) |
+
+## Security
+
+Every value that reaches a shell command is escaped: `escapeshellarg()` on
+Linux and macOS, cmd-safe quoting on Windows — `"`, `%` and `!` in an SSID
+or password are replaced with a space. On Windows, the profile handed to
+`netsh` is written to a random file under the system temp directory with
+the passphrase XML-escaped, and the file is removed as soon as `netsh`
+returns, also on failure.
 
 ## Contributing
 
@@ -288,6 +320,43 @@ Versions up to and including 2.0.0 were published under GPL-3.0. 2.0.1 relicense
 - Requires `nmcli` (NetworkManager command-line interface)
 - Default device: `wlan0` or `wlan1`
 
+#### Privileges
+
+`nmcli device wifi connect` asks NetworkManager to create and activate a
+connection. A user logged in at the console is allowed by default; a PHP
+process running as `www-data` (PHP-FPM, a queue worker, cron) is not — it
+fails with *Not authorized to control networking* or *Insufficient
+privileges*. Grant it the three NetworkManager actions this library uses:
+
+```js
+// /etc/polkit-1/rules.d/50-php-wifi.rules
+polkit.addRule(function (action, subject) {
+    if (subject.user === "www-data" &&
+        (action.id === "org.freedesktop.NetworkManager.network-control" ||
+         action.id === "org.freedesktop.NetworkManager.wifi.scan" ||
+         action.id === "org.freedesktop.NetworkManager.settings.modify.system")) {
+        return polkit.Result.YES;
+    }
+});
+```
+
+On systems whose polkit still uses `localauthority` (Debian 11 and older):
+
+```ini
+# /etc/polkit-1/localauthority/50-local.d/php-wifi.pkla
+[php-wifi]
+Identity=unix-user:www-data
+Action=org.freedesktop.NetworkManager.network-control;org.freedesktop.NetworkManager.wifi.scan;org.freedesktop.NetworkManager.settings.modify.system
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+```
+
+> [!NOTE]
+> On Debian and Raspberry Pi OS, adding the user to the `netdev` group
+> (`adduser www-data netdev`) grants only `settings.modify.system`; the
+> connect call still needs `network-control`, so use one of the rules above.
+
 ### macOS
 
 - **Scanning** uses `system_profiler SPAirPortDataType`. Apple gates Wi-Fi
@@ -301,9 +370,14 @@ Versions up to and including 2.0.0 were published under GPL-3.0. 2.0.1 relicense
   some of the others; networks without one are reported as `-100 dBm` /
   `0 %`, not as unknown.
 - **Connection management** uses `networksetup` (built in). Default device:
-  `en0`; find yours with `networksetup -listallhardwareports`.
+  `en0`; find yours with `networksetup -listallhardwareports`. When omitted,
+  the device is detected automatically from
+  `networksetup -listallhardwareports`.
 - The legacy `airport` output format is still parsed for older systems; the
   `airport` binary itself was removed by Apple in macOS 14.4.
+- When SSIDs are hidden, each affected network's `$ssidRedacted` is `true`
+  and `Collection::hasRedactedSsids()` tells you at a glance; the CLI prints
+  a hint on STDERR when this happens.
 
 ### Windows
 - Requires `netsh` (built-in)
@@ -355,7 +429,7 @@ composer fix
 composer analyse
 ```
 
-Runs PHPStan at level 5.
+Runs PHPStan at level 6, with no baseline.
 
 ## Platform-Specific Notes
 

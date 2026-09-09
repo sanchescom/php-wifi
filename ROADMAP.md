@@ -3,51 +3,9 @@
 Planned work for php-wifi, in the order it should ship, and why. See
 CHANGELOG.md for what has already landed.
 
-## 2.1 — safe to point at a real network
+## 2.1 — shipped
 
-Minor release. Behaviour changes only where the old behaviour was already
-broken or unsafe.
-
-- **Escape every shell argument.** No call site uses `escapeshellarg()`.
-  On macOS `connect()` passes SSID and password *unquoted* into `sh`, so any
-  SSID containing a space — the unit test's own fixture,
-  `Offshore View Marine Services`, asserts the broken command — cannot be
-  joined. On Linux they are double-quoted but not escaped, so `"`, `$` and
-  backticks in a password are interpreted by the shell. SSIDs are chosen by
-  whoever runs the access point; treat them as hostile input.
-- **Move the Windows profile out of the package directory.** `connect()`
-  writes the plaintext password to `vendor/sanchescom/php-wifi/tmp/<ssid>.xml`
-  — a path built from the SSID with no sanitising (`..` and `/` are honoured)
-  and an XML body built with `str_replace` and no escaping. Write to
-  `sys_get_temp_dir()` under a random name, escape the SSID for XML, delete
-  in a `finally`.
-- **Add 6 GHz channels.** `Frequency` maps
-  channel 165 to 5825 MHz; on macOS 26 channel 165 is a 6 GHz / 160 MHz
-  network (`Channel: 165 (6GHz, 160MHz)` in the raw output). Add the 6 GHz
-  table, add `get6GhzNetworks()`, and stop `get5GhzNetworks()` meaning
-  "channel > 14".
-- **Make the macOS limitation explicit instead of silent.** When
-  `system_profiler` returns `<redacted>`, the scan should not yield six
-  identical networks named `<redacted>`. Options, in order of preference:
-  a `ssidRedacted` flag on the network plus a documented
-  `LocationServicesRequired` condition; or throwing.
-- **Document Linux privileges.** Three of the closed issues (#15, #20, #21)
-  are the same problem: `nmcli device wifi connect` needs a polkit rule or
-  membership in `netdev`, and a PHP-FPM worker has neither. A README section
-  with the polkit rule closes the most-reported failure the library has.
-- **Detect the wireless device instead of asking for it** (#19). `nmcli -t
-  -f DEVICE,TYPE device` on Linux and `networksetup -listallhardwareports`
-  on macOS both say which interface is Wi-Fi; make `$device` optional.
-- **Collapse duplicate SSIDs** (#10). `groupBySsid()` returning the strongest
-  BSSID per SSID — most users want one row per network, not one per radio.
-- **Dependency hygiene.** Pint or PSR-12 in place of PSR-2; raise PHPStan
-  from level 5 to 6 and retire the one-entry baseline.
-- **Fix colon-escaping in the Linux parser.** `nmcli --terse` escapes `:`
-  inside an SSID as `\:`; `Linux\Networks` un-escapes the whole line *before*
-  splitting on `:`, so an SSID containing a colon shifts every field after
-  it.
-- **CI: a `--prefer-lowest` job** to prove the widened
-  `illuminate/collections ^11.0` floor actually resolves.
+See CHANGELOG.md. Left open from the 2.1 list: nothing.
 
 ## 3.0 — only if a consumer exists
 

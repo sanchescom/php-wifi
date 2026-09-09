@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-09-09
+
+### Added
+- `connect()` and `disconnect()` accept `null` for `$device` and detect the wireless device (`nmcli -t -f DEVICE,TYPE device`, `networksetup -listallhardwareports`, `netsh wlan show interfaces`); `DeviceNotFoundException` when there is none. CLI `--device` is optional.
+- `Collection::get6GhzNetworks()` / `WiFi::get6GhzNetworks()`; 6 GHz frequencies (5950 + 5 × channel) when macOS reports the band.
+- `Collection::uniqueBySsid()` — strongest radio per SSID, hidden networks kept; CLI `list --unique`.
+- `AbstractNetwork::$ssidRedacted` and `Collection::hasRedactedSsids()`; the CLI warns on STDERR when macOS hid the names.
+- README: polkit rules for running `connect()` as `www-data` on Linux.
+- CI: a `--prefer-lowest` job.
+
+### Changed
+- **Every shell argument is escaped** (`escapeshellarg()` on Linux/macOS; on Windows `"`, `%`, `!` are replaced with a space). SSIDs with spaces now work on macOS; the exact command strings changed, so tests that asserted them must be updated.
+- **Windows profile** is written to a random file under `sys_get_temp_dir()` (was `vendor/…/tmp/<ssid>.xml`), with the SSID and passphrase XML-escaped, and deleted in a `finally`. The package's `tmp/` directory is gone.
+- Band filters (`get24GhzNetworks()`, `get5GhzNetworks()`) select by frequency instead of channel number; a network whose channel is unknown (`frequency === 0`) is in no band.
+- Coding standard PSR-12 (was PSR-2); PHPStan level 6 with no baseline.
+
+### Fixed
+- Linux: an SSID containing `:` shifted every field after it (`nmcli --terse` escapes it as `\:`).
+
 ## [2.0.1] - 2026-09-08
 
 ### Changed

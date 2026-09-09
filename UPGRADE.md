@@ -1,5 +1,35 @@
 # Upgrade Guide to v2.0
 
+## 2.0 → 2.1
+
+### If you extend `AbstractNetwork`
+
+`connect()` and `disconnect()` are now declared as
+`connect(string $password, ?string $device = null): void` and
+`disconnect(?string $device = null): void`. **Any class that extends
+`AbstractNetwork` must widen its own `connect()`/`disconnect()` signatures
+to match, or PHP fatals** with a "declaration must be compatible" error.
+This is not theoretical: the project's own test suite has two anonymous
+`AbstractNetwork` subclasses (`tests/SecurityTypeTest.php` and
+`tests/SignalTest.php`) that fataled until their `connect()`/`disconnect()`
+signatures were widened to `?string $device = null`. This is the only
+source-level change a subclass author needs to make.
+
+### Everything else
+
+- Command strings are now quoted (`escapeshellarg()` on Linux/macOS, `"`,
+  `%` and `!` replaced with a space on Windows). Anyone asserting on
+  `getLastCommand()` must update the expected strings.
+- The Windows profile path moved from
+  `vendor/sanchescom/php-wifi/tmp/<ssid>.xml` to a random file under
+  `sys_get_temp_dir()`, and the package's `tmp/` directory no longer
+  exists. Anything that relied on `Profile::getTmpFileName()`'s old
+  location breaks.
+- Band filters (`get24GhzNetworks()`, `get5GhzNetworks()`) now select by
+  frequency instead of channel number. On Windows, `netsh` reports
+  channels only, so 6 GHz networks are reported on their 5 GHz table
+  frequency there.
+
 ## Overview
 
 Version 2.0 brings PHP 8.2+ support, modern syntax, extended functionality, and macOS improvements.
