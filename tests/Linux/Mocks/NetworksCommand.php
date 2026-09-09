@@ -11,4 +11,7 @@ class NetworksCommand extends NetworksCommandAbstract
 {
     /** @var string */
     protected static $mock = __DIR__.'/Networks.txt';
+
+    /** @var array<string, string> */
+    protected static array $mocks = ['-f DEVICE,TYPE device' => __DIR__.'/Devices.txt'];
 }

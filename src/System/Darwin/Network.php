@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System\Darwin;
 
 use Sanchescom\WiFi\Contracts\FrequencyInterface;
+use Sanchescom\WiFi\Exceptions\DeviceNotFoundException;
 use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\Frequency;
 
@@ -17,12 +18,14 @@ class Network extends AbstractNetwork implements FrequencyInterface
 
     /**
      * @param string $password
-     * @param string $device
+     * @param string|null $device
      *
      * @throws \Exception
      */
-    public function connect(string $password, string $device): void
+    public function connect(string $password, ?string $device = null): void
     {
+        $device = $this->resolveDevice($device);
+
         $this->getCommand()->execute(sprintf(
             'networksetup -setairportnetwork %s %s %s',
             escapeshellarg($device),
@@ -32,19 +35,30 @@ class Network extends AbstractNetwork implements FrequencyInterface
     }
 
     /**
-     * @param string $device
+     * @param string|null $device
      *
      * @throws \Exception
      */
-    public function disconnect(string $device): void
+    public function disconnect(?string $device = null): void
     {
-        $device = escapeshellarg($device);
+        $device = escapeshellarg($this->resolveDevice($device));
 
         $this->getCommand()->execute(glue_commands(
             sprintf('networksetup -removepreferredwirelessnetwork %s %s', $device, escapeshellarg($this->ssid)),
             sprintf('networksetup -setairportpower %s off', $device),
             sprintf('networksetup -setairportpower %s on', $device)
         ));
+    }
+
+    protected function detectDevice(): string
+    {
+        $output = (string) $this->getCommand()->execute('networksetup -listallhardwareports');
+
+        if (preg_match('/^Hardware Port: (?:Wi-Fi|AirPort)\s*\nDevice: (\S+)/m', $output, $m)) {
+            return $m[1];
+        }
+
+        throw new DeviceNotFoundException('networksetup lists no Wi-Fi hardware port.');
     }
 
     /**

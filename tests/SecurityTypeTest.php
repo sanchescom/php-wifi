@@ -32,11 +32,11 @@ class SecurityTypeTest extends BaseTestCase
     public function it_classifies_security_strings(string $raw, string $expected): void
     {
         $network = new class(new NetworksCommand()) extends AbstractNetwork {
-            public function connect(string $password, string $device): void
+            public function connect(string $password, ?string $device = null): void
             {
             }
 
-            public function disconnect(string $device): void
+            public function disconnect(?string $device = null): void
             {
             }
 

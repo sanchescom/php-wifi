@@ -11,11 +11,11 @@ class SignalTest extends BaseTestCase
     private function network(): AbstractNetwork
     {
         return new class(new NetworksCommand()) extends AbstractNetwork {
-            public function connect(string $password, string $device): void
+            public function connect(string $password, ?string $device = null): void
             {
             }
 
-            public function disconnect(string $device): void
+            public function disconnect(?string $device = null): void
             {
             }
 

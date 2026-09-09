@@ -11,14 +11,14 @@ interface NetworkInterface
 {
     /**
      * @param string $password
-     * @param string $device
+     * @param string|null $device
      */
-    public function connect(string $password, string $device): void;
+    public function connect(string $password, ?string $device = null): void;
 
     /**
-     * @param string $device
+     * @param string|null $device
      */
-    public function disconnect(string $device): void;
+    public function disconnect(?string $device = null): void;
 
     /**
      * @param array<int, string> $network

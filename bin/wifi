@@ -49,10 +49,10 @@ class WiFi extends CLI
 
         $options->registerOption('bssid', 'BSSID of network', null, true, 'connect');
         $options->registerOption('password', 'Password of network', null, true, 'connect');
-        $options->registerOption('device', 'Which device use for connecting', null, true, 'connect');
+        $options->registerOption('device', 'Which device to use (auto-detected when omitted)', null, true, 'connect');
 
         $options->registerOption('bssid', 'BSSID of network', null, true, 'disconnect');
-        $options->registerOption('device', 'Which device use for connecting', null, true, 'disconnect');
+        $options->registerOption('device', 'Which device to use (auto-detected when omitted)', null, true, 'disconnect');
     }
 
     /**
@@ -114,7 +114,7 @@ class WiFi extends CLI
                         ->getByBssid($options->getOpt('bssid'))
                         ->connect(
                                 $options->getOpt('password'),
-                                $options->getOpt('device')
+                                $options->getOpt('device') ?: null
                         );
                 } catch (Exception $exception) {
                     $this->error($exception->getMessage());
@@ -124,7 +124,7 @@ class WiFi extends CLI
                 try {
                     \Sanchescom\WiFi\WiFi::scan()
                         ->getByBssid($options->getOpt('bssid'))
-                        ->disconnect($options->getOpt('device'));
+                        ->disconnect($options->getOpt('device') ?: null);
                 } catch (Exception $exception) {
                     $this->error($exception->getMessage());
                 }

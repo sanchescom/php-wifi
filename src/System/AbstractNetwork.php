@@ -6,6 +6,7 @@ namespace Sanchescom\WiFi\System;
 
 use Sanchescom\WiFi\Contracts\CommandInterface;
 use Sanchescom\WiFi\Contracts\NetworkInterface;
+use Sanchescom\WiFi\Exceptions\DeviceNotFoundException;
 
 /**
  * Class AbstractNetwork.
@@ -122,15 +123,35 @@ abstract class AbstractNetwork implements NetworkInterface
     }
 
     /**
-     * @param string $password
-     * @param string $device
+     * The device to use: the one given, or the first wireless device the OS reports.
+     *
+     * @throws \Sanchescom\WiFi\Exceptions\DeviceNotFoundException
      */
-    abstract public function connect(string $password, string $device): void;
+    protected function resolveDevice(?string $device): string
+    {
+        return $device ?? $this->detectDevice();
+    }
 
     /**
-     * @param string $device
+     * Ask the OS for its first wireless device. Overridden per OS.
+     *
+     * @throws \Sanchescom\WiFi\Exceptions\DeviceNotFoundException
      */
-    abstract public function disconnect(string $device): void;
+    protected function detectDevice(): string
+    {
+        throw new DeviceNotFoundException('Detection is not implemented for this OS.');
+    }
+
+    /**
+     * @param string $password
+     * @param string|null $device
+     */
+    abstract public function connect(string $password, ?string $device = null): void;
+
+    /**
+     * @param string|null $device
+     */
+    abstract public function disconnect(?string $device = null): void;
 
     /**
      * @param array<int, string> $network

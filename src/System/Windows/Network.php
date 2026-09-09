@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\System\Windows;
 
 use Sanchescom\WiFi\Contracts\FrequencyInterface;
+use Sanchescom\WiFi\Exceptions\DeviceNotFoundException;
 use Sanchescom\WiFi\System\AbstractNetwork;
 use Sanchescom\WiFi\System\Frequency;
 
@@ -17,12 +18,13 @@ class Network extends AbstractNetwork implements FrequencyInterface
 
     /**
      * @param string $password
-     * @param string $device
+     * @param string|null $device
      *
      * @throws \Exception
      */
-    public function connect(string $password, string $device): void
+    public function connect(string $password, ?string $device = null): void
     {
+        $device = $this->resolveDevice($device);
         $profile = $this->getProfileService();
 
         try {
@@ -41,13 +43,26 @@ class Network extends AbstractNetwork implements FrequencyInterface
     }
 
     /**
-     * @param string $device
+     * @param string|null $device
      *
      * @throws \Exception
      */
-    public function disconnect(string $device): void
+    public function disconnect(?string $device = null): void
     {
+        $device = $this->resolveDevice($device);
+
         $this->getCommand()->execute(sprintf('netsh wlan disconnect interface=%s', $this->quote($device)));
+    }
+
+    protected function detectDevice(): string
+    {
+        $output = (string) $this->getCommand()->execute('netsh wlan show interfaces');
+
+        if (preg_match('/^\s*Name\s*:\s*(.+?)\s*$/m', $output, $m)) {
+            return $m[1];
+        }
+
+        throw new DeviceNotFoundException('netsh lists no WLAN interface.');
     }
 
     /**

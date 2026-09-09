@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\System\Linux;
 
+use Sanchescom\WiFi\Exceptions\DeviceNotFoundException;
 use Sanchescom\WiFi\System\AbstractNetwork;
 
 /**
@@ -16,12 +17,14 @@ class Network extends AbstractNetwork
 
     /**
      * @param string $password
-     * @param string $device
+     * @param string|null $device
      *
      * @throws \Exception
      */
-    public function connect(string $password, string $device): void
+    public function connect(string $password, ?string $device = null): void
     {
+        $device = $this->resolveDevice($device);
+
         $this->getCommand()->execute(sprintf(
             'LANG=C nmcli -w 10 device wifi connect %s password %s ifname %s',
             escapeshellarg($this->ssid),
@@ -31,13 +34,30 @@ class Network extends AbstractNetwork
     }
 
     /**
-     * @param string $device
+     * @param string|null $device
      *
      * @throws \Exception
      */
-    public function disconnect(string $device): void
+    public function disconnect(?string $device = null): void
     {
+        $device = $this->resolveDevice($device);
+
         $this->getCommand()->execute(sprintf('LANG=C nmcli device disconnect %s', escapeshellarg($device)));
+    }
+
+    protected function detectDevice(): string
+    {
+        $output = (string) $this->getCommand()->execute('LANG=C nmcli -t -f DEVICE,TYPE device');
+
+        foreach (explode("\n", trim($output)) as $line) {
+            [$device, $type] = array_pad(explode(':', $line, 3), 2, '');
+
+            if ($type === 'wifi' && $device !== '') {
+                return $device;
+            }
+        }
+
+        throw new DeviceNotFoundException('nmcli lists no device of type wifi.');
     }
 
     /**
