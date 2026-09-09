@@ -73,6 +73,19 @@ final class NmcliBackendTest extends TestCase
     }
 
     #[Test]
+    public function scan_returns_an_empty_collection_when_nmcli_lists_nothing(): void
+    {
+        $runner = new FakeCommandRunner(['device wifi list' => '']);
+        $backend = new NmcliBackend($runner);
+
+        $networks = $backend->scan();
+
+        $this->assertInstanceOf(NetworkCollection::class, $networks);
+        $this->assertSame(0, $networks->count());
+        $this->assertTrue($networks->isEmpty());
+    }
+
+    #[Test]
     public function connect_passes_the_password_as_a_secret_argument(): void
     {
         $runner = $this->runner();
@@ -230,6 +243,23 @@ final class NmcliBackendTest extends TestCase
             new HotspotConfig('femus-setup', 'password1', Band::GHz6),
             new Device('wlan0'),
         );
+    }
+
+    #[Test]
+    public function start_hotspot_on_6ghz_runs_no_command_before_rejecting(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        try {
+            $backend->startHotspot(
+                new HotspotConfig('femus-setup', 'password1', Band::GHz6),
+                new Device('wlan0'),
+            );
+            $this->fail('Expected UnsupportedOperation to be thrown.');
+        } catch (UnsupportedOperation) {
+            $this->assertSame([], $runner->commands);
+        }
     }
 
     #[Test]
