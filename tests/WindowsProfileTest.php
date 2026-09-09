@@ -2,6 +2,7 @@
 
 namespace Sanchescom\WiFi\Test;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\Test;
 use Sanchescom\WiFi\Exceptions\CommandException;
 use Sanchescom\WiFi\System\Windows\Network;
@@ -81,5 +82,29 @@ class WindowsProfileTest extends BaseTestCase
         preg_match('/filename="([^"]+)"/', $command->getLastCommand(), $m);
         $this->assertNotEmpty($m[1] ?? '', 'profile path missing from the command');
         $this->assertFileDoesNotExist($m[1]);
+    }
+
+    #[Test]
+    public function a_non_utf8_ssid_renders_the_replacement_character_instead_of_an_empty_name(): void
+    {
+        $profile = new Profile("Caf\xE9", 'WPA2', $this->dir);
+
+        $file = $profile->create('p');
+        $xml = file_get_contents($file);
+
+        $this->assertDoesNotMatchRegularExpression('/<name><\/name>/', (string) $xml);
+        $this->assertStringContainsString("\u{FFFD}", (string) $xml);
+
+        $profile->delete();
+    }
+
+    #[Test]
+    public function an_unknown_security_type_is_rejected_before_reading_a_template(): void
+    {
+        $profile = new Profile('x', '../../etc/passwd', $this->dir);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $profile->create('p');
     }
 }

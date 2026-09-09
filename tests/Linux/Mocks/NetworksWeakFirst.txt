@@ -1,0 +1,4 @@
+# SYNTHETIC: the weaker radio of a duplicated SSID appears before the stronger one
+no:BELL340:02\:00\:00\:00\:00\:04:Infra:157:5785 MHz:69:WPA2:(none):pair_ccmp group_ccmp psk
+no:VTECH_5764_9764:02\:00\:00\:00\:00\:03:Infra:1:2412 MHz:72:WPA2:(none):pair_tkip pair_ccmp group_tkip psk
+no:BELL340:02\:00\:00\:00\:00\:01:Infra:1:2412 MHz:100:WPA2:(none):pair_ccmp group_ccmp psk

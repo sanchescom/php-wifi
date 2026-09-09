@@ -67,14 +67,22 @@ class Network extends AbstractNetwork implements FrequencyInterface
 
     /**
      * Quote a value for cmd.exe. cmd has no single quotes and expands %VAR%
-     * and !VAR! even inside double quotes, so the three characters that can
-     * break out of the argument are replaced with a space — the same thing
-     * PHP's escapeshellarg() does on Windows, done here so the result does
-     * not depend on the host PHP runs on.
+     * and !VAR! even inside double quotes, so `"`, `%` and `!` are replaced
+     * with a space, and a trailing odd run of backslashes is doubled so it
+     * cannot escape the closing quote for CommandLineToArgvW — close to but
+     * not identical with PHP's Windows escapeshellarg().
      */
     protected function quote(string $value): string
     {
-        return '"' . str_replace(['"', '%', '!'], ' ', $value) . '"';
+        $value = str_replace(['"', '%', '!'], ' ', $value);
+
+        // A trailing odd run of backslashes would escape the closing quote for
+        // CommandLineToArgvW; double it so the quote stays a quote.
+        if (preg_match('/(\\\\+)$/', $value, $m) && strlen($m[1]) % 2 === 1) {
+            $value .= '\\';
+        }
+
+        return '"' . $value . '"';
     }
 
     /**

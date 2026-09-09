@@ -131,4 +131,13 @@ class DarwinSystemProfilerTest extends BaseTestCase
         $this->assertFalse($named->hasRedactedSsids());
         $this->assertSame([false], $named->pluck('ssidRedacted')->unique()->values()->all());
     }
+
+    #[Test]
+    public function unique_by_ssid_never_merges_redacted_networks(): void
+    {
+        $networks = $this->scan(SystemProfilerRedactedCommand::class);
+
+        $this->assertSame(6, $networks->count());
+        $this->assertSame(6, $networks->uniqueBySsid()->count());
+    }
 }

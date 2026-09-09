@@ -65,4 +65,26 @@ class ShellEscapingTest extends BaseTestCase
 
         $this->assertSame('netsh wlan disconnect interface="Wi-Fi  2 "', $command->getLastCommand());
     }
+
+    #[Test]
+    public function windows_quoting_doubles_a_trailing_odd_run_of_backslashes(): void
+    {
+        $network = (new WindowsNetwork($command = new NetworksCommand()))
+            ->createFromArray(['Cafe "Net" 100%!', '', 'WPA2-Personal', 'CCMP', '00:11:22:33:44:55', '50', '', '6', '', '']);
+
+        $network->disconnect('evil\\');
+
+        $this->assertSame('netsh wlan disconnect interface="evil\\\\"', $command->getLastCommand());
+    }
+
+    #[Test]
+    public function windows_quoting_leaves_a_trailing_even_run_of_backslashes_alone(): void
+    {
+        $network = (new WindowsNetwork($command = new NetworksCommand()))
+            ->createFromArray(['Cafe "Net" 100%!', '', 'WPA2-Personal', 'CCMP', '00:11:22:33:44:55', '50', '', '6', '', '']);
+
+        $network->disconnect('ok\\\\');
+
+        $this->assertSame('netsh wlan disconnect interface="ok\\\\"', $command->getLastCommand());
+    }
 }

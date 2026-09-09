@@ -161,7 +161,8 @@ class Collection extends BaseCollection
 
     /**
      * One network per SSID — the radio with the strongest signal — in order of
-     * first appearance. Hidden networks (empty SSID) are not merged.
+     * first appearance. Hidden networks (empty SSID) and networks whose name
+     * the OS hid (`$ssidRedacted`) are never merged.
      */
     public function uniqueBySsid(): self
     {
@@ -169,7 +170,7 @@ class Collection extends BaseCollection
         $hidden = [];
 
         foreach ($this as $network) {
-            if ($network->ssid === '') {
+            if ($network->ssid === '' || $network->ssidRedacted) {
                 $hidden[] = $network;
                 continue;
             }
