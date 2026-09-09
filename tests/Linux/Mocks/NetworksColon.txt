@@ -1,0 +1,4 @@
+# SYNTHETIC: three nmcli --terse lines; line 2 has an escaped colon in the SSID
+no:AlphaNet-foiEmE:04\:8D\:38\:22\:78\:9E:Infra:7:2442 MHz:72:WPA1 WPA2:pair_tkip pair_ccmp group_tkip psk:pair_tkip pair_ccmp group_tkip psk
+yes:Cafe\: Corner:70\:9F\:2D\:97\:F7\:F7:Infra:3:2422 MHz:45:WPA2:(none):pair_ccmp group_ccmp psk
+no::2C\:99\:24\:3C\:A2\:F9:Infra:1:2412 MHz:35:WPA2:(none):pair_ccmp group_ccmp psk

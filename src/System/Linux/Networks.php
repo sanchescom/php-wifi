@@ -42,39 +42,32 @@ class Networks extends AbstractNetworks
         return new Network($this->command);
     }
 
-    /**
-     * @param string $output
-     *
-     * @return array<int, array<int, string>>
-     */
-    public function extractingNetworks($output): array
+    public function extractingNetworks(string $output): array
     {
-        $availableNetworks = $this->explodeAvailableNetworks($output);
+        $lines = array_filter(
+            $this->explodeAvailableNetworks($output),
+            static fn (string $line): bool => $line !== '' && $line[0] !== '#'
+        );
 
-        array_walk($availableNetworks, function (&$networkData) {
-            $networkData = $this->extractingDataFromString($networkData);
-        });
-
-        return $availableNetworks;
+        return array_values(array_filter(array_map([$this, 'extractingDataFromString'], $lines)));
     }
 
     /**
-     * @param string $networkData
+     * Split one `nmcli --terse` line into its ten fields. nmcli escapes a
+     * literal ':' inside a field as '\:', so split on colons that are not
+     * preceded by a backslash and un-escape each field afterwards.
      *
      * @return array<int, string>
      */
-    protected function extractingDataFromString($networkData): array
+    protected function extractingDataFromString(string $networkData): array
     {
-        $extractedProperties = [];
+        $fields = preg_split('/(?<!\\\\):/', $networkData) ?: [];
 
-        preg_match_all(
-            '/(.*):(.*):(\w{2}\:\w{2}\:\w{2}\:\w{2}\:\w{2}:\w{2}):(.*):(.*):(.*):(.*):(.*):(.*):(.*)/',
-            str_replace('\\:', ':', $networkData),
-            $extractedProperties
+        $fields = array_map(
+            static fn (string $field): string => trim(str_replace('\\:', ':', $field)),
+            $fields
         );
 
-        array_shift($extractedProperties);
-
-        return trim_first($extractedProperties);
+        return count($fields) === 10 ? $fields : [];
     }
 }
