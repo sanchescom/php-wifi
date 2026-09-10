@@ -1,0 +1,13 @@
+[Unit]
+Description=Headless Wi-Fi provisioning hotspot for php-wifi
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+User=www-data
+EnvironmentFile=/etc/php-wifi-provision.env
+ExecStart=/usr/bin/env bash /opt/php-wifi/examples/provision/hotspot.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

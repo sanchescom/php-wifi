@@ -1,6 +1,8 @@
 #!/usr/bin/env php
 <?php
 
+declare(strict_types=1);
+
 /*
 |--------------------------------------------------------------------------
 | Register The Auto Loader
@@ -20,126 +22,10 @@ if (file_exists(__DIR__ . '/../../vendor/autoload.php')) {
 } elseif (file_exists(__DIR__ . '/../vendor/autoload.php')) {
     require __DIR__ . '/../vendor/autoload.php';
 } else {
-    fwrite(STDERR, 'Install dependencies using Composer.'.PHP_EOL);
+    fwrite(STDERR, 'Install dependencies using Composer.' . PHP_EOL);
     exit(1);
 }
 
-use splitbrain\phpcli\CLI;
-use splitbrain\phpcli\Options;
+use Sanchescom\WiFi\Cli\WiFiCli;
 
-/**
- * Class Wifi.
- */
-class WiFi extends CLI
-{
-    /**
-     * Register options and arguments on the given $options object
-     *
-     * @param Options $options
-     * @return void
-     */
-    protected function setup(Options $options)
-    {
-        $options->setHelp('Cross-platform php utility for working with wi-fi networks');
-        $options->registerCommand('list', 'Show surrounding wifi networks');
-        $options->registerCommand('connect', 'Connect to wifi network');
-        $options->registerCommand('disconnect', 'Disconnect from wifi network');
-
-        $options->registerOption('connected', 'Showing only connected networks', 'c', false, 'list');
-        $options->registerOption('unique', 'One row per SSID (strongest radio)', 'u', false, 'list');
-
-        $options->registerOption('bssid', 'BSSID of network', null, true, 'connect');
-        $options->registerOption('password', 'Password of network', null, true, 'connect');
-        $options->registerOption('device', 'Which device to use (auto-detected when omitted)', null, true, 'connect');
-
-        $options->registerOption('bssid', 'BSSID of network', null, true, 'disconnect');
-        $options->registerOption('device', 'Which device to use (auto-detected when omitted)', null, true, 'disconnect');
-    }
-
-    /**
-     * Your main program
-     *
-     * Arguments and options have been parsed when this is run
-     *
-     * @param Options $options
-     * @return void
-     * @throws Exception
-     */
-    protected function main(Options $options)
-    {
-        switch ($options->getCmd()) {
-            case 'list':
-                $collection = \Sanchescom\WiFi\WiFi::scan();
-
-                if ($options->getOpt('unique')) {
-                    $collection = $collection->uniqueBySsid();
-                }
-
-                if ($options->getOpt('connected')) {
-                    $networks = $collection->getConnected();
-                } else {
-                    $networks = $collection->getAll();
-                }
-
-                if ($collection->hasRedactedSsids()) {
-                    fwrite(STDERR, "Network names were hidden by macOS. Grant Location Services to the process running PHP to see SSIDs.\n");
-                }
-
-                $table = new \LucidFrame\Console\ConsoleTable();
-                $table
-                    ->setHeaders([
-                        'SSID',
-                        'BSSID',
-                        'Channel',
-                        'Quality',
-                        'dBm',
-                        'Frequency',
-                        'Connected',
-                        'Security',
-                    ]);
-
-                foreach ($networks as $network) {
-                    $table->addRow([
-                        $network->ssid,
-                        $network->bssid,
-                        $network->channel,
-                        $network->quality,
-                        $network->dbm,
-                        $network->frequency,
-                        var_export($network->connected, true),
-                        $network->security,
-                    ]);
-                }
-
-                $table->hideBorder()->display();
-                break;
-            case 'connect':
-                try {
-                    \Sanchescom\WiFi\WiFi::scan()
-                        ->getByBssid($options->getOpt('bssid'))
-                        ->connect(
-                                $options->getOpt('password'),
-                                $options->getOpt('device') ?: null
-                        );
-                } catch (Exception $exception) {
-                    $this->error($exception->getMessage());
-                }
-                break;
-            case 'disconnect':
-                try {
-                    \Sanchescom\WiFi\WiFi::scan()
-                        ->getByBssid($options->getOpt('bssid'))
-                        ->disconnect($options->getOpt('device') ?: null);
-                } catch (Exception $exception) {
-                    $this->error($exception->getMessage());
-                }
-                break;
-            default:
-                $this->error('No known command was called, we show the default help instead:');
-                echo $options->help();
-                exit;
-        }
-    }
-}
-
-(new WiFi())->run();
+(new WiFiCli())->run();

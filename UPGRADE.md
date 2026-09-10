@@ -1,4 +1,60 @@
-# Upgrade Guide to v2.0
+# Upgrade Guide
+
+## 2.x → 3.0
+
+3.0 replaces the whole 2.x surface — every `WiFi::` static method, the
+`Collection` filter/sort methods, `AbstractNetwork` and its public
+properties, the seven global helper functions, and the
+`Sanchescom\WiFi\Exceptions\*` namespace — with a single object API:
+`WiFi::create()` (or `new WiFi($backend)`) returns a facade over one
+`Backend`; `scan()` returns a `NetworkCollection` of immutable `Network`
+value objects; connecting takes a `Credentials` value object instead of a
+bare password string. There is no compatibility shim — every row below is
+a breaking change.
+
+| Was (2.x) | Now (3.0) |
+| --- | --- |
+| `WiFi::scan()` | `WiFi::create()->scan()` |
+| `WiFi::getConnected()` | `WiFi::create()->scan()->connected()` |
+| `WiFi::getStrongestNetwork()` | `WiFi::create()->scan()->strongest()` |
+| `WiFi::get24GhzNetworks()` / `get5GhzNetworks()` / `get6GhzNetworks()` | `->scan()->band(Band::GHz2_4)` / `Band::GHz5` / `Band::GHz6` |
+| `WiFi::getNetworksBySecurity('WPA2')` | `->scan()->security(Security::WPA2)` |
+| `WiFi::setCommandClass()` / `WiFi::setPhpOperationSystem()` | Gone — construct `new WiFi($backend)` directly, e.g. `new WiFi(BackendFactory::forOs(Os::Linux, new FakeCommandRunner([...])))` in tests |
+| `Collection::getAll()` | `->all()` (inherited from `Illuminate\Support\Collection`) |
+| `Collection::getBySsid(string $ssid)` | `NetworkCollection::bySsid(string $ssid): Network` |
+| `Collection::getByBssid(string $bssid)` | `NetworkCollection::byBssid(Bssid\|string $bssid): Network` |
+| `Collection::getConnected()` | `NetworkCollection::connected(): static` |
+| `Collection::getBySecurity(string $type)` | `NetworkCollection::security(Security $security): static` |
+| `Collection::getByMinSignalStrength(float $dbm)` | `NetworkCollection::strongerThan(Signal\|float $threshold): static` |
+| `Collection::getByChannel(int $channel)` | Gone — filter yourself: `->filter(fn ($n) => $n->channel === 6)` |
+| `Collection::sortBySignalStrength()` | `NetworkCollection::sortBySignal(): static` |
+| `Collection::getStrongest()` | `NetworkCollection::strongest(): Network` |
+| `Collection::hasRedactedSsids()` | `NetworkCollection::hasHiddenSsids(): bool` |
+| `AbstractNetwork` public properties | `Network` readonly properties: `$ssidRedacted` → `$ssidHidden`; `$quality` / `$dbm` → `$signal?->quality` / `$signal?->dbm` (a `Signal` value object, or `null` when the tool reported none); `$bssid` (`string`) → `$bssid` (`?Bssid`); `$security` (`string`) → `$security` (`Security` enum) plus `$securityFlags` (unchanged, still `string`) |
+| `$network->getSecurityType()` | `$network->security` (a `Security` enum case, not a string) |
+| `$network->connect(string $password, ?string $device = null)` | `WiFi::connect(Network\|string $network, Credentials $credentials, ?Device $device = null)` — networks no longer connect themselves |
+| `$network->disconnect(?string $device = null)` | `WiFi::disconnect(?Device $device = null)` |
+| `to_dbm()` / `to_quality()` (global functions) | Gone — use `Signal::fromDbm()` / `Signal::fromQuality()` |
+| `to_hex()`, `trim_first()`, `extract_bssid()`, `extract_after()`, `glue_commands()` (global functions) | Gone. These were parser internals; the 3.0 parsers (`src/Parser/**`) are pure functions over fixture text and do not need them from outside |
+| `Sanchescom\WiFi\Exceptions\CommandException` | `Sanchescom\WiFi\Exception\CommandFailed` |
+| `Sanchescom\WiFi\Exceptions\NetworkNotFoundException` | `Sanchescom\WiFi\Exception\NetworkNotFound` |
+| `Sanchescom\WiFi\Exceptions\DeviceNotFoundException` | `Sanchescom\WiFi\Exception\DeviceNotFound` |
+| `Sanchescom\WiFi\Exceptions\UnknownSystemException` | `Sanchescom\WiFi\Exception\UnsupportedOperation`, thrown by `Sanchescom\WiFi\Shell\Os::current()` when `PHP_OS_FAMILY` is not `Linux`, `Darwin` or `Windows`. (The lower-level `Os::from()` — a plain native `enum::from()` — still throws PHP's own `ValueError`; the library itself only ever calls `Os::current()`.) |
+| `Sanchescom\WiFi\System\Windows\Profile` | `Sanchescom\WiFi\Backend\Windows\ProfileFile` |
+
+Two behavioural changes that are not renames:
+
+- **macOS `disconnect()` no longer removes the preferred network.** 2.x
+  called `networksetup -removepreferredwirelessnetwork` as part of
+  disconnecting, which also forgot the network. 3.0's
+  `NetworksetupBackend::disconnect()` only power-cycles the Wi-Fi radio
+  (`-setairportpower off` then `on`); if you relied on disconnect also
+  forgetting the network on macOS, do that separately.
+- **Sentinel values are gone.** A network with no signal reading used to
+  be reported as `-100` dBm / `0%`; a network with an unknown channel used
+  to report `frequency === 0`. Both are `null` now (`$network->signal`,
+  `$network->frequency`, `$network->channel`, `$network->band`) — check
+  for `null`, not for the old magic numbers.
 
 ## 2.0 → 2.1
 

@@ -6,7 +6,7 @@ We accept contributions via Pull Requests on [Github](https://github.com/sanches
 
 ## Pull Requests
 
-- **[PSR-12 Coding Standard](https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-12-extended-coding-style-guide.md)** - Check the code style with ``$ composer lint`` and fix it with ``$ composer fix``. Run ``$ composer analyse`` for static analysis (PHPStan level 6, no baseline).
+- **[PSR-12 Coding Standard](https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-12-extended-coding-style-guide.md)** - Check the code style with ``$ composer lint`` (covers ``src`` and ``examples``; the CLI command class lives at ``src/Cli/WiFiCli.php`` and is checked too — ``bin/wifi`` is just a short bootstrap) and fix it with ``$ composer fix``. Run ``$ composer analyse`` for static analysis (PHPStan level max, no baseline, over ``src`` and ``bin/wifi``).
 
 - **Add tests!** - Your patch won't be accepted if it doesn't have tests.
 

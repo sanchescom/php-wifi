@@ -1,6 +1,6 @@
 # Keep development-only paths out of `composer require` installs.
-# Shipped on purpose: src/, bin/, templates/ (read by Windows\Profile at
-# runtime; profile files are written to sys_get_temp_dir()),
+# Shipped on purpose: src/, bin/, templates/ (read by Backend\Windows\ProfileFile
+# at runtime; profile files are written to sys_get_temp_dir()),
 # composer.json, the docs.
 /.github               export-ignore
 /.gitattributes        export-ignore
@@ -8,3 +8,4 @@
 /tests                 export-ignore
 /phpstan.neon          export-ignore
 /phpunit.xml           export-ignore
+/examples              export-ignore
