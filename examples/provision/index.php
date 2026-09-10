@@ -40,6 +40,7 @@ $networks = [];
 $scanError = null;
 $connectError = null;
 $connected = null;
+$genericError = 'Something went wrong on the device; check its logs.';
 
 try {
     $wifi = WiFi::create();
@@ -63,6 +64,9 @@ if ($wifi !== null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
         }
     } catch (WiFiException $exception) {
         $scanError = $exception->getMessage();
+    } catch (Throwable $exception) {
+        error_log(sprintf('provision scan failed: %s: %s', $exception::class, $exception->getMessage()));
+        $scanError = $genericError;
     }
 }
 
@@ -79,6 +83,9 @@ if ($wifi !== null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $connected = ['device' => $wifi->device()->name, 'ssid' => $ssid];
         } catch (WiFiException $exception) {
             $connectError = $exception->getMessage();
+        } catch (Throwable $exception) {
+            error_log(sprintf('provision connect failed: %s: %s', $exception::class, $exception->getMessage()));
+            $connectError = $genericError;
         }
     }
 }

@@ -11,4 +11,4 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
     --ssid="${PROVISION_SSID:-femus-setup}" \
     --password="${PROVISION_PASSWORD:?set PROVISION_PASSWORD}"
 
-exec php -S 0.0.0.0:8080 -t "$SCRIPT_DIR"
+exec php -d display_errors=0 -d log_errors=1 -d expose_php=0 -S 0.0.0.0:8080 -t "$SCRIPT_DIR"
