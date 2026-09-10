@@ -7,3 +7,4 @@ parameters:
         - src/Parser
         - src/Backend
         - src/Wifi3.php
+        - bin/wifi3
