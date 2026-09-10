@@ -90,6 +90,10 @@ including:
 - `PermissionDenied`'s hint is tailored per OS (the polkit pointer on
   Linux; "run the command with sufficient privileges" elsewhere) instead
   of a single generic message.
+- **Windows:** `ProfileFile` now renders its template in a single
+  `strtr()` pass instead of parallel `str_replace()` arrays, so an SSID
+  equal to a template placeholder (e.g. `{key}`) can no longer make the
+  rendered profile contain the passphrase in place of the network name.
 
 ## [2.1.0] - 2026-09-09
 

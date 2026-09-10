@@ -90,6 +90,37 @@ final class ProfileFileTest extends TestCase
     }
 
     #[Test]
+    public function an_ssid_matching_a_template_placeholder_cannot_inject_the_passphrase(): void
+    {
+        $profile = new ProfileFile('{key}', Security::WPA2, $this->dir);
+
+        $file = $profile->create('hunter2');
+        $xml = (string) file_get_contents($file);
+
+        $this->assertStringContainsString('<name>{key}</name>', $xml);
+        $this->assertSame(1, substr_count($xml, 'hunter2'));
+        $this->assertStringNotContainsString('<name>hunter2', $xml);
+
+        $profile->delete();
+    }
+
+    #[Test]
+    public function ssids_matching_other_placeholders_render_literally(): void
+    {
+        $hexProfile = new ProfileFile('{hex}', Security::WPA2, $this->dir);
+        $hexFile = $hexProfile->create('x');
+        $hexXml = (string) file_get_contents($hexFile);
+        $this->assertStringContainsString('<name>{hex}</name>', $hexXml);
+        $hexProfile->delete();
+
+        $ssidProfile = new ProfileFile('{ssid}', Security::WPA2, $this->dir);
+        $ssidFile = $ssidProfile->create('x');
+        $ssidXml = (string) file_get_contents($ssidFile);
+        $this->assertStringContainsString('<name>{ssid}</name>', $ssidXml);
+        $ssidProfile->delete();
+    }
+
+    #[Test]
     public function delete_without_a_created_file_returns_false(): void
     {
         $profile = new ProfileFile('Cafe Corner', Security::WPA2, $this->dir);

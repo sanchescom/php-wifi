@@ -86,10 +86,10 @@ final class ProfileFile
             'UTF-8',
         );
 
-        return str_replace(
-            ['{ssid}', '{hex}', '{key}'],
-            [$xml($this->ssid), bin2hex($this->ssid), $xml($password)],
-            $content,
-        );
+        return strtr($content, [
+            '{ssid}' => $xml($this->ssid),
+            '{hex}' => bin2hex($this->ssid),
+            '{key}' => $xml($password),
+        ]);
     }
 }
