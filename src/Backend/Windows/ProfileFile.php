@@ -13,9 +13,9 @@ use Sanchescom\WiFi\Value\Security;
  * it as soon as netsh has read it.
  *
  * Write and temp-file-creation failures throw the plain SPL
- * `\RuntimeException`, not a `WiFiException` — this mirrors the 2.1
- * `Sanchescom\WiFi\System\Windows\Profile` behaviour and keeps our own
- * exception family reserved for command-execution failures.
+ * `\RuntimeException`, not a `WiFiException` — this mirrors the 2.x
+ * `Profile` class behaviour and keeps our own exception family reserved
+ * for command-execution failures.
  */
 final class ProfileFile
 {

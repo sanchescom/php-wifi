@@ -47,6 +47,19 @@ final class CliTest extends TestCase
     }
 
     #[Test]
+    public function list_hints_about_hidden_ssids_with_linux_wording_not_macos(): void
+    {
+        $result = $this->runCli(['list'], self::LINUX_FIXTURES, 'Linux');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+        $this->assertStringContainsString(
+            '1 network(s) broadcast no SSID (hidden); they are shown as "-".',
+            $result['stderr'],
+        );
+        $this->assertStringNotContainsString('macOS', $result['stderr']);
+    }
+
+    #[Test]
     public function hotspot_start_with_a_short_password_fails_validation_on_linux(): void
     {
         $result = $this->runCli(
@@ -120,6 +133,15 @@ final class CliTest extends TestCase
         $dataLines = $this->tableDataLines($this->lines($result['stdout']));
 
         $this->assertCount(3, $dataLines);
+    }
+
+    #[Test]
+    public function forget_confirms_on_stdout(): void
+    {
+        $result = $this->runCli(['forget', 'BELL340'], self::LINUX_FIXTURES, 'Linux');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+        $this->assertSame('Forgot BELL340.', trim($result['stdout']));
     }
 
     #[Test]

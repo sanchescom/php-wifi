@@ -28,6 +28,7 @@ if (file_exists(__DIR__ . '/../../vendor/autoload.php')) {
 
 use LucidFrame\Console\ConsoleTable;
 use Sanchescom\WiFi\Backend\BackendFactory;
+use Sanchescom\WiFi\Backend\NetworksetupBackend;
 use Sanchescom\WiFi\Backend\SupportsHotspot;
 use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Exception\PermissionDenied;
@@ -38,6 +39,8 @@ use Sanchescom\WiFi\Value\Band;
 use Sanchescom\WiFi\Value\Credentials;
 use Sanchescom\WiFi\Value\Device;
 use Sanchescom\WiFi\Value\HotspotConfig;
+use Sanchescom\WiFi\Value\Network;
+use Sanchescom\WiFi\Value\NetworkCollection;
 use Sanchescom\WiFi\WiFi;
 use splitbrain\phpcli\CLI;
 use splitbrain\phpcli\Options;
@@ -248,11 +251,7 @@ final class WiFiCli extends CLI
         }
 
         if ($networks->hasHiddenSsids()) {
-            fwrite(
-                STDERR,
-                'Network names were hidden by macOS. Grant Location Services to the process running PHP'
-                    . ' to see SSIDs.' . PHP_EOL,
-            );
+            fwrite(STDERR, $this->hiddenSsidHint($networks) . PHP_EOL);
         }
 
         $table = new ConsoleTable();
@@ -274,6 +273,24 @@ final class WiFiCli extends CLI
 
         $table->hideBorder();
         $table->display();
+    }
+
+    /**
+     * On macOS, a hidden SSID is indistinguishable from every other name
+     * Location Services redacts, so the hint names the real cause. On every
+     * other backend an empty SSID means the access point itself broadcasts
+     * no name, which the OS reports honestly.
+     */
+    private function hiddenSsidHint(NetworkCollection $networks): string
+    {
+        if ($this->wifi->backend() instanceof NetworksetupBackend) {
+            return 'Network names were hidden by macOS. Grant Location Services to the process running PHP'
+                . ' to see SSIDs.';
+        }
+
+        $hidden = $networks->filter(fn (Network $network): bool => $network->ssidHidden)->count();
+
+        return sprintf('%d network(s) broadcast no SSID (hidden); they are shown as "-".', $hidden);
     }
 
     private function cmdConnect(Options $options): void
@@ -343,6 +360,8 @@ final class WiFiCli extends CLI
         }
 
         $this->wifi->forget($target);
+
+        echo sprintf('Forgot %s.', $target) . PHP_EOL;
     }
 
     private function cmdHotspot(Options $options): void
