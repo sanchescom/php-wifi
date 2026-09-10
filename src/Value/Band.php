@@ -20,13 +20,21 @@ enum Band: string
         };
     }
 
-    /** The band as system_profiler prints it: "2", "5" or "6" (from "Channel: 157 (5GHz, 80MHz)"). */
+    /**
+     * The band as system_profiler prints it: "2", "5" or "6" (from
+     * "Channel: 157 (5GHz, 80MHz)"), or as Windows 11's `netsh wlan show
+     * networks` prints its `Band :` field: "2.4 GHz", "5 GHz", "6 GHz".
+     */
     public static function fromHint(?string $hint): ?self
     {
-        return match ($hint) {
-            '2', '2.4' => self::GHz2_4,
-            '5' => self::GHz5,
-            '6' => self::GHz6,
+        if ($hint === null) {
+            return null;
+        }
+
+        return match (trim($hint)) {
+            '2', '2.4', '2.4 GHz' => self::GHz2_4,
+            '5', '5 GHz' => self::GHz5,
+            '6', '6 GHz' => self::GHz6,
             default => null,
         };
     }

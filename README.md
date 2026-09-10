@@ -167,6 +167,10 @@ returning an empty list or silently doing nothing.
 See [`docs/verified-on.md`](docs/verified-on.md) for the raw commands
 behind every "verified live" cell above.
 
+On Windows, a 6 GHz network is only reported as `Band::GHz6` when `netsh`
+prints a `Band :` field for it (Windows 11 22H2 and later); on older
+builds it falls back to a channel-derived guess.
+
 ## Linux — Privileges (polkit)
 
 `nmcli device wifi connect` asks NetworkManager to create and activate a

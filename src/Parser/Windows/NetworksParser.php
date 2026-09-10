@@ -28,12 +28,17 @@ use Sanchescom\WiFi\Value\Signal;
  * One network per `SSID N :` block, using the first BSSID/Signal/Channel found
  * in it. The command output alone never says which network is connected —
  * the backend cross-references it against `InterfacesParser` output.
+ *
+ * Windows 11 22H2+ additionally prints a `Band :` field ("2.4 GHz", "5 GHz"
+ * or "6 GHz") inside each BSSID block; when present it takes priority over
+ * the channel-derived guess, since 6 GHz channel numbers overlap the 5 GHz
+ * range and cannot be told apart from the channel alone.
  */
 final class NetworksParser implements NetworkParser
 {
     private const SSID_HEADER = '/^SSID\s+\d+\s*:\s*(.*)$/';
 
-    private const FIELD = '/^\s*(Authentication|Encryption|BSSID\s+\d+|Signal|Channel)\s*:\s*(.+?)\s*$/';
+    private const FIELD = '/^\s*(Authentication|Encryption|BSSID\s+\d+|Signal|Channel|Band)\s*:\s*(.+?)\s*$/';
 
     public function parse(string $output): array
     {
@@ -80,7 +85,8 @@ final class NetworksParser implements NetworkParser
         $frequency = null;
 
         if ($channel !== null) {
-            $band = $channel <= 14 ? Band::GHz2_4 : Band::GHz5;
+            $band = Band::fromHint($fields['Band'] ?? null)
+                ?? ($channel <= 14 ? Band::GHz2_4 : Band::GHz5);
             $frequency = $band->frequencyForChannel($channel);
         }
 

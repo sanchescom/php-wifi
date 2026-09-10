@@ -94,6 +94,10 @@ including:
   `strtr()` pass instead of parallel `str_replace()` arrays, so an SSID
   equal to a template placeholder (e.g. `{key}`) can no longer make the
   rendered profile contain the passphrase in place of the network name.
+- **Windows:** a `netsh` scan block's `Band :` field (present on Windows 11
+  22H2+) is now honoured when parsing networks, so a 6 GHz access point is
+  reported as `Band::GHz6` with the correct frequency instead of being
+  misclassified as 5 GHz from its channel number alone.
 
 ## [2.1.0] - 2026-09-09
 

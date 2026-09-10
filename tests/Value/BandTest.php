@@ -37,4 +37,13 @@ final class BandTest extends TestCase
         $this->assertNull(Band::GHz2_4->frequencyForChannel(36));
         $this->assertNull(Band::GHz5->frequencyForChannel(3));
     }
+
+    #[Test]
+    public function hints_accept_windows_11_netsh_band_wording(): void
+    {
+        $this->assertSame(Band::GHz6, Band::fromHint('6 GHz'));
+        $this->assertSame(Band::GHz5, Band::fromHint('5 GHz'));
+        $this->assertSame(Band::GHz2_4, Band::fromHint('2.4 GHz'));
+        $this->assertNull(Band::fromHint('60 GHz'));
+    }
 }

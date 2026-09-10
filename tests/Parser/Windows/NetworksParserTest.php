@@ -87,6 +87,56 @@ final class NetworksParserTest extends TestCase
         $this->assertNull($networks[0]->signal);
     }
 
+    #[Test]
+    public function a_band_line_takes_priority_over_the_channel_derived_guess(): void
+    {
+        $block = <<<'TXT'
+            SSID 1 : SixGhzHigh
+                Network type            : Infrastructure
+                Authentication          : WPA3-Personal
+                Encryption              : CCMP
+                BSSID 1                 : 04:8d:38:22:78:9e
+                     Signal             : 80%
+                     Radio type         : 802.11ax
+                     Band               : 6 GHz
+                     Channel            : 37
+
+            SSID 2 : SixGhzLow
+                Network type            : Infrastructure
+                Authentication          : WPA3-Personal
+                Encryption              : CCMP
+                BSSID 1                 : 04:8d:38:22:78:9f
+                     Signal             : 70%
+                     Radio type         : 802.11ax
+                     Band               : 6 GHz
+                     Channel            : 5
+
+            SSID 3 : FiveGhzNoBandLine
+                Network type            : Infrastructure
+                Authentication          : WPA2-Personal
+                Encryption              : CCMP
+                BSSID 1                 : 04:8d:38:22:78:a0
+                     Signal             : 60%
+                     Radio type         : 802.11ac
+                     Channel            : 36
+
+            TXT;
+
+        $networks = (new NetworksParser())->parse($block);
+
+        $sixGhzHigh = $this->findBySsid($networks, 'SixGhzHigh');
+        $this->assertSame(Band::GHz6, $sixGhzHigh->band);
+        $this->assertSame(6135, $sixGhzHigh->frequency);
+
+        $sixGhzLow = $this->findBySsid($networks, 'SixGhzLow');
+        $this->assertSame(Band::GHz6, $sixGhzLow->band);
+        $this->assertSame(5975, $sixGhzLow->frequency);
+
+        $fiveGhzNoBandLine = $this->findBySsid($networks, 'FiveGhzNoBandLine');
+        $this->assertSame(Band::GHz5, $fiveGhzNoBandLine->band);
+        $this->assertSame(5180, $fiveGhzNoBandLine->frequency);
+    }
+
     private static function fixture(string $name): string
     {
         return (string) file_get_contents(self::FIXTURES . '/' . $name);
