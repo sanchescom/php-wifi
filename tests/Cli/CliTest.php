@@ -20,6 +20,12 @@ final class CliTest extends TestCase
 
     private const DARWIN_FIXTURES = __DIR__ . '/../Fixtures/cli/darwin';
 
+    private const LINUX_CONNECTED_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-connected';
+
+    private const LINUX_HOTSPOT_INACTIVE_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-hotspot-inactive';
+
+    private const LINUX_HOTSPOT_STOP_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-hotspot-stop';
+
     #[Test]
     public function list_unique_shows_four_rows_with_the_strongest_bell340_first(): void
     {
@@ -160,6 +166,61 @@ final class CliTest extends TestCase
 
         $this->assertSame(1, $result['exit']);
         $this->assertStringContainsString('--ssid or --bssid', $result['stderr']);
+    }
+
+    #[Test]
+    public function list_connected_shows_only_the_active_network(): void
+    {
+        $result = $this->runCli(['list', '--connected'], self::LINUX_CONNECTED_FIXTURES, 'Linux');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+
+        $dataLines = $this->tableDataLines($this->lines($result['stdout']));
+
+        $this->assertCount(1, $dataLines);
+        $this->assertStringContainsString('AlphaNet-foiEmE', $dataLines[0]);
+        $this->assertStringContainsString('true', $dataLines[0]);
+    }
+
+    #[Test]
+    public function hotspot_status_is_inactive_when_no_connection_is_active(): void
+    {
+        $result = $this->runCli(['hotspot', 'status'], self::LINUX_HOTSPOT_INACTIVE_FIXTURES, 'Linux');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+        $this->assertSame('inactive', trim($result['stdout']));
+    }
+
+    #[Test]
+    public function hotspot_stop_confirms_on_stdout(): void
+    {
+        $result = $this->runCli(['hotspot', 'stop'], self::LINUX_HOTSPOT_STOP_FIXTURES, 'Linux');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+        $this->assertSame('Hotspot stopped.', trim($result['stdout']));
+    }
+
+    #[Test]
+    public function known_is_unsupported_on_darwin(): void
+    {
+        $result = $this->runCli(['known'], self::DARWIN_FIXTURES, 'Darwin');
+
+        $this->assertSame(2, $result['exit']);
+        $this->assertStringContainsString('does not support', $result['stderr']);
+    }
+
+    #[Test]
+    public function hotspot_start_without_ssid_fails_with_a_usage_message_not_the_hotspot_config_message(): void
+    {
+        $result = $this->runCli(
+            ['hotspot', 'start', '--password=password1'],
+            self::LINUX_HOTSPOT_INACTIVE_FIXTURES,
+            'Linux',
+        );
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertStringContainsString('--ssid is required', $result['stderr']);
+        $this->assertStringNotContainsString('1–32 bytes', $result['stderr']);
     }
 
     /**

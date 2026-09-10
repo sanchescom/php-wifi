@@ -28,8 +28,8 @@
     "bin": ["bin/wifi"],
     "scripts": {
         "test": "./vendor/bin/phpunit",
-        "lint": "./vendor/bin/phpcs -p --standard=PSR12 ./src ./bin ./examples",
-        "fix": "./vendor/bin/phpcbf --standard=PSR12 ./src ./bin ./examples",
+        "lint": "./vendor/bin/phpcs -p --standard=PSR12 ./src ./examples",
+        "fix": "./vendor/bin/phpcbf --standard=PSR12 ./src ./examples",
         "analyse": "./vendor/bin/phpstan analyse"
     },
     "config": {
