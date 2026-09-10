@@ -12,6 +12,7 @@ use Sanchescom\WiFi\Backend\NetworksetupBackend;
 use Sanchescom\WiFi\Backend\NmcliBackend;
 use Sanchescom\WiFi\Backend\SupportsHotspot;
 use Sanchescom\WiFi\Backend\SupportsKnownNetworks;
+use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
 use Sanchescom\WiFi\Shell\Os;
@@ -58,9 +59,19 @@ final class Wifi3Test extends TestCase
 
     private function sampleNetwork(string $ssid): Network
     {
+        return $this->networkNamed($ssid, false);
+    }
+
+    private function hiddenNetwork(string $ssid): Network
+    {
+        return $this->networkNamed($ssid, true);
+    }
+
+    private function networkNamed(string $ssid, bool $ssidHidden): Network
+    {
         return new Network(
             ssid: $ssid,
-            ssidHidden: false,
+            ssidHidden: $ssidHidden,
             bssid: Bssid::from('00:11:22:33:44:55'),
             channel: 6,
             band: Band::GHz2_4,
@@ -115,6 +126,48 @@ final class Wifi3Test extends TestCase
         $this->assertCount(2, $runner->commands);
         $this->assertStringContainsString('-f DEVICE,TYPE device', $runner->commands[0]->describe());
         $this->assertStringContainsString('device wifi connect', $runner->commands[1]->describe());
+    }
+
+    #[Test]
+    public function connect_with_a_hidden_network_throws_before_any_command(): void
+    {
+        $runner = new FakeCommandRunner([]);
+        $wifi = new Wifi3(new NmcliBackend($runner));
+
+        try {
+            $wifi->connect($this->hiddenNetwork(''), Credentials::password('p'));
+            $this->fail('Expected InvalidArgument to be thrown.');
+        } catch (InvalidArgument) {
+            $this->assertSame([], $runner->commands);
+        }
+    }
+
+    #[Test]
+    public function connect_with_a_redacted_network_throws_before_any_command(): void
+    {
+        $runner = new FakeCommandRunner([]);
+        $wifi = new Wifi3(new NmcliBackend($runner));
+
+        try {
+            $wifi->connect($this->hiddenNetwork('<redacted>'), Credentials::password('p'));
+            $this->fail('Expected InvalidArgument to be thrown.');
+        } catch (InvalidArgument) {
+            $this->assertSame([], $runner->commands);
+        }
+    }
+
+    #[Test]
+    public function connect_with_an_empty_ssid_string_throws_before_the_scan(): void
+    {
+        $runner = new FakeCommandRunner([]);
+        $wifi = new Wifi3(new NmcliBackend($runner));
+
+        try {
+            $wifi->connect('', Credentials::password('p'));
+            $this->fail('Expected InvalidArgument to be thrown.');
+        } catch (InvalidArgument) {
+            $this->assertSame([], $runner->commands);
+        }
     }
 
     #[Test]

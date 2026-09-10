@@ -8,6 +8,7 @@ use Sanchescom\WiFi\Backend\Backend;
 use Sanchescom\WiFi\Backend\BackendFactory;
 use Sanchescom\WiFi\Backend\SupportsHotspot;
 use Sanchescom\WiFi\Backend\SupportsKnownNetworks;
+use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
 use Sanchescom\WiFi\Shell\CommandRunner;
 use Sanchescom\WiFi\Value\Credentials;
@@ -21,6 +22,8 @@ use Sanchescom\WiFi\Value\NetworkCollection;
 /**
  * Object facade over a single Backend. Holds no static state; create() is
  * the only static method, a pure factory around BackendFactory.
+ *
+ * Interim name for `WiFi`, renamed at the cut-over.
  */
 final class Wifi3
 {
@@ -40,6 +43,14 @@ final class Wifi3
 
     public function connect(Network|string $network, Credentials $credentials, ?Device $device = null): void
     {
+        if ($network instanceof Network && $network->ssidHidden) {
+            throw InvalidArgument::hiddenNetwork($network);
+        }
+
+        if (is_string($network) && $network === '') {
+            throw InvalidArgument::emptySsid();
+        }
+
         $ssid = $network instanceof Network ? $network->ssid : $this->scan()->bySsid($network)->ssid;
         $device ??= $this->backend->detectDevice();
 
