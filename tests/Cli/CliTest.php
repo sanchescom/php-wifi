@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
 /**
- * End-to-end tests that run `bin/wifi3` as a real subprocess, wired to a
+ * End-to-end tests that run `bin/wifi` as a real subprocess, wired to a
  * FakeCommandRunner via the WIFI_FAKE_RUNNER / WIFI_FAKE_OS test hook.
  */
 final class CliTest extends TestCase
@@ -146,7 +146,7 @@ final class CliTest extends TestCase
      */
     private function runCli(array $args, string $fixturesDir, string $os): array
     {
-        $command = array_merge([PHP_BINARY, self::REPO_ROOT . '/bin/wifi3'], $args);
+        $command = array_merge([PHP_BINARY, self::REPO_ROOT . '/bin/wifi'], $args);
 
         $env = [
             'PATH' => (string) getenv('PATH'),
@@ -163,7 +163,7 @@ final class CliTest extends TestCase
         );
 
         if ($process === false) {
-            throw new RuntimeException('Failed to start bin/wifi3.');
+            throw new RuntimeException('Failed to start bin/wifi.');
         }
 
         $stdout = (string) stream_get_contents($pipes[1]);

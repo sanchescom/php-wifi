@@ -1,10 +1,5 @@
 parameters:
     level: max
     paths:
-        - src/Shell
-        - src/Exception
-        - src/Value
-        - src/Parser
-        - src/Backend
-        - src/Wifi3.php
-        - bin/wifi3
+        - src
+        - bin/wifi

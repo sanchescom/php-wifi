@@ -25,9 +25,9 @@ use Sanchescom\WiFi\Value\HotspotConfig;
 use Sanchescom\WiFi\Value\KnownNetwork;
 use Sanchescom\WiFi\Value\Network;
 use Sanchescom\WiFi\Value\Security;
-use Sanchescom\WiFi\Wifi3;
+use Sanchescom\WiFi\WiFi;
 
-final class Wifi3Test extends TestCase
+final class WiFiTest extends TestCase
 {
     private const LINUX_FIXTURES = __DIR__ . '/Fixtures/linux';
     private const DARWIN_FIXTURES = __DIR__ . '/Fixtures/darwin';
@@ -87,7 +87,7 @@ final class Wifi3Test extends TestCase
     public function connect_with_a_string_scans_detects_the_device_then_connects_in_order(): void
     {
         $runner = $this->linuxRunner();
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $wifi->connect('AlphaNet-foiEmE', Credentials::password('p'));
 
@@ -101,7 +101,7 @@ final class Wifi3Test extends TestCase
     public function connect_with_an_unknown_ssid_throws_before_any_connect_command(): void
     {
         $runner = $this->linuxRunner();
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         try {
             $wifi->connect('nope', Credentials::password('p'));
@@ -119,7 +119,7 @@ final class Wifi3Test extends TestCase
             '-f DEVICE,TYPE device' => self::LINUX_FIXTURES . '/Devices.txt',
             'device wifi connect' => '',
         ]);
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('p'));
 
@@ -132,7 +132,7 @@ final class Wifi3Test extends TestCase
     public function connect_with_a_hidden_network_throws_before_any_command(): void
     {
         $runner = new FakeCommandRunner([]);
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         try {
             $wifi->connect($this->hiddenNetwork(''), Credentials::password('p'));
@@ -146,7 +146,7 @@ final class Wifi3Test extends TestCase
     public function connect_with_a_redacted_network_throws_before_any_command(): void
     {
         $runner = new FakeCommandRunner([]);
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         try {
             $wifi->connect($this->hiddenNetwork('<redacted>'), Credentials::password('p'));
@@ -160,7 +160,7 @@ final class Wifi3Test extends TestCase
     public function connect_with_an_empty_ssid_string_throws_before_the_scan(): void
     {
         $runner = new FakeCommandRunner([]);
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         try {
             $wifi->connect('', Credentials::password('p'));
@@ -176,7 +176,7 @@ final class Wifi3Test extends TestCase
         $runner = new FakeCommandRunner([
             'device wifi connect' => '',
         ]);
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('p'), new Device('wlan0'));
 
@@ -188,7 +188,7 @@ final class Wifi3Test extends TestCase
     public function disconnect_with_no_device_detects_it_first(): void
     {
         $runner = $this->linuxRunner();
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $wifi->disconnect();
 
@@ -203,7 +203,7 @@ final class Wifi3Test extends TestCase
         $runner = new FakeCommandRunner([
             'device disconnect' => '',
         ]);
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $wifi->disconnect(new Device('wlan0'));
 
@@ -215,7 +215,7 @@ final class Wifi3Test extends TestCase
     public function device_delegates_to_detect_device(): void
     {
         $runner = $this->linuxRunner();
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $this->assertEquals(new Device('wlan0'), $wifi->device());
     }
@@ -224,7 +224,7 @@ final class Wifi3Test extends TestCase
     public function known_networks_delegates_to_the_backend(): void
     {
         $runner = $this->linuxRunner();
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $this->assertCount(3, $wifi->knownNetworks());
     }
@@ -233,7 +233,7 @@ final class Wifi3Test extends TestCase
     public function forget_with_a_known_network_passes_its_connection_name(): void
     {
         $runner = $this->linuxRunner();
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $wifi->forget(new KnownNetwork('Cafe: Corner', 'Cafe Corner Wifi', null, false));
 
@@ -244,7 +244,7 @@ final class Wifi3Test extends TestCase
     public function forget_with_a_string_passes_it_through(): void
     {
         $runner = $this->linuxRunner();
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $wifi->forget('Cafe: Corner');
 
@@ -255,7 +255,7 @@ final class Wifi3Test extends TestCase
     public function start_hotspot_without_a_device_detects_it_first(): void
     {
         $runner = $this->linuxRunner();
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $hotspot = $wifi->startHotspot(new HotspotConfig('femus-setup', 'password1'));
 
@@ -269,7 +269,7 @@ final class Wifi3Test extends TestCase
     public function start_hotspot_with_a_device_on_the_config_skips_detection(): void
     {
         $runner = new FakeCommandRunner(['device wifi hotspot' => '']);
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $wifi->startHotspot(new HotspotConfig('femus-setup', 'password1', device: new Device('wlan0')));
 
@@ -281,7 +281,7 @@ final class Wifi3Test extends TestCase
     public function stop_hotspot_delegates_to_the_backend(): void
     {
         $runner = $this->linuxRunner();
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $wifi->stopHotspot();
 
@@ -292,7 +292,7 @@ final class Wifi3Test extends TestCase
     public function is_hotspot_active_delegates_to_the_backend(): void
     {
         $runner = $this->linuxRunner();
-        $wifi = new Wifi3(new NmcliBackend($runner));
+        $wifi = new WiFi(new NmcliBackend($runner));
 
         $this->assertTrue($wifi->isHotspotActive());
     }
@@ -300,7 +300,7 @@ final class Wifi3Test extends TestCase
     #[Test]
     public function supports_reflects_the_backends_interfaces(): void
     {
-        $wifi = new Wifi3(new NmcliBackend($this->linuxRunner()));
+        $wifi = new WiFi(new NmcliBackend($this->linuxRunner()));
 
         $this->assertTrue($wifi->supports(SupportsKnownNetworks::class));
         $this->assertTrue($wifi->supports(SupportsHotspot::class));
@@ -310,7 +310,7 @@ final class Wifi3Test extends TestCase
     public function backend_returns_the_underlying_backend(): void
     {
         $backend = new NmcliBackend($this->linuxRunner());
-        $wifi = new Wifi3($backend);
+        $wifi = new WiFi($backend);
 
         $this->assertSame($backend, $wifi->backend());
     }
@@ -318,7 +318,7 @@ final class Wifi3Test extends TestCase
     #[Test]
     public function start_hotspot_on_a_backend_without_the_capability_throws_naming_both_classes(): void
     {
-        $wifi = new Wifi3(new NetworksetupBackend($this->darwinRunner()));
+        $wifi = new WiFi(new NetworksetupBackend($this->darwinRunner()));
 
         try {
             $wifi->startHotspot(new HotspotConfig('femus-setup', 'password1', device: new Device('en0')));
@@ -332,7 +332,7 @@ final class Wifi3Test extends TestCase
     #[Test]
     public function stop_hotspot_on_a_backend_without_the_capability_throws(): void
     {
-        $wifi = new Wifi3(new NetworksetupBackend($this->darwinRunner()));
+        $wifi = new WiFi(new NetworksetupBackend($this->darwinRunner()));
 
         $this->expectException(UnsupportedOperation::class);
 
@@ -342,7 +342,7 @@ final class Wifi3Test extends TestCase
     #[Test]
     public function is_hotspot_active_on_a_backend_without_the_capability_throws(): void
     {
-        $wifi = new Wifi3(new NetworksetupBackend($this->darwinRunner()));
+        $wifi = new WiFi(new NetworksetupBackend($this->darwinRunner()));
 
         $this->expectException(UnsupportedOperation::class);
 
@@ -352,7 +352,7 @@ final class Wifi3Test extends TestCase
     #[Test]
     public function known_networks_on_a_backend_without_the_capability_throws(): void
     {
-        $wifi = new Wifi3(new NetworksetupBackend($this->darwinRunner()));
+        $wifi = new WiFi(new NetworksetupBackend($this->darwinRunner()));
 
         $this->expectException(UnsupportedOperation::class);
 
@@ -362,7 +362,7 @@ final class Wifi3Test extends TestCase
     #[Test]
     public function forget_on_a_backend_without_the_capability_throws(): void
     {
-        $wifi = new Wifi3(new NetworksetupBackend($this->darwinRunner()));
+        $wifi = new WiFi(new NetworksetupBackend($this->darwinRunner()));
 
         $this->expectException(UnsupportedOperation::class);
 
@@ -372,7 +372,7 @@ final class Wifi3Test extends TestCase
     #[Test]
     public function supports_is_false_for_a_capability_the_backend_lacks(): void
     {
-        $wifi = new Wifi3(new NetworksetupBackend($this->darwinRunner()));
+        $wifi = new WiFi(new NetworksetupBackend($this->darwinRunner()));
 
         $this->assertFalse($wifi->supports(SupportsHotspot::class));
         $this->assertFalse($wifi->supports(SupportsKnownNetworks::class));
@@ -418,17 +418,17 @@ final class Wifi3Test extends TestCase
     {
         $runner = new FakeCommandRunner([]);
 
-        $wifi = Wifi3::create($runner);
+        $wifi = WiFi::create($runner);
         $expected = BackendFactory::forOs(Os::current(), $runner);
 
-        $this->assertInstanceOf(Wifi3::class, $wifi);
+        $this->assertInstanceOf(WiFi::class, $wifi);
         $this->assertSame($expected::class, $wifi->backend()::class);
     }
 
     #[Test]
     public function scan_delegates_to_the_backend(): void
     {
-        $wifi = new Wifi3(new NmcliBackend($this->linuxRunner()));
+        $wifi = new WiFi(new NmcliBackend($this->linuxRunner()));
 
         $networks = $wifi->scan();
 

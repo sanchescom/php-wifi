@@ -4,130 +4,119 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi;
 
-use Sanchescom\WiFi\Contracts\CommandInterface;
-use Sanchescom\WiFi\Exceptions\UnknownSystemException;
-use Sanchescom\WiFi\System\AbstractNetwork;
-use Sanchescom\WiFi\System\AbstractNetworks;
-use Sanchescom\WiFi\System\Collection;
-use Sanchescom\WiFi\System\Command;
-use Sanchescom\WiFi\System\Darwin\Networks as DarwinNetworks;
-use Sanchescom\WiFi\System\Linux\Networks as LinuxNetworks;
-use Sanchescom\WiFi\System\Windows\Networks as WindowsNetworks;
+use Sanchescom\WiFi\Backend\Backend;
+use Sanchescom\WiFi\Backend\BackendFactory;
+use Sanchescom\WiFi\Backend\SupportsHotspot;
+use Sanchescom\WiFi\Backend\SupportsKnownNetworks;
+use Sanchescom\WiFi\Exception\InvalidArgument;
+use Sanchescom\WiFi\Exception\UnsupportedOperation;
+use Sanchescom\WiFi\Shell\CommandRunner;
+use Sanchescom\WiFi\Value\Credentials;
+use Sanchescom\WiFi\Value\Device;
+use Sanchescom\WiFi\Value\Hotspot;
+use Sanchescom\WiFi\Value\HotspotConfig;
+use Sanchescom\WiFi\Value\KnownNetwork;
+use Sanchescom\WiFi\Value\Network;
+use Sanchescom\WiFi\Value\NetworkCollection;
 
 /**
- * Class WiFi.
- *
- * @phpstan-consistent-constructor
+ * Object facade over a single Backend. Holds no static state; create() is
+ * the only static method, a pure factory around BackendFactory.
  */
-class WiFi
+final class WiFi
 {
-    public const OS_LINUX = 'Linux';
-    public const OS_DARWIN = 'Darwin';
-    public const OS_WINDOWS = 'Windows';
-
-    protected static string $commandClass = Command::class;
-    protected static string $phpOperationSystem = PHP_OS_FAMILY;
-
-    /**
-     * @var array<string, class-string<AbstractNetworks>>
-     */
-    protected static array $systems = [
-        self::OS_LINUX   => LinuxNetworks::class,
-        self::OS_DARWIN  => DarwinNetworks::class,
-        self::OS_WINDOWS => WindowsNetworks::class,
-    ];
-
-    /**
-     * Scan for available WiFi networks.
-     */
-    public static function scan(): Collection
+    public function __construct(private readonly Backend $backend)
     {
-        return (new static())->getSystemInstance()->scan();
     }
 
-    /**
-     * Get all connected networks.
-     *
-     * @return AbstractNetwork[]
-     */
-    public static function getConnected(): array
+    public static function create(?CommandRunner $runner = null): self
     {
-        return static::scan()->getConnected();
+        return new self(BackendFactory::forCurrentOs($runner));
     }
 
-    /**
-     * Find strongest available network.
-     *
-     * @throws \Sanchescom\WiFi\Exceptions\NetworkNotFoundException
-     */
-    public static function getStrongestNetwork(): AbstractNetwork
+    public function scan(): NetworkCollection
     {
-        return static::scan()->getStrongest();
+        return $this->backend->scan();
     }
 
-    /**
-     * Get networks by security type.
-     */
-    public static function getNetworksBySecurity(string $securityType): Collection
+    public function connect(Network|string $network, Credentials $credentials, ?Device $device = null): void
     {
-        return static::scan()->getBySecurity($securityType);
-    }
-
-    /**
-     * Get networks on 2.4GHz band.
-     */
-    public static function get24GhzNetworks(): Collection
-    {
-        return static::scan()->get24GhzNetworks();
-    }
-
-    /**
-     * Get networks on 5GHz band.
-     */
-    public static function get5GhzNetworks(): Collection
-    {
-        return static::scan()->get5GhzNetworks();
-    }
-
-    /**
-     * Get networks on the 6 GHz band.
-     */
-    public static function get6GhzNetworks(): Collection
-    {
-        return static::scan()->get6GhzNetworks();
-    }
-
-    public static function setCommandClass(string $commandClass): void
-    {
-        self::$commandClass = $commandClass;
-    }
-
-    public static function setPhpOperationSystem(string $phpOperationSystem): void
-    {
-        self::$phpOperationSystem = $phpOperationSystem;
-    }
-
-    /**
-     * Getting instance on network collections depended on operation system.
-     *
-     * @throws \Sanchescom\WiFi\Exceptions\UnknownSystemException
-     *
-     * @return \Sanchescom\WiFi\System\AbstractNetworks
-     */
-    protected function getSystemInstance(): AbstractNetworks
-    {
-        if (!array_key_exists(static::$phpOperationSystem, static::$systems)) {
-            throw new UnknownSystemException();
+        if ($network instanceof Network && $network->ssidHidden) {
+            throw InvalidArgument::hiddenNetwork($network);
         }
 
-        return new static::$systems[static::$phpOperationSystem]($this->getCommandInstance());
+        if (is_string($network) && $network === '') {
+            throw InvalidArgument::emptySsid();
+        }
+
+        $ssid = $network instanceof Network ? $network->ssid : $this->scan()->bySsid($network)->ssid;
+        $device ??= $this->backend->detectDevice();
+
+        $this->backend->connect($ssid, $credentials, $device);
     }
 
-    /**
-     * @return \Sanchescom\WiFi\Contracts\CommandInterface
-     */
-    protected function getCommandInstance(): CommandInterface
+    public function disconnect(?Device $device = null): void
     {
-        return new static::$commandClass();
+        $device ??= $this->backend->detectDevice();
+
+        $this->backend->disconnect($device);
+    }
+
+    /** The detected wireless device. */
+    public function device(): Device
+    {
+        return $this->backend->detectDevice();
+    }
+
+    /** @return list<KnownNetwork> */
+    public function knownNetworks(): array
+    {
+        return $this->knownNetworksBackend()->knownNetworks();
+    }
+
+    public function forget(KnownNetwork|string $ssid): void
+    {
+        $this->knownNetworksBackend()->forget($ssid instanceof KnownNetwork ? $ssid->name : $ssid);
+    }
+
+    public function startHotspot(HotspotConfig $config): Hotspot
+    {
+        $device = $config->device ?? $this->backend->detectDevice();
+
+        return $this->hotspotBackend()->startHotspot($config, $device);
+    }
+
+    public function stopHotspot(): void
+    {
+        $this->hotspotBackend()->stopHotspot();
+    }
+
+    public function isHotspotActive(): bool
+    {
+        return $this->hotspotBackend()->isHotspotActive();
+    }
+
+    public function supports(string $capabilityInterface): bool
+    {
+        return $this->backend instanceof $capabilityInterface;
+    }
+
+    public function backend(): Backend
+    {
+        return $this->backend;
+    }
+
+    private function knownNetworksBackend(): SupportsKnownNetworks
+    {
+        return $this->backend instanceof SupportsKnownNetworks
+            ? $this->backend
+            : throw UnsupportedOperation::by($this->backend::class, SupportsKnownNetworks::class);
+    }
+
+    private function hotspotBackend(): SupportsHotspot
+    {
+        return $this->backend instanceof SupportsHotspot
+            ? $this->backend
+            : throw UnsupportedOperation::by($this->backend::class, SupportsHotspot::class);
     }
 }
