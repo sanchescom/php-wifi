@@ -5,324 +5,169 @@
 
 # PHP WiFi
 
-A modern, cross-platform PHP library for managing WiFi networks. Built with PHP 8.2+ and fully typed for better IDE support and type safety.
+A cross-platform PHP library for scanning and joining Wi-Fi networks. One
+object facade (`WiFi`) drives `nmcli` on Linux, `networksetup` on macOS and
+`netsh` on Windows through a shared `Backend` interface, returns immutable
+value objects instead of arrays, and ships a CLI (`bin/wifi`) on top of the
+same API.
 
-## Features
+## `wifi list` on a Raspberry Pi
 
-- **Cross-platform support**: Works on Linux, macOS, and Windows
-- **Modern PHP 8.2+**: Fully typed properties, strict types, and modern syntax
-- **Rich API**: Scan networks, connect/disconnect, filter by various parameters
-- **Powerful filtering**: Filter by security type, signal strength, frequency band, and more
-- **Collection-based**: Fluent interface with Laravel-style collections
-- **Type-safe**: Full type hints and strict typing throughout
+Run over SSH on the maintainer's Pi, unprivileged (`femus`, member of
+`netdev`), NetworkManager 1.52.1 — full transcript in
+[`docs/verified-on.md`](docs/verified-on.md):
+
+```
+$ php bin/wifi device
+wlan0
+[exit 0]
+
+$ php bin/wifi list
+1 network(s) broadcast no SSID (hidden); they are shown as "-".
+ SSID             BSSID              Channel  Band  Quality  dBm  Frequency  Connected  Security
+-------------------------------------------------------------------------------------------------
+ BELL340          0e:ac:8a:99:58:5c  1        2.4   87%      -56  2412       false      WPA2
+ VTECH_5764_9764  a6:97:5c:b7:97:64  1        2.4   70%      -65  2412       false      WPA2
+ BELL340          0e:ac:8a:99:58:5d  157      5     64%      -68  5785       false      WPA2
+ -                0e:ac:8a:99:58:5e  157      5     64%      -68  5785       false      WPA2
+[exit 0]
+```
+
+The fourth row is a real hidden access point — an empty SSID broadcast
+from `0e:ac:8a:99:58:5e`, shown as `-`. (The stderr line above is this
+release's wording; `docs/verified-on.md` records the exact run that found
+and fixed the earlier, OS-wrong version of it.)
 
 ## Requirements
 
 - PHP 8.2, 8.3, 8.4 or 8.5
-- illuminate/collections 11, 12 or 13 (pulled in automatically; the constraint lets the package coexist with Laravel 11–13 applications)
-- Operating System: Linux, macOS (Darwin), or Windows
-- Appropriate system utilities (networksetup on macOS, nmcli on Linux, netsh on Windows)
+- `illuminate/collections` 11, 12 or 13 (pulled in automatically; the
+  constraint lets the package coexist with Laravel 11–13 applications)
+- Linux, macOS (Darwin) or Windows, with the matching system tool: `nmcli`
+  (NetworkManager) on Linux, `networksetup` (built in) on macOS, `netsh`
+  (built in) on Windows
 
-### Installing
+## Installation
 
-Require this package, with [Composer](https://getcomposer.org/), in the root directory of your project.
-
-``` bash
-$ composer require sanchescom/php-wifi
+```bash
+composer require sanchescom/php-wifi
 ```
 
-## Basic Usage
+## Quick start
 
-### Scanning for Networks
+### Scan and read the strongest network
 
 ```php
-<?php
-
 use Sanchescom\WiFi\WiFi;
 
-// Scan for all available networks
-$networks = WiFi::scan();
+$wifi = WiFi::create();
+$strongest = $wifi->scan()->strongest();
 
-// Get all networks as array
-foreach ($networks->getAll() as $network) {
-    echo sprintf(
-        "SSID: %s, Signal: %.2f dBm, Channel: %d, Security: %s\n",
-        $network->ssid,
-        $network->dbm,
-        $network->channel,
-        $network->security
-    );
+printf("%s: %.0f dBm, %s\n", $strongest->ssid, $strongest->signal->dbm, $strongest->security->value);
+```
+
+### Connect
+
+```php
+use Sanchescom\WiFi\Value\Credentials;
+use Sanchescom\WiFi\WiFi;
+
+$wifi = WiFi::create();
+$network = $wifi->scan()->bySsid('My-WiFi-Network');
+$wifi->connect($network, Credentials::password('secret123'));
+```
+
+The wireless device is detected automatically; pass a third `Device`
+argument to override it.
+
+### List known (saved) networks — Linux only
+
+```php
+use Sanchescom\WiFi\WiFi;
+
+$wifi = WiFi::create();
+foreach ($wifi->knownNetworks() as $known) {
+    printf("%s (%s)\n", $known->name, $known->active ? 'active' : 'saved');
 }
 ```
 
-### Connecting and Disconnecting
+### Start a hotspot — Linux only
 
 ```php
-<?php
-
+use Sanchescom\WiFi\Value\HotspotConfig;
 use Sanchescom\WiFi\WiFi;
 
-try {
-    // Connect to a specific network
-    $network = WiFi::scan()->getBySsid('My-WiFi-Network');
-    $network->connect('password123');
-
-    echo "Connected successfully!\n";
-} catch (Exception $e) {
-    echo "Connection failed: " . $e->getMessage() . "\n";
-}
-
-// Disconnect from all connected networks
-$connectedNetworks = WiFi::getConnected();
-foreach ($connectedNetworks as $network) {
-    $network->disconnect();
-}
+$wifi = WiFi::create();
+$hotspot = $wifi->startHotspot(new HotspotConfig(ssid: 'femus-setup', password: 'change-me-now'));
+printf("%s on %s\n", $hotspot->ssid, $hotspot->device);
 ```
 
-The wireless device is detected automatically (`nmcli`, `networksetup`, `netsh`); pass it as the second/first argument to override.
-
-## Advanced Usage
-
-### Filtering Networks
-
-```php
-<?php
-
-use Sanchescom\WiFi\WiFi;
-
-// Get only 5GHz networks
-$networks5ghz = WiFi::scan()->get5GhzNetworks();
-
-// Get only 2.4GHz networks
-$networks24ghz = WiFi::scan()->get24GhzNetworks();
-
-// Get only 6GHz networks
-$networks6ghz = WiFi::scan()->get6GhzNetworks();
-
-// Filter by security type
-$wpa2Networks = WiFi::scan()->getBySecurity('WPA2');
-
-// Get networks with strong signal (above -60 dBm)
-$strongNetworks = WiFi::scan()->getByMinSignalStrength(-60);
-
-// Get networks on specific channel
-$channel6Networks = WiFi::scan()->getByChannel(6);
-
-// Combine filters (fluent interface)
-$strongWPA2Networks = WiFi::scan()
-    ->getBySecurity('WPA2')
-    ->getByMinSignalStrength(-50)
-    ->get5GhzNetworks();
-```
-
-Band filters use the reported frequency (`nmcli`) or the channel plus the
-band `system_profiler` prints. On Windows, `netsh` gives channels only, so
-6 GHz networks there are reported on their 5 GHz table frequency.
-
-### Finding Specific Networks
-
-```php
-<?php
-
-use Sanchescom\WiFi\WiFi;
-use Sanchescom\WiFi\Exceptions\NetworkNotFoundException;
-
-try {
-    // Get the strongest available network
-    $strongestNetwork = WiFi::getStrongestNetwork();
-    echo "Strongest network: {$strongestNetwork->ssid} ({$strongestNetwork->dbm} dBm)\n";
-
-    // Find network by SSID
-    $network = WiFi::scan()->getBySsid('MyNetwork');
-
-    // Find network by BSSID (MAC address)
-    $network = WiFi::scan()->getByBssid('4c:49:e3:f5:35:17');
-
-} catch (NetworkNotFoundException $e) {
-    echo "Network not found!\n";
-}
-```
-
-### Sorting Networks
-
-```php
-<?php
-
-use Sanchescom\WiFi\WiFi;
-
-// Sort networks by signal strength (strongest first)
-$sortedNetworks = WiFi::scan()->sortBySignalStrength();
-
-foreach ($sortedNetworks as $network) {
-    echo "{$network->ssid}: {$network->dbm} dBm\n";
-}
-```
-
-### Working with Network Properties
-
-```php
-<?php
-
-use Sanchescom\WiFi\WiFi;
-
-$network = WiFi::scan()->getBySsid('MyNetwork');
-
-// Access network properties
-echo "SSID: {$network->ssid}\n";
-echo "BSSID: {$network->bssid}\n";
-echo "Channel: {$network->channel}\n";
-echo "Frequency: {$network->frequency} MHz\n";
-echo "Signal Quality: {$network->quality}%\n";
-echo "Signal Strength: {$network->dbm} dBm\n";
-echo "Security: {$network->security}\n";
-echo "Security Flags: {$network->securityFlags}\n";
-echo "Connected: " . ($network->connected ? 'Yes' : 'No') . "\n";
-```
-
-### Static Helper Methods
-
-```php
-<?php
-
-use Sanchescom\WiFi\WiFi;
-
-// Quick access to common operations
-$connectedNetworks = WiFi::getConnected();
-$strongest = WiFi::getStrongestNetwork();
-$networks24ghz = WiFi::get24GhzNetworks();
-$networks5ghz = WiFi::get5GhzNetworks();
-$wpa2Networks = WiFi::getNetworksBySecurity('WPA2');
-```
-
-## CLI Usage
-
-The library includes a command-line interface for managing WiFi networks directly from the terminal.
-
-### List all available networks
-```bash
-./vendor/bin/wifi list
-```
-
-### List only connected networks
-```bash
-./vendor/bin/wifi list --connected
-```
-
-### List one row per SSID (strongest radio)
-```bash
-./vendor/bin/wifi list --unique
-```
-
-`--unique` keeps the strongest radio per SSID, which is not necessarily the
-one you are connected to, so combine it with `--connected` with care. On
-macOS without Location Services every row stays as-is: names come back as
-`<redacted>`, so there is nothing identifying left to merge.
-
-### Connect to a network
-```bash
-./vendor/bin/wifi connect --bssid=4c:49:e3:f5:35:17 --password=12345
-```
-
-`--device` is optional; the wireless device is detected automatically.
-Pass `--device=en1` (or the platform equivalent) to override it.
-
-### Disconnect from a network
-```bash
-./vendor/bin/wifi disconnect --bssid=4c:49:e3:f5:35:17
-```
-
-## API Reference
-
-### WiFi Class (Static Methods)
-
-| Method | Return Type | Description |
-|--------|-------------|-------------|
-| `WiFi::scan()` | `Collection` | Scan for all available networks |
-| `WiFi::getConnected()` | `AbstractNetwork[]` | Get all connected networks |
-| `WiFi::getStrongestNetwork()` | `AbstractNetwork` | Get the strongest available network |
-| `WiFi::get24GhzNetworks()` | `Collection` | Get all 2.4GHz networks |
-| `WiFi::get5GhzNetworks()` | `Collection` | Get all 5GHz networks |
-| `WiFi::get6GhzNetworks()` | `Collection` | Get all 6GHz networks |
-| `WiFi::getNetworksBySecurity(string $type)` | `Collection` | Get networks by security type |
-
-### Collection Methods
-
-| Method | Return Type | Description |
-|--------|-------------|-------------|
-| `getAll()` | `AbstractNetwork[]` | Get all networks as array |
-| `getBySsid(string $ssid)` | `AbstractNetwork` | Find network by SSID |
-| `getByBssid(string $bssid)` | `AbstractNetwork` | Find network by BSSID (MAC) |
-| `getConnected()` | `AbstractNetwork[]` | Get connected networks |
-| `getBySecurity(string $type)` | `Collection` | Filter by security type |
-| `getByMinSignalStrength(float $dbm)` | `Collection` | Filter by minimum signal strength |
-| `getByChannel(int $channel)` | `Collection` | Filter by channel |
-| `get24GhzNetworks()` | `Collection` | Get 2.4GHz networks |
-| `get5GhzNetworks()` | `Collection` | Get 5GHz networks |
-| `get6GhzNetworks()` | `Collection` | Get 6GHz networks |
-| `uniqueBySsid()` | `Collection` | One row per SSID (strongest radio) |
-| `hasRedactedSsids()` | `bool` | Whether any network's SSID was hidden by the OS |
-| `sortBySignalStrength()` | `Collection` | Sort by signal strength |
-| `getStrongest()` | `AbstractNetwork` | Get strongest network |
-
-### Network Properties
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `$ssid` | `string` | Network name |
-| `$bssid` | `string` | MAC address |
-| `$channel` | `int` | WiFi channel |
-| `$frequency` | `int` | Frequency in MHz |
-| `$quality` | `float` | Signal quality percentage |
-| `$dbm` | `float` | Signal strength in dBm |
-| `$security` | `string` | Security type |
-| `$securityFlags` | `string` | Security flags |
-| `$connected` | `bool` | Connection status |
-| `$ssidRedacted` | `bool` | Name hidden by the OS (macOS without Location Services) |
-
-### Network Methods
-
-| Method | Parameters | Description |
-|--------|------------|-------------|
-| `connect()` | `string $password, ?string $device = null` | Connect to the network |
-| `disconnect()` | `?string $device = null` | Disconnect from the network |
-| `getSecurityType()` | - | Get security type (WPA3/WPA2/WPA/WEP/Unknown) |
-
-## Security
-
-Every value that reaches a shell command is escaped: `escapeshellarg()` on
-Linux and macOS, cmd-safe quoting on Windows — `"`, `%` and `!` in an SSID
-or password are replaced with a space. On Windows, the profile handed to
-`netsh` is written to a random file under the system temp directory with
-the passphrase XML-escaped, and the file is removed as soon as `netsh`
-returns, also on failure.
-
-## Contributing
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
-
-## Versioning
-
-We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](https://github.com/sanchescom/php-wifi/tags). 
-
-## Authors
-
-* **Efimov Aleksandr** - *Initial work* - [Sanchescom](https://github.com/sanchescom)
-
-See also the list of [contributors](https://github.com/sanchescom/php-wifi/contributors) who participated in this project.
-
-## License
-
-This project is licensed under the MIT License — see the [LICENSE.md](LICENSE.md) file for details.
-
-Versions up to and including 2.0.0 were published under GPL-3.0. 2.0.1 relicenses the package to MIT; the change is made by the sole author and copyright holder.
-
-## Platform Support
-
-### Linux
-- Requires `nmcli` (NetworkManager command-line interface)
-- Default device: `wlan0` or `wlan1`
-
-#### Privileges
+Calling a capability the active backend does not implement (`known` or
+`hotspot` on macOS/Windows) throws `UnsupportedOperation`; check first
+with `$wifi->supports(SupportsHotspot::class)`.
+
+## Provisioning a headless Raspberry Pi
+
+`examples/provision/` turns a headless Pi into a Wi-Fi setup wizard: it
+opens a temporary hotspot and serves a small PHP page that lets a phone
+scan and join the real network — no SSH, no keyboard, no monitor. See
+[`examples/provision/README.md`](examples/provision/README.md) for the
+systemd unit and install steps.
+
+![Provisioning page on a phone](examples/provision/screenshot.jpg)
+
+This was taken live on the maintainer's Pi: a phone joined the
+`femus-setup` hotspot and opened `http://10.42.0.1:8080/`. It shows the
+honest limit of a single-radio Pi — the list contains only
+`femus-setup · 2.4 GHz · 0%`, because while `nmcli` is running the hotspot
+on the Pi's one radio, `nmcli device wifi list` can see the hotspot itself
+and nothing else. A real provisioning flow has to scan *before* starting
+the hotspot and serve that cached result instead — see
+[ROADMAP.md](ROADMAP.md) → "3.1 candidates".
+
+## Design
+
+**Pure parsers over real fixtures.** Every `src/Parser/**` class is a pure
+function: tool output in, a `list<Network>` (or a `Device`, or a list of
+`KnownNetwork`) out. No shell calls, no state. Every parser is tested
+against real `nmcli --terse`, `system_profiler` and `netsh` output captured
+from actual machines, not hand-written approximations of it.
+
+**`Command` owns escaping, and nowhere else does.** `src/Shell/Command.php`
+is the only place a program, its arguments and its environment are
+rendered into a shell string — `escapeshellarg()` on Linux and macOS,
+cmd-safe quoting on Windows. Backends never build a shell string
+themselves; they build a `Command` and hand it to a `CommandRunner`.
+
+**`null` over sentinels.** 2.x reported an unreadable signal as `-100 dBm`
+/ `0%` and an unrecognised channel as `frequency === 0` — both
+indistinguishable from a real (if extreme) reading. 3.0 reports `null`:
+`$network->signal`, `$network->channel`, `$network->band` and
+`$network->frequency` are all nullable, and nothing else is overloaded to
+mean "unknown".
+
+**Capability interfaces, not silent no-ops.** Known-networks and hotspot
+support are declared as `SupportsKnownNetworks` and `SupportsHotspot`
+interfaces that only `NmcliBackend` implements. Calling `knownNetworks()`
+or `startHotspot()` against a `Backend` that does not implement the
+relevant interface throws `UnsupportedOperation` immediately, instead of
+returning an empty list or silently doing nothing.
+
+## Platform matrix
+
+| Capability | Linux (`nmcli`) | macOS (`networksetup`) | Windows (`netsh`) |
+| --- | --- | --- | --- |
+| scan | ✅ verified live (NetworkManager 1.52.1) | ✅ verified live — SSIDs come back redacted unless the process running PHP has Location Services; BSSIDs are never reported for other networks | ✅ tests only — no Windows machine |
+| connect | ✅ verified live | ✅ tests only — not run against real hardware in 3.0 | ✅ tests only |
+| disconnect | ✅ verified live | ✅ tests only — not run against real hardware in 3.0 | ✅ tests only |
+| detect (`device()`) | ✅ verified live | ✅ verified live | ✅ tests only |
+| known networks | ✅ verified live | ❌ throws `UnsupportedOperation` | ❌ throws `UnsupportedOperation` |
+| hotspot | ✅ verified live | ❌ throws `UnsupportedOperation` | ❌ throws `UnsupportedOperation` |
+
+See [`docs/verified-on.md`](docs/verified-on.md) for the raw commands
+behind every "verified live" cell above.
+
+## Linux — Privileges (polkit)
 
 `nmcli device wifi connect` asks NetworkManager to create and activate a
 connection. A user logged in at the console is allowed by default; a PHP
@@ -359,86 +204,148 @@ ResultActive=yes
 > (`adduser www-data netdev`) grants only `settings.modify.system`; the
 > connect call still needs `network-control`, so use one of the rules above.
 
-### macOS
+**Live finding (Raspberry Pi, Debian 13, 2026-09-09/10):** `netdev`
+membership alone lets an unprivileged process scan
+(`org.freedesktop.NetworkManager.wifi.scan`) and add a connection profile
+(`settings.modify.system`), but not activate one
+(`network-control`). Concretely: `wifi hotspot start` and `wifi connect`
+called without `network-control` are refused with `PermissionDenied` — but
+the connection profile NetworkManager creates on the way to activation is
+not rolled back, so a refused call still leaves a profile behind. Running
+the same command once unprivileged (refused) and once with `sudo`
+(succeeds) therefore creates two profiles with the same name; `wifi forget
+<name>` removes one profile per call, so a duplicate needs two calls.
 
-- **Scanning** uses `system_profiler SPAirPortDataType`. Apple gates Wi-Fi
-  details behind Location Services: unless the process that runs PHP
-  (Terminal, your web server, a LaunchAgent…) has been granted Location
-  Services, every SSID comes back as the literal string `<redacted>`.
-  `system_profiler` never reports BSSIDs for other networks, so `bssid` is
-  always empty on macOS, `getByBssid()` cannot find anything, and the CLI's
-  `connect --bssid` does not work on macOS — use `getBySsid()`.
-- `system_profiler` reports a signal level for the current network and only
-  some of the others; networks without one are reported as `-100 dBm` /
-  `0 %`, not as unknown.
-- **Connection management** uses `networksetup` (built in). Default device:
-  `en0`; find yours with `networksetup -listallhardwareports`. When omitted,
-  the device is detected automatically from
-  `networksetup -listallhardwareports`.
-- The legacy `airport` output format is still parsed for older systems; the
-  `airport` binary itself was removed by Apple in macOS 14.4.
-- When SSIDs are hidden, each affected network's `$ssidRedacted` is `true`
-  and `Collection::hasRedactedSsids()` tells you at a glance; the CLI prints
-  a hint on STDERR when this happens.
+## Security
 
-### Windows
-- Requires `netsh` (built-in)
-- Automatically detects WiFi interface
-- Device auto-detection reads the English `Name :` label from `netsh wlan
-  show interfaces`; on a localised Windows install, pass `--device` (or
-  `$device`) explicitly instead of relying on detection.
+Every command a backend runs is built as a `Command` value object
+(`src/Shell/Command.php`) and rendered by exactly one code path: no
+backend ever concatenates a shell string itself. On Linux and macOS every
+argument goes through `escapeshellarg()`; on Windows, `"`, `%`, `!` and
+raw `\n`/`\r` — the five characters that can break out of a `cmd.exe`
+double-quoted argument — are replaced with a space. Arguments marked as
+secrets (passwords) are never shown in an exception message, a test
+assertion helper, or `toDisplay()` — they print as `***`. On Windows, the
+profile handed to `netsh` is written to a random file under the system
+temp directory (`Backend\Windows\ProfileFile`) with the SSID and
+passphrase XML-escaped, and the file is deleted as soon as `netsh` has
+read it, including on failure.
 
-## What's New in v2.0
+## Verified on
 
-- **PHP 8.1+ Support**: Fully refactored with typed properties and modern PHP syntax
-- **Updated Dependencies**: All dependencies updated to latest versions
-- **Extended Functionality**: New filtering and sorting methods
-- **Better Type Safety**: Full type hints throughout the codebase
-- **Improved Collections**: Switched to `illuminate/collections` with fluent interface
-- **macOS**: scanning moved from the removed `airport` binary to `system_profiler` (see Platform Support for what that can and cannot report)
-- **New Features**:
-  - Filter networks by frequency band (2.4GHz / 5GHz)
-  - Filter by signal strength
-  - Find strongest network
-  - Sort networks by various criteria
-  - Enhanced security filtering
+[`docs/verified-on.md`](docs/verified-on.md) is the release gate for every
+tag from 3.0.0 on: the raw output of `device`, `list`, `list --unique`,
+`known`, `hotspot start`/`status`/`stop`, `forget`, and one real `connect`
+to the maintainer's own network, run on a Raspberry Pi.
 
-## Upgrading from v1.x
+## CLI reference
 
-The main breaking changes:
-1. Minimum PHP version is now 8.1 (was 7.2)
-2. Collection methods now have proper return types
-3. `tightenco/collect` replaced with `illuminate/collections`
+Installed via Composer, the binary is `vendor/bin/wifi`; from a checkout
+of this repository it is `php bin/wifi`.
 
-Most of the existing API remains compatible. New methods are additive.
+| Command | Options | Description |
+| --- | --- | --- |
+| `list` | `--unique`, `--connected` | Show surrounding Wi-Fi networks |
+| `connect` | `--ssid=`, `--bssid=`, `--password=`, `--device=` | Connect to a network — one of `--ssid`/`--bssid` is required |
+| `disconnect` | `--device=` | Disconnect from the current network |
+| `device` | — | Show the detected Wi-Fi device |
+| `known` | — | List known (saved) networks |
+| `forget <ssid-or-name>` | — | Forget a known network; prints `Forgot <name>.` |
+| `hotspot start` | `--ssid=`, `--password=`, `--band=`, `--device=` | Start a hotspot (`--band` is `2.4` or `5`) |
+| `hotspot stop` | — | Stop the hotspot |
+| `hotspot status` | — | Print `active` or `inactive` |
 
-## Testing
+`--device` is optional everywhere it appears; the wireless device is
+detected automatically when omitted.
 
-```bash
-composer test
-```
+An SSID or connection name that starts with `-` (e.g. `-my-network`) looks
+like an option to the CLI's own parser and must be passed after a literal
+`--`: `wifi forget -- -my-network`.
 
-## Code Style
+**Exit codes:** `0` success · `1` general error (bad usage, a command the
+underlying tool rejected) · `2` `UnsupportedOperation` — the active
+backend does not implement the capability (e.g. `known`/`hotspot` on
+macOS or Windows) · `3` `PermissionDenied`.
 
-```bash
-# Check code style
-composer lint
+### Testing the CLI without hardware
 
-# Fix code style automatically
-composer fix
-```
+`bin/wifi` reads two environment variables as a test hook: `WIFI_FAKE_OS`
+(one of `Linux`, `Darwin`, `Windows`) selects the backend, and
+`WIFI_FAKE_RUNNER` points at a directory containing a `map.json` fixture
+map consumed by `FakeCommandRunner` (see `tests/Cli/CliTest.php` and
+`tests/Fixtures/cli/**` for real examples). This hook requires a dev
+install — `Sanchescom\WiFi\Test\Support\FakeCommandRunner` is not
+autoloaded in a `composer require --no-dev` install.
 
-## Static Analysis
+## API reference
 
-```bash
-composer analyse
-```
+### `WiFi` facade (`Sanchescom\WiFi\WiFi`)
 
-Runs PHPStan at level 6, with no baseline.
+| Method | Returns | Description |
+| --- | --- | --- |
+| `WiFi::create(?CommandRunner $runner = null)` | `self` (static) | Auto-detects the OS and builds the matching backend |
+| `new WiFi(Backend $backend)` | `self` | Construct directly over a given backend (tests, custom runners) |
+| `scan()` | `NetworkCollection` | Scan for surrounding networks |
+| `connect(Network\|string $network, Credentials $credentials, ?Device $device = null)` | `void` | Connect; a hidden/redacted `Network` throws `InvalidArgument` — pass the SSID as a string instead |
+| `disconnect(?Device $device = null)` | `void` | Disconnect |
+| `device()` | `Device` | The detected wireless device |
+| `knownNetworks()` | `list<KnownNetwork>` | Saved connections (Linux only; `UnsupportedOperation` elsewhere) |
+| `forget(KnownNetwork\|string $ssid)` | `void` | Remove a known network (Linux only) |
+| `startHotspot(HotspotConfig $config)` | `Hotspot` | Start a hotspot (Linux only) |
+| `stopHotspot()` | `void` | Stop the hotspot (Linux only) |
+| `isHotspotActive()` | `bool` | Whether a hotspot is currently active (Linux only) |
+| `supports(string $capabilityInterface)` | `bool` | Whether the active backend implements `SupportsKnownNetworks::class` / `SupportsHotspot::class` |
+| `backend()` | `Backend` | The underlying backend instance |
 
-## Platform-Specific Notes
+### `NetworkCollection` (extends `Illuminate\Support\Collection<int, Network>`)
 
-### Device Names
-- **macOS**: Use `en0`, `en1`, etc. Find your device with `networksetup -listallhardwareports`
-- **Linux**: Use `wlan0`, `wlan1`, etc. Find your device with `ip link show`
-- **Windows**: Device is auto-detected by the library
+| Method | Returns | Description |
+| --- | --- | --- |
+| `bySsid(string $ssid)` | `Network` | First match, or `NetworkNotFound` |
+| `byBssid(Bssid\|string $bssid)` | `Network` | First match, or `NetworkNotFound` |
+| `connected()` | `static` | Only connected networks |
+| `band(Band $band)` | `static` | Only networks on the given band |
+| `security(Security $security)` | `static` | Only networks with the given security |
+| `strongerThan(Signal\|float $threshold)` | `static` | Networks at or above a dBm threshold |
+| `sortBySignal()` | `static` | Strongest first; networks with no reading last |
+| `strongest()` | `Network` | The strongest network with a signal reading, or `NetworkNotFound` |
+| `uniqueBySsid()` | `static` | One row per SSID (strongest radio); hidden names are never merged |
+| `hasHiddenSsids()` | `bool` | Whether any network's SSID is hidden |
+
+Every other `Illuminate\Support\Collection` method (`all()`, `first()`,
+`filter()`, `map()`, …) is inherited and works normally.
+
+### `Network` (readonly)
+
+| Property | Type | Notes |
+| --- | --- | --- |
+| `$ssid` | `string` | Empty when the network is hidden |
+| `$ssidHidden` | `bool` | True for a hidden SSID or a redacted one (macOS without Location Services) |
+| `$bssid` | `?Bssid` | Never available on macOS |
+| `$channel` | `?int` | `null` when unknown |
+| `$band` | `?Band` | `Band::GHz2_4` / `GHz5` / `GHz6`, or `null` |
+| `$frequency` | `?int` | MHz, or `null` |
+| `$signal` | `?Signal` | `->dbm` and `->quality`, or `null` when the tool reported none |
+| `$security` | `Security` | Enum: `WPA3`/`WPA2`/`WPA`/`WEP`/`Open`/`Unknown` |
+| `$securityFlags` | `string` | Raw flags string as the tool printed it |
+| `$connected` | `bool` | |
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
+
+## Versioning
+
+We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](https://github.com/sanchescom/php-wifi/tags).
+
+## Authors
+
+* **Efimov Aleksandr** - *Initial work* - [Sanchescom](https://github.com/sanchescom)
+
+See also the list of [contributors](https://github.com/sanchescom/php-wifi/contributors) who participated in this project.
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE.md](LICENSE.md) file for details.
+
+Versions up to and including 2.0.0 were published under GPL-3.0. 2.0.1 relicenses the package to MIT; the change is made by the sole author and copyright holder.

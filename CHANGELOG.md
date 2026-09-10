@@ -2,6 +2,95 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.0] - 2026-09-10
+
+A ground-up rewrite. See [UPGRADE.md](UPGRADE.md) for the full "2.x → 3.0"
+mapping and [docs/verified-on.md](docs/verified-on.md) for what was run on
+real hardware before this tag.
+
+### Added
+- **Object API**: `WiFi` is now a facade over one `Backend` — `WiFi::create()`
+  auto-detects the OS; `new WiFi($backend)` injects one directly (tests use
+  this with `FakeCommandRunner`). No more static mutable state.
+- **Value objects**: `Network` (readonly, replaces `AbstractNetwork`),
+  `NetworkCollection` (replaces the old `Collection`), `Signal` (`dbm` +
+  `quality`, replaces `to_dbm()`/`to_quality()`), `Bssid`, `Device`,
+  `Credentials`, `KnownNetwork`, `Hotspot`, `HotspotConfig`.
+- **Enums**: `Band` (`GHz2_4`/`GHz5`/`GHz6`) and `Security`
+  (`WPA3`/`WPA2`/`WPA`/`WEP`/`Open`/`Unknown`) replace string constants.
+- **Known networks**: `WiFi::knownNetworks(): list<KnownNetwork>` and
+  `WiFi::forget(KnownNetwork|string)`, backed by `nmcli connection show` on
+  Linux (`SupportsKnownNetworks`); not supported on macOS or Windows.
+- **Hotspot**: `WiFi::startHotspot(HotspotConfig)`, `stopHotspot()`,
+  `isHotspotActive()` via `nmcli device wifi hotspot` on Linux
+  (`SupportsHotspot`); not supported on macOS or Windows.
+- **`PermissionDenied`** exception, a `CommandFailed` subclass raised when
+  the underlying tool reports "Not authorized" / "Insufficient privileges";
+  the CLI maps it to exit code `3` and prints an OS-tailored hint (the
+  polkit pointer on Linux, "run with sufficient privileges" elsewhere).
+- **CLI**: `device`, `known`, `forget <ssid-or-name>` and
+  `hotspot {start|stop|status}` commands, on top of the existing
+  `list`/`connect`/`disconnect`. Exit codes: `0` success, `1` general
+  error/usage, `2` unsupported operation (capability not implemented by
+  this backend), `3` permission denied.
+- **Provisioning demo** (`examples/provision/`): a headless Raspberry Pi
+  setup wizard — a temporary hotspot plus a small PHP page a phone can use
+  to scan and join the real network, no SSH or monitor required.
+- **`docs/verified-on.md`**: the raw output of every CLI command run live
+  on a Raspberry Pi (NetworkManager 1.52.1), including one real `connect`
+  — the release gate for this tag.
+- CLI capability interfaces (`Backend`, `SupportsKnownNetworks`,
+  `SupportsHotspot`) let `WiFi::supports(string $capabilityInterface)`
+  check what the active backend can do before calling it.
+
+### Changed (Breaking)
+Every item in the [UPGRADE.md "2.x → 3.0"](UPGRADE.md#2x--30) table,
+including:
+- `WiFi::` static helpers, `Collection` filter/sort methods,
+  `AbstractNetwork` properties and `$network->connect()`/`disconnect()`
+  are all replaced — see UPGRADE.md for the one-to-one mapping.
+- **`null` instead of sentinels.** A network with no signal reading is
+  `$network->signal === null` (was `-100` dBm / `0%`); an unrecognised
+  channel is `$network->channel === null` / `$network->band === null`
+  (was `frequency === 0`).
+- **macOS `disconnect()` no longer removes the preferred network** — it
+  only power-cycles the radio (`-setairportpower off` then `on`), matching
+  what "disconnect" means on the other two platforms.
+- `Sanchescom\WiFi\Shell\Os::current()` throws `UnsupportedOperation` (not
+  a bespoke `UnknownSystemException`) when `PHP_OS_FAMILY` is not `Linux`,
+  `Darwin` or `Windows`.
+
+### Removed
+- The seven global helper functions autoloaded into every consumer's
+  namespace: `to_dbm()`, `to_quality()`, `to_hex()`, `trim_first()`,
+  `extract_bssid()`, `extract_after()`, `glue_commands()`.
+- `WiFi::setCommandClass()` / `WiFi::setPhpOperationSystem()` and all other
+  process-global static state.
+- `AbstractNetwork` and the per-OS positional-array parsing it was built
+  on (`$network[2]` meaning different things on different platforms).
+  Replaced by pure parsers (`src/Parser/**`) that build `Network` directly.
+- The `Sanchescom\WiFi\Exceptions\*` namespace (`CommandException`,
+  `NetworkNotFoundException`, `DeviceNotFoundException`,
+  `UnknownSystemException`) — replaced by `Sanchescom\WiFi\Exception\*`.
+- `Sanchescom\WiFi\System\Windows\Profile` — replaced by
+  `Sanchescom\WiFi\Backend\Windows\ProfileFile`.
+
+### Fixed
+- **Linux:** an nmcli SSID ending in a backslash (`\` is `nmcli --terse`'s
+  own escape character) was silently dropped instead of parsed.
+- **Windows:** a `netsh` scan block with more than one BSSID for the same
+  SSID could misalign every network parsed after it; blocks are now
+  scanned per field instead of by a fixed row count.
+- 2.4 GHz channel 14 now reports its correct centre frequency, 2484 MHz
+  (was 2477 MHz).
+- The CLI's hidden-SSID hint is OS-aware: it names macOS Location Services
+  only when the active backend is `NetworksetupBackend`; on every other
+  backend it reports how many networks broadcast no SSID at all.
+- `forget` prints `Forgot <name>.` on success instead of nothing.
+- `PermissionDenied`'s hint is tailored per OS (the polkit pointer on
+  Linux; "run the command with sufficient privileges" elsewhere) instead
+  of a single generic message.
+
 ## [2.1.0] - 2026-09-09
 
 ### Added
