@@ -4,6 +4,10 @@ Every command below was run over SSH on the maintainer's Raspberry Pi on
 **2026-09-09** (scan, hotspot, demo) and **2026-09-10** (the real `connect`) against the `3.0.0` branch (commit `de9ed2a` plus this file).
 Outputs are pasted verbatim; the only edits are the masked secrets (`***`).
 
+*Commands were run at `de9ed2a`; two later commits changed CLI wording
+only: the hidden-SSID hint is now OS-aware and `forget` prints `Forgot
+<name>.` — the exit codes and nmcli behaviour are unchanged.*
+
 | | |
 | --- | --- |
 | Board | Raspberry Pi, `aarch64`, kernel `6.18.34+rpt-rpi-v8` |

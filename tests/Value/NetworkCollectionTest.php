@@ -23,6 +23,7 @@ final class NetworkCollectionTest extends TestCase
         bool $hidden = false,
         ?string $bssid = null,
         bool $connected = false,
+        Security $security = Security::Open,
     ): Network {
         return new Network(
             ssid: $ssid,
@@ -32,7 +33,7 @@ final class NetworkCollectionTest extends TestCase
             band: $freq !== null ? Band::fromFrequency($freq) : null,
             frequency: $freq,
             signal: $dbm !== null ? Signal::fromDbm($dbm) : null,
-            security: Security::Open,
+            security: $security,
             securityFlags: '',
             connected: $connected,
         );
@@ -84,6 +85,19 @@ final class NetworkCollectionTest extends TestCase
         $filtered = $collection->band(Band::GHz5);
 
         $this->assertSame(['B'], $filtered->pluck('ssid')->all());
+    }
+
+    #[Test]
+    public function security_filters_by_the_given_security(): void
+    {
+        $wpa2 = self::net('A', -50.0, security: Security::WPA2);
+        $open = self::net('B', -50.0, security: Security::Open);
+        $unknown = self::net('C', -50.0, security: Security::Unknown);
+        $collection = new NetworkCollection([$wpa2, $open, $unknown]);
+
+        $this->assertSame(['A'], $collection->security(Security::WPA2)->pluck('ssid')->all());
+        $this->assertSame(['B'], $collection->security(Security::Open)->pluck('ssid')->all());
+        $this->assertSame(['C'], $collection->security(Security::Unknown)->pluck('ssid')->all());
     }
 
     #[Test]

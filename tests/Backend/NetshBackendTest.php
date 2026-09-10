@@ -10,6 +10,9 @@ use Sanchescom\WiFi\Backend\NetshBackend;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\PermissionDenied;
+use Sanchescom\WiFi\Shell\Command;
+use Sanchescom\WiFi\Shell\CommandResult;
+use Sanchescom\WiFi\Shell\CommandRunner;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Value\Credentials;
 use Sanchescom\WiFi\Value\Device;
@@ -171,6 +174,49 @@ final class NetshBackendTest extends TestCase
             ['wlan', 'connect', 'interface=Wireless', 'ssid=Unknown Network', 'name=Unknown Network'],
             $connect->arguments,
         );
+    }
+
+    #[Test]
+    public function connect_with_no_credentials_renders_the_open_template_with_an_empty_key_and_still_cleans_up(): void
+    {
+        $inner = $this->runner();
+        $runner = new class ($inner) implements CommandRunner {
+            public ?string $capturedProfileXml = null;
+
+            public function __construct(private readonly CommandRunner $inner)
+            {
+            }
+
+            public function run(Command $command): CommandResult
+            {
+                // Capture the rendered profile file's content while it still
+                // exists on disk — NetshBackend deletes it in a `finally`
+                // block right after the "connect" command below returns.
+                if ($command->program === 'netsh'
+                    && ($command->arguments[0] ?? null) === 'wlan'
+                    && ($command->arguments[1] ?? null) === 'add'
+                ) {
+                    $filenameArg = (string) ($command->arguments[3] ?? '');
+                    $path = substr($filenameArg, strlen('filename='));
+                    $this->capturedProfileXml = (string) file_get_contents($path);
+                }
+
+                return $this->inner->run($command);
+            }
+        };
+
+        $backend = new NetshBackend($runner, $this->dir);
+
+        $backend->connect('Unknown Network', Credentials::none(), new Device('Wireless'));
+
+        $this->assertNotNull($runner->capturedProfileXml);
+        $this->assertStringContainsString('<authentication>open</authentication>', $runner->capturedProfileXml);
+        $this->assertStringContainsString('<connectionMode>manual</connectionMode>', $runner->capturedProfileXml);
+        $this->assertStringNotContainsString('<keyMaterial>', $runner->capturedProfileXml);
+
+        $add = $inner->commands[2];
+        $profilePath = substr($add->arguments[3], strlen('filename='));
+        $this->assertFileDoesNotExist($profilePath);
     }
 
     #[Test]

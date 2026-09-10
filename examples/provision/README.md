@@ -30,8 +30,8 @@ sudo chmod 600 /etc/php-wifi-provision.env
 
 `nmcli` (used by `bin/wifi`) refuses to scan or connect for a process
 running as `www-data` unless polkit grants it. Install the polkit rule from
-the "Privileges" section under "Platform Support → Linux" in the project's
-main [README.md](../../README.md) before starting the service.
+the [Linux — Privileges (polkit)](../../README.md#linux--privileges-polkit)
+section of the project's main README.md before starting the service.
 
 ## Run
 
@@ -50,7 +50,7 @@ at `http://10.42.0.1:8080/` (NetworkManager's default hotspot address).
 2. Open `http://10.42.0.1:8080/` in the phone's browser.
 3. Pick the home network from the list, enter its password, and tap Connect.
 
-The screenshot below is added once it has been taken on the maintainer's
-Raspberry Pi.
+The screenshot below is from the provisioning page running on the
+maintainer's Raspberry Pi.
 
 ![Phone screenshot](screenshot.jpg)

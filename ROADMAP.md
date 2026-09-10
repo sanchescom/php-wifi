@@ -41,6 +41,15 @@ nothing from the old "3.0" list on this page is left open.
   `phplucidframe/console-table` into every install of the library.
   Splitting it into its own package would remove that, but no user has
   asked, and it would cost a second release process for a low-traffic CLI.
+- **`--password-file`/stdin for the CLI.** `connect`/`hotspot start`
+  currently take `--password` as a plain argv value, which is visible to
+  any other user on the box via `ps`. Accept a `--password-file` path or a
+  password piped on stdin as an alternative.
+- **A self-stopping provisioning unit.** `hotspot.sh`'s `php -S` keeps
+  serving — and the temporary hotspot stays up — after the device has
+  joined the real network; nothing stops the unit automatically. Have the
+  provisioning page (or a watcher) stop the `provision` systemd unit once
+  the target network has been joined successfully.
 
 ## Decisions the maintainer has to make
 

@@ -125,6 +125,12 @@ and nothing else. A real provisioning flow has to scan *before* starting
 the hotspot and serve that cached result instead — see
 [ROADMAP.md](ROADMAP.md) → "3.1 candidates".
 
+`hotspot.sh`'s `php -S` keeps serving the provisioning page — and the
+hotspot stays up — after the device has joined the real network; the unit
+does not stop itself. Stop it once provisioning is done
+(`sudo systemctl stop provision`), or it will keep the temporary hotspot
+and its open web server running indefinitely.
+
 ## Design
 
 **Pure parsers over real fixtures.** Every `src/Parser/**` class is a pure
@@ -233,7 +239,9 @@ assertion helper, or `toDisplay()` — they print as `***`. On Windows, the
 profile handed to `netsh` is written to a random file under the system
 temp directory (`Backend\Windows\ProfileFile`) with the SSID and
 passphrase XML-escaped, and the file is deleted as soon as `netsh` has
-read it, including on failure.
+read it, including on failure. `CommandFailed::$command` keeps the
+original `Command` with the unmasked argument list — `getMessage()` is
+masked, but do not dump the exception object into logs or error pages.
 
 ## Verified on
 
@@ -318,6 +326,12 @@ autoloaded in a `composer require --no-dev` install.
 
 Every other `Illuminate\Support\Collection` method (`all()`, `first()`,
 `filter()`, `map()`, …) is inherited and works normally.
+
+> [!NOTE]
+> `strongerThan()` compares `Signal->dbm`. On Linux and Windows this value
+> is derived from a 0–100 quality percentage (`Signal::fromQuality()`) and
+> therefore never exceeds −50 dBm, so a threshold above −50 matches
+> nothing on those platforms; macOS reports a real RSSI value instead.
 
 ### `Network` (readonly)
 
