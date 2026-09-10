@@ -54,7 +54,7 @@ final class NetshBackend implements Backend
         if ($connectedBssid !== null) {
             $networks = array_map(
                 static fn (Network $network): Network => $network->bssid?->equals($connectedBssid) === true
-                    ? self::markConnected($network)
+                    ? $network->withConnected(true)
                     : $network,
                 $networks,
             );
@@ -103,22 +103,6 @@ final class NetshBackend implements Backend
 
         return (new InterfacesParser())->parse($result->stdout)->device
             ?? throw DeviceNotFound::onThisSystem('netsh wlan show interfaces listed no wireless interface');
-    }
-
-    private static function markConnected(Network $network): Network
-    {
-        return new Network(
-            ssid: $network->ssid,
-            ssidHidden: $network->ssidHidden,
-            bssid: $network->bssid,
-            channel: $network->channel,
-            band: $network->band,
-            frequency: $network->frequency,
-            signal: $network->signal,
-            security: $network->security,
-            securityFlags: $network->securityFlags,
-            connected: true,
-        );
     }
 
     private function run(Command $command): CommandResult

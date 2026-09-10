@@ -203,6 +203,27 @@ final class NetshBackendTest extends TestCase
     }
 
     #[Test]
+    public function connect_never_creates_a_profile_file_when_the_initial_scan_fails(): void
+    {
+        $runner = new FakeCommandRunner([
+            'networks mode=Bssid' => [
+                'output' => '',
+                'exit' => 1,
+                'stderr' => 'The wireless local area network interface is powered down.',
+            ],
+        ]);
+        $backend = new NetshBackend($runner, $this->dir);
+
+        try {
+            $backend->connect('AlphaNet-foiEmE', Credentials::password('hunter2'), new Device('Wireless'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed) {
+        }
+
+        $this->assertSame([], glob($this->dir . '/php-wifi-*'));
+    }
+
+    #[Test]
     public function disconnect_runs_the_exact_netsh_command(): void
     {
         $runner = $this->runner();

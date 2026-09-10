@@ -19,4 +19,21 @@ final readonly class Network
         public bool $connected,
     ) {
     }
+
+    /** A clone with only `connected` changed; every other field is copied as-is. */
+    public function withConnected(bool $connected): self
+    {
+        return new self(
+            ssid: $this->ssid,
+            ssidHidden: $this->ssidHidden,
+            bssid: $this->bssid,
+            channel: $this->channel,
+            band: $this->band,
+            frequency: $this->frequency,
+            signal: $this->signal,
+            security: $this->security,
+            securityFlags: $this->securityFlags,
+            connected: $connected,
+        );
+    }
 }
