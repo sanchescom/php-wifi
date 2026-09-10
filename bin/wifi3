@@ -185,7 +185,10 @@ final class Wifi3Cli extends CLI
 
         $options->registerCommand('known', 'List known (saved) networks');
 
-        $options->registerCommand('forget', 'Forget a known network');
+        $options->registerCommand(
+            'forget',
+            'Forget a known network. A name starting with "-" must be passed after --.',
+        );
         $options->registerArgument('ssid-or-name', 'SSID or connection name to forget', false, 'forget');
 
         $options->registerCommand('hotspot', 'Start, stop or check the status of a wifi hotspot');
@@ -371,18 +374,20 @@ final class Wifi3Cli extends CLI
 
         $ssidOpt = $this->optString($options, 'ssid');
         $passwordOpt = $this->optString($options, 'password');
-        $deviceOpt = $this->optString($options, 'device');
+
+        [$device, $auto] = $this->resolveDevice($options);
 
         $config = new HotspotConfig(
             ssid: $ssidOpt !== false ? $ssidOpt : '',
             password: $passwordOpt !== false ? $passwordOpt : '',
             band: $band,
-            device: $deviceOpt !== false ? new Device($deviceOpt) : null,
+            device: $device,
         );
 
         $hotspot = $this->wifi->startHotspot($config);
 
-        echo sprintf('Hotspot %s started on %s', $hotspot->ssid, $hotspot->device) . PHP_EOL;
+        echo sprintf('Hotspot %s started on %s%s', $hotspot->ssid, $hotspot->device, $auto ? ' (auto)' : '')
+            . PHP_EOL;
     }
 
     private function cmdHotspotStop(): void

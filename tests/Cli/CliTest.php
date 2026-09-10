@@ -73,6 +73,35 @@ final class CliTest extends TestCase
     }
 
     #[Test]
+    public function hotspot_start_marks_an_auto_detected_device(): void
+    {
+        $result = $this->runCli(
+            ['hotspot', 'start', '--ssid=femus-setup', '--password=password1'],
+            self::LINUX_FIXTURES,
+            'Linux',
+        );
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+        $this->assertMatchesRegularExpression(
+            '/^Hotspot femus-setup started on wlan0 \(auto\)$/m',
+            $result['stdout'],
+        );
+    }
+
+    #[Test]
+    public function hotspot_start_does_not_mark_an_explicit_device(): void
+    {
+        $result = $this->runCli(
+            ['hotspot', 'start', '--ssid=femus-setup', '--password=password1', '--device=wlan0'],
+            self::LINUX_FIXTURES,
+            'Linux',
+        );
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+        $this->assertMatchesRegularExpression('/^Hotspot femus-setup started on wlan0$/m', $result['stdout']);
+    }
+
+    #[Test]
     public function device_prints_the_detected_wifi_device(): void
     {
         $result = $this->runCli(['device'], self::LINUX_FIXTURES, 'Linux');
