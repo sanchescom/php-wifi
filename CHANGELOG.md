@@ -52,6 +52,10 @@ calling code — see [UPGRADE.md](UPGRADE.md#30--31).
   which keeps it off `wifi`'s own argv. `nmcli` still receives it as an
   argument one process later, so it remains visible via `ps` on Linux for
   that instant; see [ROADMAP.md](ROADMAP.md) for closing that window too.
+- macOS `connect()` reported success when `networksetup` had actually
+  failed, because that tool exits 0 and only prints the reason (`Could not
+  find network …` or `Failed to join network …`) on stdout; `connect()` now
+  inspects that output and raises `NetworkNotFound` or `CommandFailed`.
 
 ## [3.0.0] - 2026-09-10
 
