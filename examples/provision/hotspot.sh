@@ -16,18 +16,27 @@ rm -f "$DONE"
 # either, never both.
 "$ROOT/bin/wifi" list --unique --json > "$CACHE" || printf '[]' > "$CACHE"
 
-printf '%s' "$PROVISION_PASSWORD" | "$ROOT/bin/wifi" hotspot start \
+SERVER=""
+
+teardown() {
+    [ -n "$SERVER" ] && kill "$SERVER" 2>/dev/null || true
+    "$ROOT/bin/wifi" hotspot stop || true
+    trap - EXIT INT TERM
+}
+trap teardown EXIT INT TERM
+
+if ! printf '%s' "$PROVISION_PASSWORD" | "$ROOT/bin/wifi" hotspot start \
     --ssid="${PROVISION_SSID:-femus-setup}" \
-    --password-file=-
+    --password-file=-; then
+    echo 'provision: could not start the hotspot (is the polkit rule installed?)' >&2
+    exit 0
+fi
 
 php -d display_errors=0 -d log_errors=1 -d expose_php=0 -S 0.0.0.0:8080 -t "$SCRIPT_DIR" &
 SERVER=$!
 
-teardown() {
-    kill "$SERVER" 2>/dev/null || true
-    "$ROOT/bin/wifi" hotspot stop || true
-}
-trap teardown EXIT INT TERM
+sleep 1
+kill -0 "$SERVER" 2>/dev/null || { echo 'provision: web server failed to start' >&2; exit 0; }
 
 waited=0
 while [ ! -e "$DONE" ] && [ "$waited" -lt "$TIMEOUT" ]; do
