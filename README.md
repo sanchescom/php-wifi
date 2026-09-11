@@ -306,8 +306,12 @@ backend does not implement the capability (e.g. `known`/`hotspot` on
 macOS or Windows) · `3` `PermissionDenied`.
 
 **`--password-file`** reads the password from a file instead of a plain
-argv value, which is visible to any other user on the box via `ps`.
-`--password-file=-` reads it from stdin instead:
+argv value, keeping the passphrase off the `wifi` command line itself.
+On Linux it is still passed to `nmcli` as an argument one process later,
+so a local user watching `ps` during the call can still see it; on
+Windows it never reaches a command line at all, since it goes through the
+temp connection-profile file instead. `--password-file=-` reads it from
+stdin instead:
 
 ```bash
 printf '%s' "$PASSWORD" | wifi connect --ssid=home --password-file=-

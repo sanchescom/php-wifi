@@ -47,9 +47,11 @@ calling code — see [UPGRADE.md](UPGRADE.md#30--31).
   list, because a single radio cannot scan while running an access point.
 - The provisioning hotspot and web server outlived a successful setup —
   nothing stopped the unit once the device had joined the real network.
-- `hotspot.sh` passed the hotspot password as a plain argv value, visible to
-  any other user on the box via `ps`; it now pipes it through
-  `--password-file=-`.
+- `hotspot.sh` passed the hotspot password as a plain argv value on the
+  `wifi` command line; it now pipes it through `--password-file=-` instead,
+  which keeps it off `wifi`'s own argv. `nmcli` still receives it as an
+  argument one process later, so it remains visible via `ps` on Linux for
+  that instant; see [ROADMAP.md](ROADMAP.md) for closing that window too.
 
 ## [3.0.0] - 2026-09-10
 

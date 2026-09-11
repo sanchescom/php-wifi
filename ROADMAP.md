@@ -23,6 +23,11 @@ open.
 
 ## 3.2 candidates
 
+- **Argv-free passphrase for `nmcli` on Linux.** `--password-file` keeps the
+  passphrase off the `wifi` command line, but `NmcliBackend` still hands it
+  to `nmcli` as a plain argument, so `ps` can catch it for that instant. Feed
+  it via `nmcli`'s stdin instead, or write a connection profile the way the
+  Windows backend already does, to actually close that window.
 - **`iw`/`wpa_cli` backend.** A Linux fallback for images without
   NetworkManager: some minimal Raspberry Pi OS Lite installs and most
   embedded distros run `wpa_supplicant` directly, with no `nmcli` to drive.
