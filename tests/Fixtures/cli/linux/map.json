@@ -4,6 +4,7 @@
     "connection show": "../../linux/Connections.txt",
     "connection delete": "Empty.txt",
     "device wifi hotspot": "Empty.txt",
+    "device wifi connect": "Empty.txt",
     "device disconnect": {
         "output": "",
         "exit": 1,

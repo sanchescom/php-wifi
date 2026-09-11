@@ -54,6 +54,13 @@ final class WiFiCli extends CLI
         $options->registerOption('bssid', 'BSSID of the network', null, true, 'connect');
         $options->registerOption('password', 'Password of the network', null, true, 'connect');
         $options->registerOption(
+            'password-file',
+            'Read the password from a file, or from stdin when given "-"',
+            null,
+            true,
+            'connect',
+        );
+        $options->registerOption(
             'device',
             'Which device to use (auto-detected when omitted)',
             null,
@@ -84,6 +91,13 @@ final class WiFiCli extends CLI
         $options->registerArgument('action', 'start, stop or status', false, 'hotspot');
         $options->registerOption('ssid', 'SSID of the hotspot', null, true, 'hotspot');
         $options->registerOption('password', 'Password of the hotspot', null, true, 'hotspot');
+        $options->registerOption(
+            'password-file',
+            'Read the password from a file, or from stdin when given "-"',
+            null,
+            true,
+            'hotspot',
+        );
         $options->registerOption('band', 'Radio band: 2.4 or 5', null, true, 'hotspot');
         $options->registerOption(
             'device',
@@ -285,7 +299,7 @@ final class WiFiCli extends CLI
             throw new InvalidArgument('hotspot start: --ssid is required.');
         }
 
-        $passwordOpt = $this->optString($options, 'password');
+        $passwordOpt = $this->resolvePassword($options);
 
         [$device, $auto] = $this->resolveDevice($options);
 
@@ -328,9 +342,56 @@ final class WiFiCli extends CLI
 
     private function resolveCredentials(Options $options): Credentials
     {
-        $passwordOpt = $this->optString($options, 'password');
+        $passwordOpt = $this->resolvePassword($options);
 
         return $passwordOpt !== false ? Credentials::password($passwordOpt) : Credentials::none();
+    }
+
+    /**
+     * Resolves --password / --password-file for both connect and hotspot
+     * start. `false` means no password was given at all (an open network for
+     * connect; an empty passphrase, rejected by HotspotConfig, for hotspot).
+     */
+    private function resolvePassword(Options $options): string|false
+    {
+        $inline = $this->optString($options, 'password');
+        $file = $this->optString($options, 'password-file');
+
+        if ($inline !== false && $file !== false) {
+            throw new InvalidArgument('Use --password or --password-file, not both.');
+        }
+
+        if ($inline !== false) {
+            return $inline;
+        }
+
+        if ($file === false) {
+            return false;
+        }
+
+        if ($file === '-') {
+            if (stream_isatty(STDIN)) {
+                throw new InvalidArgument('--password-file=- expects the password on stdin.');
+            }
+
+            $contents = stream_get_contents(STDIN);
+        } else {
+            $contents = @file_get_contents($file);
+        }
+
+        if ($contents === false) {
+            throw new InvalidArgument(sprintf('Cannot read the password file "%s".', $file));
+        }
+
+        $password = preg_replace('/\r?\n$/', '', $contents) ?? $contents;
+
+        if ($password === '') {
+            throw new InvalidArgument(
+                $file === '-' ? 'No password arrived on stdin.' : sprintf('The password file "%s" is empty.', $file),
+            );
+        }
+
+        return $password;
     }
 
     /**

@@ -223,23 +223,125 @@ final class CliTest extends TestCase
         $this->assertStringNotContainsString('1–32 bytes', $result['stderr']);
     }
 
+    #[Test]
+    public function connect_reads_the_password_from_a_file_verbatim(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'php-wifi-pass-');
+        self::assertIsString($file);
+        $log = tempnam(sys_get_temp_dir(), 'php-wifi-log-');
+        self::assertIsString($log);
+
+        try {
+            file_put_contents($file, "p w \n"); // trailing space kept, one newline stripped
+
+            $result = $this->runCli(
+                ['connect', '--ssid=BELL340', '--password-file=' . $file],
+                self::LINUX_FIXTURES,
+                'Linux',
+                ['WIFI_FAKE_LOG' => $log],
+            );
+
+            $this->assertSame(0, $result['exit'], $result['stderr']);
+            $connect = $this->lastLoggedCommand($log, 'device wifi connect');
+            $this->assertSame('p w ', $connect['arguments'][7]);
+        } finally {
+            unlink($file);
+            unlink($log);
+        }
+    }
+
+    #[Test]
+    public function connect_reads_the_password_from_stdin(): void
+    {
+        $log = tempnam(sys_get_temp_dir(), 'php-wifi-log-');
+        self::assertIsString($log);
+
+        try {
+            $result = $this->runCli(
+                ['connect', '--ssid=BELL340', '--password-file=-'],
+                self::LINUX_FIXTURES,
+                'Linux',
+                ['WIFI_FAKE_LOG' => $log],
+                'p w',
+            );
+
+            $this->assertSame(0, $result['exit'], $result['stderr']);
+            $connect = $this->lastLoggedCommand($log, 'device wifi connect');
+            $this->assertSame('p w', $connect['arguments'][7]);
+        } finally {
+            unlink($log);
+        }
+    }
+
+    #[Test]
+    public function password_and_password_file_together_are_rejected(): void
+    {
+        $result = $this->runCli(
+            ['connect', '--ssid=x', '--password=a', '--password-file=/dev/null'],
+            self::LINUX_FIXTURES,
+            'Linux',
+        );
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertStringContainsString('not both', $result['stderr']);
+    }
+
+    #[Test]
+    public function a_missing_password_file_is_rejected(): void
+    {
+        $missing = sys_get_temp_dir() . '/php-wifi-missing-' . bin2hex(random_bytes(8));
+
+        $result = $this->runCli(
+            ['connect', '--ssid=x', '--password-file=' . $missing],
+            self::LINUX_FIXTURES,
+            'Linux',
+        );
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertStringContainsString($missing, $result['stderr']);
+    }
+
+    #[Test]
+    public function an_empty_password_file_is_rejected(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'php-wifi-pass-');
+        self::assertIsString($file);
+
+        try {
+            $result = $this->runCli(
+                ['connect', '--ssid=x', '--password-file=' . $file],
+                self::LINUX_FIXTURES,
+                'Linux',
+            );
+
+            $this->assertSame(1, $result['exit']);
+            $this->assertStringContainsString('is empty', $result['stderr']);
+        } finally {
+            unlink($file);
+        }
+    }
+
     /**
      * @param list<string> $args
+     * @param array<string, string> $env extra environment entries merged over the base test env
      * @return array{exit: int, stdout: string, stderr: string}
      */
-    private function runCli(array $args, string $fixturesDir, string $os): array
+    private function runCli(array $args, string $fixturesDir, string $os, array $env = [], ?string $stdin = null): array
     {
         $command = array_merge([PHP_BINARY, self::REPO_ROOT . '/bin/wifi'], $args);
 
-        $env = [
-            'PATH' => (string) getenv('PATH'),
-            'WIFI_FAKE_RUNNER' => $fixturesDir,
-            'WIFI_FAKE_OS' => $os,
-        ];
+        $env = array_merge(
+            [
+                'PATH' => (string) getenv('PATH'),
+                'WIFI_FAKE_RUNNER' => $fixturesDir,
+                'WIFI_FAKE_OS' => $os,
+            ],
+            $env,
+        );
 
         $process = proc_open(
             $command,
-            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
             self::REPO_ROOT,
             $env,
@@ -249,6 +351,11 @@ final class CliTest extends TestCase
             throw new RuntimeException('Failed to start bin/wifi.');
         }
 
+        if ($stdin !== null) {
+            fwrite($pipes[0], $stdin);
+        }
+        fclose($pipes[0]);
+
         $stdout = (string) stream_get_contents($pipes[1]);
         $stderr = (string) stream_get_contents($pipes[2]);
         fclose($pipes[1]);
@@ -257,6 +364,36 @@ final class CliTest extends TestCase
         $exit = proc_close($process);
 
         return ['exit' => $exit, 'stdout' => $stdout, 'stderr' => $stderr];
+    }
+
+    /**
+     * Reads the JSON lines FakeCommandRunner appended to $log and returns the
+     * last one whose rendered arguments contain $needle, decoded as an array.
+     *
+     * @return array{program: string, arguments: list<mixed>, env: array<string, string>, secretIndexes: list<int>}
+     */
+    private function lastLoggedCommand(string $log, string $needle): array
+    {
+        $lines = $this->lines((string) file_get_contents($log));
+
+        for ($i = count($lines) - 1; $i >= 0; $i--) {
+            /**
+             * @var array{
+             *     program: string,
+             *     arguments: list<mixed>,
+             *     env: array<string, string>,
+             *     secretIndexes: list<int>,
+             * } $decoded
+             */
+            $decoded = json_decode($lines[$i], true);
+            $rendered = implode(' ', array_map(static fn (mixed $argument): string => (string) $argument, $decoded['arguments']));
+
+            if (str_contains($rendered, $needle)) {
+                return $decoded;
+            }
+        }
+
+        throw new RuntimeException(sprintf('No logged command in "%s" contains "%s".', $log, $needle));
     }
 
     /** @return list<string> */
