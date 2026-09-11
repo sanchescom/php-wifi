@@ -39,8 +39,10 @@ calling code — see [UPGRADE.md](UPGRADE.md#30--31).
   connection name rather than failing the whole list.
 - **`NmcliBackend::knownNetworks()`** therefore costs N+1 `nmcli` commands
   for N wireless profiles, not one.
-- The provisioning demo connects through `connectTo()` instead of `connect()`,
-  since the radio is already running an access point at that point.
+- The provisioning demo stops its own hotspot before joining and then uses the
+  scanning `WiFi::connect()`. A single radio cannot serve an access point and
+  join a network at the same time, and NetworkManager reports an empty scan
+  list while it is an access point, so the radio has to be freed first.
 
 ### Fixed
 - The provisioning demo could only ever see its own hotspot in the network

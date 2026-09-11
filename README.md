@@ -147,7 +147,8 @@ typo into `NetworkNotFound` instead of an opaque `nmcli` exit code).
 
 Once a connection succeeds, `index.php` writes an empty marker file at
 `PROVISION_DONE` and the run ends with the hotspot down. `hotspot.sh` polls
-for that marker once a second, for at most `PROVISION_TIMEOUT` seconds (also
+for that marker once a second (every `RESTART_BACKOFF` seconds while it is
+restarting a dropped hotspot), for at most `PROVISION_TIMEOUT` seconds (also
 giving up if the web server dies), then stops the built-in PHP server, runs
 `wifi hotspot stop` (a no-op by then), and exits — the unit ends itself once
 provisioning is done instead of running indefinitely. If the join fails
@@ -160,6 +161,8 @@ retry.
 | `PROVISION_CACHE` | `/run/php-wifi-provision/networks.json` | Where the pre-hotspot scan is cached as JSON. |
 | `PROVISION_DONE` | `/run/php-wifi-provision/done` | Marker file created once a connection succeeds. |
 | `PROVISION_TIMEOUT` | `900` | Seconds `hotspot.sh` waits for `PROVISION_DONE` before giving up. |
+| `RESTART_BACKOFF` | `5` | Seconds to wait between attempts to bring a dropped hotspot back. |
+| `MAX_RESTARTS` | `5` | Consecutive failed hotspot restarts before `hotspot.sh` gives up (still exiting `0`). |
 
 See [`examples/provision/README.md`](examples/provision/README.md) for the
 full install steps and the `provision.service` unit that provisions
