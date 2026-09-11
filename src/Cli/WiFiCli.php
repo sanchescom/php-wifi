@@ -376,6 +376,14 @@ final class WiFiCli extends CLI
 
             $contents = stream_get_contents(STDIN);
         } else {
+            if ($file === '') {
+                throw new InvalidArgument('--password-file needs a path, or "-" to read the password from stdin.');
+            }
+
+            if (is_dir($file)) {
+                throw new InvalidArgument(sprintf('The password file "%s" is a directory.', $file));
+            }
+
             $contents = @file_get_contents($file);
         }
 

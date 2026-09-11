@@ -321,6 +321,33 @@ final class CliTest extends TestCase
         }
     }
 
+    #[Test]
+    public function an_empty_password_file_path_is_rejected_without_the_raw_engine_message(): void
+    {
+        $result = $this->runCli(
+            ['connect', '--ssid=x', '--password-file='],
+            self::LINUX_FIXTURES,
+            'Linux',
+        );
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertStringContainsString('--password-file needs a path', $result['stderr']);
+        $this->assertStringNotContainsString('Path cannot be empty', $result['stderr']);
+    }
+
+    #[Test]
+    public function a_directory_given_as_the_password_file_is_rejected(): void
+    {
+        $result = $this->runCli(
+            ['connect', '--ssid=x', '--password-file=' . sys_get_temp_dir()],
+            self::LINUX_FIXTURES,
+            'Linux',
+        );
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertStringContainsString('is a directory', $result['stderr']);
+    }
+
     /**
      * @param list<string> $args
      * @param array<string, string> $env extra environment entries merged over the base test env
