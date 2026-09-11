@@ -425,7 +425,11 @@ final class WiFiCli extends CLI
             exit(1);
         }
 
-        $runner = new FakeCommandRunner(self::loadFixtureMap($fakeRunnerDir));
+        $logPath = getenv('WIFI_FAKE_LOG');
+        $runner = new FakeCommandRunner(
+            self::loadFixtureMap($fakeRunnerDir),
+            $logPath === false || $logPath === '' ? null : $logPath,
+        );
 
         return new WiFi(BackendFactory::forOs(Os::from($fakeOsName), $runner));
     }

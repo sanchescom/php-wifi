@@ -57,6 +57,14 @@ final class WiFiTest extends TestCase
         ]);
     }
 
+    private function runner(): FakeCommandRunner
+    {
+        return new FakeCommandRunner([
+            '-f DEVICE,TYPE device' => self::LINUX_FIXTURES . '/Devices.txt',
+            'device wifi connect' => '',
+        ]);
+    }
+
     private function sampleNetwork(string $ssid): Network
     {
         return $this->networkNamed($ssid, false);
@@ -182,6 +190,49 @@ final class WiFiTest extends TestCase
 
         $this->assertCount(1, $runner->commands);
         $this->assertStringContainsString('device wifi connect', $runner->commands[0]->describe());
+    }
+
+    #[Test]
+    public function connect_to_joins_without_scanning_first(): void
+    {
+        $runner = $this->runner();
+        $wifi = new WiFi(new NmcliBackend($runner));
+
+        $wifi->connectTo('BELL340', Credentials::password('p w'), new Device('wlan0'));
+
+        $this->assertCount(1, $runner->commands);
+        $this->assertSame(
+            ['-w', '10', 'device', 'wifi', 'connect', 'BELL340', 'password', 'p w', 'ifname', 'wlan0'],
+            $runner->commands[0]->arguments,
+        );
+    }
+
+    #[Test]
+    public function connect_to_detects_the_device_when_none_is_given(): void
+    {
+        $runner = $this->runner();
+        $wifi = new WiFi(new NmcliBackend($runner));
+
+        $wifi->connectTo('BELL340', Credentials::none());
+
+        $this->assertCount(2, $runner->commands);
+        $this->assertStringContainsString('-f DEVICE,TYPE device', $runner->commands[0]->describe());
+        $this->assertStringContainsString('device wifi connect BELL340', $runner->commands[1]->describe());
+    }
+
+    #[Test]
+    public function connect_to_rejects_an_empty_ssid(): void
+    {
+        $runner = $this->runner();
+        $wifi = new WiFi(new NmcliBackend($runner));
+
+        $this->expectException(InvalidArgument::class);
+
+        try {
+            $wifi->connectTo('', Credentials::none());
+        } finally {
+            $this->assertSame([], $runner->commands);
+        }
     }
 
     #[Test]

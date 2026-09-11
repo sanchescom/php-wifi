@@ -94,4 +94,31 @@ final class FakeCommandRunnerTest extends TestCase
 
         $this->assertSame('matched', $result->stdout);
     }
+
+    #[Test]
+    public function it_appends_one_raw_json_line_per_command(): void
+    {
+        $log = tempnam(sys_get_temp_dir(), 'php-wifi-log-');
+        self::assertIsString($log);
+
+        $runner = new FakeCommandRunner(['device wifi list' => ''], $log);
+        $runner->run(new Command('nmcli', ['device', 'wifi', 'list'], ['LANG' => 'C']));
+
+        try {
+            // No fixture matches this command; the point of this test is that
+            // it is logged anyway, before the "no fixture" exception fires.
+            $runner->run(new Command('nmcli', ['device', 'wifi', 'connect', 'x', 'password', 'hunter2 '], [], [5]));
+        } catch (RuntimeException) {
+        }
+
+        $lines = file($log, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+        unlink($log);
+
+        $this->assertCount(2, $lines);
+
+        $second = json_decode($lines[1], true);
+        $this->assertSame('nmcli', $second['program']);
+        $this->assertSame('hunter2 ', $second['arguments'][5]);
+        $this->assertSame([5], $second['secretIndexes']);
+    }
 }
