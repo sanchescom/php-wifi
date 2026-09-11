@@ -22,6 +22,7 @@ if (!is_file($autoload)) {
 
 require $autoload;
 
+use Sanchescom\WiFi\Backend\SupportsHotspot;
 use Sanchescom\WiFi\Exception\WiFiException;
 use Sanchescom\WiFi\Value\Band;
 use Sanchescom\WiFi\Value\Credentials;
@@ -132,7 +133,16 @@ if ($wifi !== null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     } else {
         try {
             $credentials = $password === '' ? Credentials::none() : Credentials::password($password);
-            $wifi->connectTo($ssid, $credentials);
+
+            // NetworkManager's scan list is empty while the radio runs the
+            // AP, so a join fails outright. Stop the AP and give the radio
+            // a moment to leave AP mode before it can scan and join.
+            if ($wifi->supports(SupportsHotspot::class) && $wifi->isHotspotActive()) {
+                $wifi->stopHotspot();
+                sleep(3);
+            }
+
+            $wifi->connect($ssid, $credentials);
 
             $donePath = getenv('PROVISION_DONE') ?: '/run/php-wifi-provision/done';
 

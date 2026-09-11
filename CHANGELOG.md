@@ -59,6 +59,9 @@ calling code — see [UPGRADE.md](UPGRADE.md#30--31).
 - A mistyped passphrase used to end the provisioning session, because
   NetworkManager drops the access point to attempt the join and does not
   restore it.
+- The provisioning page could not join a network while its own hotspot held
+  the radio, because NetworkManager reports an empty scan list in AP mode;
+  it now stops the hotspot first.
 
 ## [3.0.0] - 2026-09-10
 

@@ -68,25 +68,31 @@ live scan would only see the hotspot itself. `index.php` reads that cache on
 every `GET` and labels the list "Scanned before the hotspot started."; a
 missing or unreadable cache falls back to a live scan.
 
-Once a connection succeeds, `index.php` writes an empty marker file at
-`PROVISION_DONE`. `hotspot.sh` polls for that marker once a second, and as
-soon as it appears (or `PROVISION_TIMEOUT` seconds pass, or the web server
-dies) it stops the built-in PHP server, runs `wifi hotspot stop`, and exits.
+Pressing Connect stops the hotspot first: while the radio runs the access
+point, NetworkManager's own scan list is empty, so it refuses a join
+outright, no matter what the cached list on the page says. The phone loses
+the page at that moment — expected and unavoidable with a single radio —
+and `index.php` waits a moment for the radio to leave AP mode before
+scanning again and joining. Once the join succeeds, it writes an empty
+marker file at `PROVISION_DONE` and the run ends with the hotspot down.
+`hotspot.sh` polls for that marker once a second, and as soon as it appears
+(or `PROVISION_TIMEOUT` seconds pass, or the web server dies) it stops the
+built-in PHP server, runs `wifi hotspot stop` (a no-op by then), and exits.
 The unit does not restart itself afterwards — the provisioning run is meant
 to happen once per boot.
 
-## Recovering from a mistyped passphrase
+## Recovering from a wrong SSID or passphrase
 
-A single radio also means a *failed* join drops the access point: to attempt
-the join at all, NetworkManager has to tear the hotspot down first, and on a
-wrong passphrase it leaves the radio disconnected instead of putting the
-hotspot back. Without help, that would strand the person mid-setup until
+Stopping the hotspot before the join means a failed attempt — a mistyped
+passphrase, or the chosen network having moved out of range since the
+pre-hotspot scan — leaves the radio disconnected with the access point down.
+Without help, that would strand the person mid-setup until
 `PROVISION_TIMEOUT` expires. `hotspot.sh` checks `wifi hotspot status` on
 every iteration of its wait loop and, if it comes back `inactive` while
-`PROVISION_DONE` is still absent, restarts the hotspot so they can try again.
-Restarts are throttled by `RESTART_BACKOFF` and capped at `MAX_RESTARTS`
-consecutive failures, so a genuinely broken radio still ends the run instead
-of spinning.
+`PROVISION_DONE` is still absent, restarts the hotspot within a few seconds
+so the phone can rejoin it and the person can retry. Restarts are throttled
+by `RESTART_BACKOFF` and capped at `MAX_RESTARTS` consecutive failures, so a
+genuinely broken radio still ends the run instead of spinning.
 
 ## Use it from a phone
 

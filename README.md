@@ -135,17 +135,25 @@ A single Wi-Fi radio can either scan or run an access point, never both, so
 `hotspot.sh` scans first (`wifi list --unique --json`) and caches the result
 to `PROVISION_CACHE` *before* starting the hotspot. `index.php` reads that
 cache on every `GET` and labels the list "Scanned before the hotspot
-started."; a missing or unreadable cache falls back to a live scan. The
-`POST` branch always connects through `WiFi::connectTo()` rather than
-`connect()`, since by then the radio is running the hotspot and cannot scan
-to resolve the SSID itself.
+started."; a missing or unreadable cache falls back to a live scan.
+
+Pressing Connect stops the hotspot before joining: while the radio is
+running the access point, NetworkManager's own scan list is empty, so it
+refuses a join outright no matter what the cached list shows. The phone
+loses the page at that point — expected and unavoidable with one radio —
+and `index.php` waits a moment for the radio to leave AP mode, then joins
+through `WiFi::connect()`, which scans again to resolve the SSID (turning a
+typo into `NetworkNotFound` instead of an opaque `nmcli` exit code).
 
 Once a connection succeeds, `index.php` writes an empty marker file at
-`PROVISION_DONE`. `hotspot.sh` polls for that marker once a second, for at
-most `PROVISION_TIMEOUT` seconds (also giving up if the web server dies),
-then stops the built-in PHP server, runs `wifi hotspot stop`, and exits —
-the unit ends itself once provisioning is done instead of running
-indefinitely.
+`PROVISION_DONE` and the run ends with the hotspot down. `hotspot.sh` polls
+for that marker once a second, for at most `PROVISION_TIMEOUT` seconds (also
+giving up if the web server dies), then stops the built-in PHP server, runs
+`wifi hotspot stop` (a no-op by then), and exits — the unit ends itself once
+provisioning is done instead of running indefinitely. If the join fails
+instead, the hotspot is left down; `hotspot.sh`'s wait loop notices within a
+few seconds and brings it back so the phone can rejoin and the person can
+retry.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -382,7 +390,7 @@ autoloaded in a `composer require --no-dev` install.
 | `new WiFi(Backend $backend)` | `self` | Construct directly over a given backend (tests, custom runners) |
 | `scan()` | `NetworkCollection` | Scan for surrounding networks |
 | `connect(Network\|string $network, Credentials $credentials, ?Device $device = null)` | `void` | Connect; a hidden/redacted `Network` throws `InvalidArgument` — pass the SSID as a string instead |
-| `connectTo(string $ssid, Credentials $credentials, ?Device $device = null)` | `void` | Join `$ssid` without scanning first — for when the radio cannot scan, e.g. while it is running the provisioning hotspot |
+| `connectTo(string $ssid, Credentials $credentials, ?Device $device = null)` | `void` | Join `$ssid` without scanning first — for callers who already know the SSID and want to skip the scan (custom backends, scripted flows); a wrong SSID then surfaces as the backend's own `CommandFailed` rather than `NetworkNotFound` |
 | `disconnect(?Device $device = null)` | `void` | Disconnect |
 | `device()` | `Device` | The detected wireless device |
 | `knownNetworks()` | `list<KnownNetwork>` | Saved connections (Linux only; `UnsupportedOperation` elsewhere) |
