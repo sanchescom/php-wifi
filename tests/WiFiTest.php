@@ -37,6 +37,9 @@ final class WiFiTest extends TestCase
         return new FakeCommandRunner([
             'connection show --active' => "Hotspot\n",
             'connection show' => self::LINUX_FIXTURES . '/Connections.txt',
+            'connection show BELL340' => "BELL340\n",
+            'connection show Cafe: Corner' => "Cafe Corner Wifi\n",
+            'connection show Hotspot' => "femus-setup\n",
             'connection delete' => '',
             'connection down' => '',
             'device wifi hotspot' => '',

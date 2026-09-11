@@ -97,7 +97,35 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
 
         $result = $this->run($command);
 
-        return (new ConnectionListParser())->parse($result->stdout);
+        return array_map(
+            fn (KnownNetwork $known): KnownNetwork => new KnownNetwork(
+                $known->name,
+                $this->resolveSsid($known->name) ?? $known->ssid,
+                $known->device,
+                $known->active,
+            ),
+            (new ConnectionListParser())->parse($result->stdout),
+        );
+    }
+
+    /** The list mode of `nmcli connection show` cannot emit 802-11-wireless.ssid; one call per profile can. */
+    private function resolveSsid(string $name): ?string
+    {
+        $command = new Command(
+            'nmcli',
+            ['-g', '802-11-wireless.ssid', 'connection', 'show', $name],
+            ['LANG' => 'C'],
+        );
+
+        try {
+            $ssid = trim($this->run($command)->stdout);
+        } catch (PermissionDenied $exception) {
+            throw $exception;
+        } catch (CommandFailed) {
+            return null;
+        }
+
+        return $ssid === '' ? null : $ssid;
     }
 
     public function forget(string $ssidOrName): void
