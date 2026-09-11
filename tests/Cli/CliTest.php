@@ -66,6 +66,69 @@ final class CliTest extends TestCase
     }
 
     #[Test]
+    public function list_json_prints_one_object_per_network(): void
+    {
+        $result = $this->runCli(['list', '--unique', '--json'], self::LINUX_FIXTURES, 'Linux');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = json_decode($result['stdout'], true, flags: JSON_THROW_ON_ERROR);
+        $this->assertCount(4, $rows);
+        $this->assertSame('BELL340', $rows[0]['ssid']);
+        $this->assertSame('2.4', $rows[0]['band']);
+        $this->assertSame(2412, $rows[0]['frequency']);
+        $this->assertFalse($rows[0]['connected']);
+        $this->assertArrayHasKey('securityFlags', $rows[0]);
+    }
+
+    #[Test]
+    public function list_json_marks_a_hidden_network_row(): void
+    {
+        $result = $this->runCli(['list', '--json'], self::LINUX_FIXTURES, 'Linux');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = json_decode($result['stdout'], true, flags: JSON_THROW_ON_ERROR);
+        $hidden = array_values(array_filter($rows, static fn (array $row): bool => $row['ssid'] === ''));
+
+        $this->assertCount(1, $hidden);
+        $this->assertTrue($hidden[0]['hidden']);
+    }
+
+    #[Test]
+    public function list_json_uses_null_for_fields_the_platform_does_not_report(): void
+    {
+        // On macOS, system_profiler never reports a BSSID, and a network
+        // with no "Signal / Noise" line yields no Signal value either.
+        $result = $this->runCli(['list', '--json'], self::DARWIN_FIXTURES, 'Darwin');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+
+        /** @var list<array<string, mixed>> $rows */
+        $rows = json_decode($result['stdout'], true, flags: JSON_THROW_ON_ERROR);
+        $offshore = array_values(array_filter(
+            $rows,
+            static fn (array $row): bool => $row['ssid'] === 'Offshore View Marine Services',
+        ));
+
+        $this->assertCount(1, $offshore);
+        $this->assertNull($offshore[0]['bssid']);
+        $this->assertNull($offshore[0]['quality']);
+        $this->assertNull($offshore[0]['dbm']);
+    }
+
+    #[Test]
+    public function list_connected_json_prints_an_empty_array_when_nothing_is_connected(): void
+    {
+        $result = $this->runCli(['list', '--connected', '--json'], self::LINUX_FIXTURES, 'Linux');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+        $this->assertSame('[]', trim($result['stdout']));
+    }
+
+    #[Test]
     public function hotspot_start_with_a_short_password_fails_validation_on_linux(): void
     {
         $result = $this->runCli(

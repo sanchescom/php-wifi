@@ -48,6 +48,7 @@ final class WiFiCli extends CLI
         $options->registerCommand('list', 'Show surrounding wifi networks');
         $options->registerOption('unique', 'One row per SSID (strongest radio)', 'u', false, 'list');
         $options->registerOption('connected', 'Show only connected networks', 'c', false, 'list');
+        $options->registerOption('json', 'Print JSON instead of a table', null, false, 'list');
 
         $options->registerCommand('connect', 'Connect to a wifi network');
         $options->registerOption('ssid', 'SSID of the network', null, true, 'connect');
@@ -154,6 +155,12 @@ final class WiFiCli extends CLI
             fwrite(STDERR, $this->hiddenSsidHint($networks) . PHP_EOL);
         }
 
+        if ($options->getOpt('json')) {
+            $this->printListJson($networks);
+
+            return;
+        }
+
         $table = new ConsoleTable();
         $table->setHeaders(
             ['SSID', 'BSSID', 'Channel', 'Band', 'Quality', 'dBm', 'Frequency', 'Connected', 'Security'],
@@ -175,6 +182,38 @@ final class WiFiCli extends CLI
 
         $table->hideBorder();
         $table->display();
+    }
+
+    /**
+     * Prints one JSON object per network to stdout, pretty-printed with a
+     * trailing newline. `JSON_THROW_ON_ERROR` turns an encoding failure into
+     * an exception the CLI maps to exit 1, rather than requiring a `false`
+     * check on `json_encode`'s return value.
+     */
+    private function printListJson(NetworkCollection $networks): void
+    {
+        $rows = [];
+
+        foreach ($networks as $network) {
+            $rows[] = [
+                'ssid' => $network->ssid,
+                'hidden' => $network->ssidHidden,
+                'bssid' => $network->bssid !== null ? (string) $network->bssid : null,
+                'channel' => $network->channel,
+                'band' => $network->band?->value,
+                'frequency' => $network->frequency,
+                'quality' => $network->signal !== null ? (int) round($network->signal->quality) : null,
+                'dbm' => $network->signal !== null ? (int) round($network->signal->dbm) : null,
+                'security' => $network->security->value,
+                'securityFlags' => $network->securityFlags,
+                'connected' => $network->connected,
+            ];
+        }
+
+        echo json_encode(
+            $rows,
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        ) . PHP_EOL;
     }
 
     /**
