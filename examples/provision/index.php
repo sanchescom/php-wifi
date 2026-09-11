@@ -94,7 +94,7 @@ try {
     $wifi = null;
 }
 
-if ($wifi !== null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+if ($wifi !== null) {
     $cachePath = getenv('PROVISION_CACHE') ?: '/run/php-wifi-provision/networks.json';
     $networks = ($readCache)($cachePath);
     $fromCache = $networks !== null;
@@ -133,13 +133,26 @@ if ($wifi !== null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         try {
             $credentials = $password === '' ? Credentials::none() : Credentials::password($password);
             $wifi->connectTo($ssid, $credentials);
-            $connected = ['device' => $wifi->device()->name, 'ssid' => $ssid];
 
             $donePath = getenv('PROVISION_DONE') ?: '/run/php-wifi-provision/done';
 
             if (@file_put_contents($donePath, '') === false) {
                 error_log(sprintf('provision: cannot write the done marker "%s"', $donePath));
             }
+
+            $device = '(unknown device)';
+
+            try {
+                $device = $wifi->device()->name;
+            } catch (Throwable $exception) {
+                error_log(sprintf(
+                    'provision device lookup failed: %s: %s',
+                    $exception::class,
+                    $exception->getMessage(),
+                ));
+            }
+
+            $connected = ['device' => $device, 'ssid' => $ssid];
         } catch (WiFiException $exception) {
             $connectError = $exception->getMessage();
         } catch (Throwable $exception) {
