@@ -108,7 +108,10 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         );
     }
 
-    /** The list mode of `nmcli connection show` cannot emit 802-11-wireless.ssid; one call per profile can. */
+    /**
+     * The list mode of `nmcli connection show` cannot emit 802-11-wireless.ssid; one call per profile can.
+     * Called once per profile from knownNetworks(), this makes that method cost N+1 nmcli commands for N profiles.
+     */
     private function resolveSsid(string $name): ?string
     {
         $command = new Command(

@@ -2,6 +2,55 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.1.0] - 2026-09-11
+
+A small, additive release on top of 3.0.0. Nothing in this release changes
+calling code — see [UPGRADE.md](UPGRADE.md#30--31).
+
+### Added
+- **`WiFi::connectTo(string $ssid, Credentials $credentials, ?Device $device = null)`**:
+  joins a network without scanning first. `connect()` still scans, to resolve
+  an SSID and to raise `NetworkNotFound` on a typo; `connectTo()` hands the
+  SSID straight to the backend, for the case where the radio cannot scan
+  because it is already running the provisioning hotspot.
+- **`--password-file=<path>` / `--password-file=-`** for `connect` and
+  `hotspot start`: reads the password from a file or from stdin, stripping
+  exactly one trailing newline. Mutually exclusive with `--password`; an
+  empty file, an empty value, a directory path, or a tty on stdin are each
+  rejected with a clear message and exit `1`.
+- **`wifi list --json`**: one JSON object per network (`ssid`, `hidden`,
+  `bssid`, `channel`, `band`, `frequency`, `quality`, `dbm`, `security`,
+  `securityFlags`, `connected`), pretty-printed to stdout. `--unique` and
+  `--connected` apply first, as for the table; the hidden-SSID hint still
+  goes to STDERR.
+- **Cached scan for the provisioning demo**: `hotspot.sh` runs `wifi list
+  --unique --json` before starting the hotspot and caches the result
+  (`PROVISION_CACHE`); the demo page serves that cache instead of a live
+  scan, which would otherwise see only the hotspot itself.
+- **A self-stopping provisioning unit**: `index.php` writes a done marker
+  (`PROVISION_DONE`) once a connection succeeds; `hotspot.sh` polls for it,
+  for at most `PROVISION_TIMEOUT` seconds, then stops the web server and the
+  hotspot and exits `0` (so `Restart=on-failure` does not bring it back).
+
+### Changed
+- **`KnownNetwork::$ssid`** now holds the real SSID, resolved with one extra
+  `nmcli -g 802-11-wireless.ssid connection show <name>` call per profile;
+  `$name` remains the connection name. A failed lookup falls back to the
+  connection name rather than failing the whole list.
+- **`NmcliBackend::knownNetworks()`** therefore costs N+1 `nmcli` commands
+  for N wireless profiles, not one.
+- The provisioning demo connects through `connectTo()` instead of `connect()`,
+  since the radio is already running an access point at that point.
+
+### Fixed
+- The provisioning demo could only ever see its own hotspot in the network
+  list, because a single radio cannot scan while running an access point.
+- The provisioning hotspot and web server outlived a successful setup —
+  nothing stopped the unit once the device had joined the real network.
+- `hotspot.sh` passed the hotspot password as a plain argv value, visible to
+  any other user on the box via `ps`; it now pipes it through
+  `--password-file=-`.
+
 ## [3.0.0] - 2026-09-10
 
 A ground-up rewrite. See [UPGRADE.md](UPGRADE.md) for the full "2.x → 3.0"
