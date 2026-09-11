@@ -202,6 +202,15 @@ final class CliTest extends TestCase
         $dataLines = $this->tableDataLines($this->lines($result['stdout']));
 
         $this->assertCount(3, $dataLines);
+
+        // The connection name and the resolved SSID differ for the hotspot
+        // profile (map.json resolves "Hotspot" to "femus-setup"), so a
+        // regression that left $ssid holding the raw Connections.txt name
+        // would still pass a row-count-only assertion.
+        $this->assertMatchesRegularExpression('/^\s*Hotspot\s+femus-setup\s/m', $result['stdout']);
+
+        // An ordinary profile where the connection name and SSID coincide.
+        $this->assertMatchesRegularExpression('/^\s*BELL340\s+BELL340\s/m', $result['stdout']);
     }
 
     #[Test]

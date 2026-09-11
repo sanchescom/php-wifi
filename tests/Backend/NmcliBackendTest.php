@@ -47,12 +47,6 @@ final class NmcliBackendTest extends TestCase
         ]);
     }
 
-    /** Same fixtures as runner(), named for the tests that exercise SSID resolution. */
-    private function runnerWithKnownNetworks(): FakeCommandRunner
-    {
-        return $this->runner();
-    }
-
     #[Test]
     public function scan_lists_networks_via_the_exact_nmcli_command(): void
     {
@@ -177,7 +171,7 @@ final class NmcliBackendTest extends TestCase
     #[Test]
     public function known_networks_resolve_their_real_ssid(): void
     {
-        $runner = $this->runnerWithKnownNetworks();
+        $runner = $this->runner();
         $networks = (new NmcliBackend($runner))->knownNetworks();
 
         $this->assertCount(3, $networks);
