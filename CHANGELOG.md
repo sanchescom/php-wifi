@@ -56,6 +56,9 @@ calling code — see [UPGRADE.md](UPGRADE.md#30--31).
   failed, because that tool exits 0 and only prints the reason (`Could not
   find network …` or `Failed to join network …`) on stdout; `connect()` now
   inspects that output and raises `NetworkNotFound` or `CommandFailed`.
+- A mistyped passphrase used to end the provisioning session, because
+  NetworkManager drops the access point to attempt the join and does not
+  restore it.
 
 ## [3.0.0] - 2026-09-10
 

@@ -40,6 +40,8 @@ Optional environment variables, all with sane defaults:
 | `PROVISION_CACHE`   | `/run/php-wifi-provision/networks.json`   | Where the pre-hotspot scan is cached as JSON.          |
 | `PROVISION_DONE`    | `/run/php-wifi-provision/done`            | Marker file created once a connection succeeds.        |
 | `PROVISION_TIMEOUT` | `900`                                      | Seconds `hotspot.sh` waits for `PROVISION_DONE` before giving up. |
+| `RESTART_BACKOFF`   | `5`                                         | Seconds to wait between hotspot restart attempts (see below). |
+| `MAX_RESTARTS`      | `5`                                         | Consecutive failed restart attempts before `hotspot.sh` gives up. |
 
 `RuntimeDirectory=php-wifi-provision` in `provision.service` makes systemd
 create and clean up `/run/php-wifi-provision` automatically, so these two
@@ -72,6 +74,19 @@ soon as it appears (or `PROVISION_TIMEOUT` seconds pass, or the web server
 dies) it stops the built-in PHP server, runs `wifi hotspot stop`, and exits.
 The unit does not restart itself afterwards — the provisioning run is meant
 to happen once per boot.
+
+## Recovering from a mistyped passphrase
+
+A single radio also means a *failed* join drops the access point: to attempt
+the join at all, NetworkManager has to tear the hotspot down first, and on a
+wrong passphrase it leaves the radio disconnected instead of putting the
+hotspot back. Without help, that would strand the person mid-setup until
+`PROVISION_TIMEOUT` expires. `hotspot.sh` checks `wifi hotspot status` on
+every iteration of its wait loop and, if it comes back `inactive` while
+`PROVISION_DONE` is still absent, restarts the hotspot so they can try again.
+Restarts are throttled by `RESTART_BACKOFF` and capped at `MAX_RESTARTS`
+consecutive failures, so a genuinely broken radio still ends the run instead
+of spinning.
 
 ## Use it from a phone
 
