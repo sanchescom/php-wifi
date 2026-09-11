@@ -1,5 +1,26 @@
 # Upgrade Guide
 
+## 3.0 → 3.1
+
+Nothing to change in calling code — 3.1 is additive. Two things worth
+knowing:
+
+- **`KnownNetwork::$ssid` now means the SSID.** `knownNetworks()` used to
+  return the connection name in both `$name` and `$ssid`, because `nmcli
+  connection show` in list mode cannot emit the SSID. 3.1 resolves the real
+  SSID with one extra `nmcli -g 802-11-wireless.ssid connection show <name>`
+  call per profile, so `$name` and `$ssid` now differ for a hotspot profile
+  saved under a name like `Hotspot`. If code compared `$known->name` against
+  `$known->ssid` to detect that case, it no longer matches — compare against
+  the SSID you expect instead. A failed per-profile lookup falls back to the
+  connection name, same as before.
+- **`WiFi::connectTo(string $ssid, Credentials $credentials, ?Device $device = null)`**
+  is new: it joins `$ssid` without scanning first. Existing calls to
+  `connect()` do not need to change — it still scans, to resolve an SSID and
+  to raise `NetworkNotFound` on a typo. Use `connectTo()` only where a scan
+  is impossible, such as while the radio is running the provisioning
+  hotspot.
+
 ## 2.x → 3.0
 
 3.0 replaces the whole 2.x surface — every `WiFi::` static method, the

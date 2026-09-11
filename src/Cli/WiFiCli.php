@@ -48,11 +48,19 @@ final class WiFiCli extends CLI
         $options->registerCommand('list', 'Show surrounding wifi networks');
         $options->registerOption('unique', 'One row per SSID (strongest radio)', 'u', false, 'list');
         $options->registerOption('connected', 'Show only connected networks', 'c', false, 'list');
+        $options->registerOption('json', 'Print JSON instead of a table', null, false, 'list');
 
         $options->registerCommand('connect', 'Connect to a wifi network');
         $options->registerOption('ssid', 'SSID of the network', null, true, 'connect');
         $options->registerOption('bssid', 'BSSID of the network', null, true, 'connect');
         $options->registerOption('password', 'Password of the network', null, true, 'connect');
+        $options->registerOption(
+            'password-file',
+            'Read the password from a file, or from stdin when given "-"',
+            null,
+            true,
+            'connect',
+        );
         $options->registerOption(
             'device',
             'Which device to use (auto-detected when omitted)',
@@ -84,6 +92,13 @@ final class WiFiCli extends CLI
         $options->registerArgument('action', 'start, stop or status', false, 'hotspot');
         $options->registerOption('ssid', 'SSID of the hotspot', null, true, 'hotspot');
         $options->registerOption('password', 'Password of the hotspot', null, true, 'hotspot');
+        $options->registerOption(
+            'password-file',
+            'Read the password from a file, or from stdin when given "-"',
+            null,
+            true,
+            'hotspot',
+        );
         $options->registerOption('band', 'Radio band: 2.4 or 5', null, true, 'hotspot');
         $options->registerOption(
             'device',
@@ -140,6 +155,12 @@ final class WiFiCli extends CLI
             fwrite(STDERR, $this->hiddenSsidHint($networks) . PHP_EOL);
         }
 
+        if ($options->getOpt('json')) {
+            $this->printListJson($networks);
+
+            return;
+        }
+
         $table = new ConsoleTable();
         $table->setHeaders(
             ['SSID', 'BSSID', 'Channel', 'Band', 'Quality', 'dBm', 'Frequency', 'Connected', 'Security'],
@@ -161,6 +182,38 @@ final class WiFiCli extends CLI
 
         $table->hideBorder();
         $table->display();
+    }
+
+    /**
+     * Prints one JSON object per network to stdout, pretty-printed with a
+     * trailing newline. `JSON_THROW_ON_ERROR` turns an encoding failure into
+     * an exception the CLI maps to exit 1, rather than requiring a `false`
+     * check on `json_encode`'s return value.
+     */
+    private function printListJson(NetworkCollection $networks): void
+    {
+        $rows = [];
+
+        foreach ($networks as $network) {
+            $rows[] = [
+                'ssid' => $network->ssid,
+                'hidden' => $network->ssidHidden,
+                'bssid' => $network->bssid !== null ? (string) $network->bssid : null,
+                'channel' => $network->channel,
+                'band' => $network->band?->value,
+                'frequency' => $network->frequency,
+                'quality' => $network->signal !== null ? (int) round($network->signal->quality) : null,
+                'dbm' => $network->signal !== null ? (int) round($network->signal->dbm) : null,
+                'security' => $network->security->value,
+                'securityFlags' => $network->securityFlags,
+                'connected' => $network->connected,
+            ];
+        }
+
+        echo json_encode(
+            $rows,
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        ) . PHP_EOL;
     }
 
     /**
@@ -285,7 +338,7 @@ final class WiFiCli extends CLI
             throw new InvalidArgument('hotspot start: --ssid is required.');
         }
 
-        $passwordOpt = $this->optString($options, 'password');
+        $passwordOpt = $this->resolvePassword($options);
 
         [$device, $auto] = $this->resolveDevice($options);
 
@@ -328,9 +381,64 @@ final class WiFiCli extends CLI
 
     private function resolveCredentials(Options $options): Credentials
     {
-        $passwordOpt = $this->optString($options, 'password');
+        $passwordOpt = $this->resolvePassword($options);
 
         return $passwordOpt !== false ? Credentials::password($passwordOpt) : Credentials::none();
+    }
+
+    /**
+     * Resolves --password / --password-file for both connect and hotspot
+     * start. `false` means no password was given at all (an open network for
+     * connect; an empty passphrase, rejected by HotspotConfig, for hotspot).
+     */
+    private function resolvePassword(Options $options): string|false
+    {
+        $inline = $this->optString($options, 'password');
+        $file = $this->optString($options, 'password-file');
+
+        if ($inline !== false && $file !== false) {
+            throw new InvalidArgument('Use --password or --password-file, not both.');
+        }
+
+        if ($inline !== false) {
+            return $inline;
+        }
+
+        if ($file === false) {
+            return false;
+        }
+
+        if ($file === '-') {
+            if (stream_isatty(STDIN)) {
+                throw new InvalidArgument('--password-file=- expects the password on stdin.');
+            }
+
+            $contents = stream_get_contents(STDIN);
+        } else {
+            if ($file === '') {
+                throw new InvalidArgument('--password-file needs a path, or "-" to read the password from stdin.');
+            }
+
+            if (is_dir($file)) {
+                throw new InvalidArgument(sprintf('The password file "%s" is a directory.', $file));
+            }
+
+            $contents = @file_get_contents($file);
+        }
+
+        if ($contents === false) {
+            throw new InvalidArgument(sprintf('Cannot read the password file "%s".', $file));
+        }
+
+        $password = preg_replace('/\r?\n$/', '', $contents) ?? $contents;
+
+        if ($password === '') {
+            throw new InvalidArgument(
+                $file === '-' ? 'No password arrived on stdin.' : sprintf('The password file "%s" is empty.', $file),
+            );
+        }
+
+        return $password;
     }
 
     /**
@@ -425,7 +533,11 @@ final class WiFiCli extends CLI
             exit(1);
         }
 
-        $runner = new FakeCommandRunner(self::loadFixtureMap($fakeRunnerDir));
+        $logPath = getenv('WIFI_FAKE_LOG');
+        $runner = new FakeCommandRunner(
+            self::loadFixtureMap($fakeRunnerDir),
+            $logPath === false || $logPath === '' ? null : $logPath,
+        );
 
         return new WiFi(BackendFactory::forOs(Os::from($fakeOsName), $runner));
     }

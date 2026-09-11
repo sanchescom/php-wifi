@@ -50,6 +50,25 @@ final class WiFi
         }
 
         $ssid = $network instanceof Network ? $network->ssid : $this->scan()->bySsid($network)->ssid;
+
+        $this->connectTo($ssid, $credentials, $device);
+    }
+
+    /**
+     * Join $ssid without scanning first.
+     *
+     * connect() scans to resolve the SSID and to raise NetworkNotFound for a
+     * typo. That is impossible while the radio runs an access point — a
+     * single-radio Raspberry Pi serving its own provisioning page — so this
+     * variant hands the SSID straight to the backend, and a wrong SSID
+     * surfaces as the backend's own CommandFailed instead.
+     */
+    public function connectTo(string $ssid, Credentials $credentials, ?Device $device = null): void
+    {
+        if ($ssid === '') {
+            throw InvalidArgument::emptySsid();
+        }
+
         $device ??= $this->backend->detectDevice();
 
         $this->backend->connect($ssid, $credentials, $device);

@@ -18,6 +18,10 @@ use Sanchescom\WiFi\Shell\CommandRunner;
  * fixture is either a file path or an array {output: string|path, exit?:
  * int, stderr?: string}. Lines starting with "# SYNTHETIC:" are stripped
  * from file fixtures.
+ *
+ * Test-only: when $logPath is set, every received Command is appended to it
+ * as one raw JSON line, unmasked — including secret arguments in clear
+ * text. Never point this at a path outside a test's own temporary storage.
  */
 final class FakeCommandRunner implements CommandRunner
 {
@@ -25,13 +29,27 @@ final class FakeCommandRunner implements CommandRunner
     public array $commands = [];
 
     /** @param array<string, string|array{output: string, exit?: int, stderr?: string}> $fixtures */
-    public function __construct(private readonly array $fixtures)
+    public function __construct(private readonly array $fixtures, private readonly ?string $logPath = null)
     {
     }
 
     public function run(Command $command): CommandResult
     {
         $this->commands[] = $command;
+
+        if ($this->logPath !== null) {
+            file_put_contents(
+                $this->logPath,
+                json_encode([
+                    'program' => $command->program,
+                    'arguments' => $command->arguments,
+                    'env' => $command->env,
+                    'secretIndexes' => $command->secretIndexes,
+                ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n",
+                FILE_APPEND,
+            );
+        }
+
         $described = $command->describe();
 
         /** @var list<int|string> $needles */

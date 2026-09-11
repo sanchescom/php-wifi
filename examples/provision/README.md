@@ -33,6 +33,20 @@ running as `www-data` unless polkit grants it. Install the polkit rule from
 the [Linux — Privileges (polkit)](../../README.md#linux--privileges-polkit)
 section of the project's main README.md before starting the service.
 
+Optional environment variables, all with sane defaults:
+
+| Variable            | Default                                  | Meaning                                                |
+|---------------------|-------------------------------------------|--------------------------------------------------------|
+| `PROVISION_CACHE`   | `/run/php-wifi-provision/networks.json`   | Where the pre-hotspot scan is cached as JSON.          |
+| `PROVISION_DONE`    | `/run/php-wifi-provision/done`            | Marker file created once a connection succeeds.        |
+| `PROVISION_TIMEOUT` | `900`                                      | Seconds `hotspot.sh` waits for `PROVISION_DONE` before giving up. |
+| `RESTART_BACKOFF`   | `5`                                         | Seconds to wait between hotspot restart attempts (see below). |
+| `MAX_RESTARTS`      | `5`                                         | Consecutive failed restart attempts before `hotspot.sh` gives up. |
+
+`RuntimeDirectory=php-wifi-provision` in `provision.service` makes systemd
+create and clean up `/run/php-wifi-provision` automatically, so these two
+files never need to be provisioned by hand.
+
 ## Run
 
 ```bash
@@ -43,6 +57,42 @@ sudo systemctl enable --now provision
 
 This starts a `femus-setup` hotspot and serves the provisioning page on it
 at `http://10.42.0.1:8080/` (NetworkManager's default hotspot address).
+
+## How it ends itself
+
+A single Wi-Fi radio can either scan or run an access point, never both, so
+`hotspot.sh` scans first (`wifi list --unique --json`) and caches the result
+to `PROVISION_CACHE` before starting the hotspot — that is why the page can
+still show the neighbouring networks even though, once the hotspot is up, a
+live scan would only see the hotspot itself. `index.php` reads that cache on
+every `GET` and labels the list "Scanned before the hotspot started."; a
+missing or unreadable cache falls back to a live scan.
+
+Pressing Connect stops the hotspot first: while the radio runs the access
+point, NetworkManager's own scan list is empty, so it refuses a join
+outright, no matter what the cached list on the page says. The phone loses
+the page at that moment — expected and unavoidable with a single radio —
+and `index.php` waits a moment for the radio to leave AP mode before
+scanning again and joining. Once the join succeeds, it writes an empty
+marker file at `PROVISION_DONE` and the run ends with the hotspot down.
+`hotspot.sh` polls for that marker once a second, and as soon as it appears
+(or `PROVISION_TIMEOUT` seconds pass, or the web server dies) it stops the
+built-in PHP server, runs `wifi hotspot stop` (a no-op by then), and exits.
+The unit does not restart itself afterwards — the provisioning run is meant
+to happen once per boot.
+
+## Recovering from a wrong SSID or passphrase
+
+Stopping the hotspot before the join means a failed attempt — a mistyped
+passphrase, or the chosen network having moved out of range since the
+pre-hotspot scan — leaves the radio disconnected with the access point down.
+Without help, that would strand the person mid-setup until
+`PROVISION_TIMEOUT` expires. `hotspot.sh` checks `wifi hotspot status` on
+every iteration of its wait loop and, if it comes back `inactive` while
+`PROVISION_DONE` is still absent, restarts the hotspot within a few seconds
+so the phone can rejoin it and the person can retry. Restarts are throttled
+by `RESTART_BACKOFF` and capped at `MAX_RESTARTS` consecutive failures, so a
+genuinely broken radio still ends the run instead of spinning.
 
 ## Use it from a phone
 

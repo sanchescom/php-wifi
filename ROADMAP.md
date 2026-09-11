@@ -13,8 +13,21 @@ See CHANGELOG.md and UPGRADE.md. The object API, value objects, known
 networks, hotspot support and the provisioning demo are the 3.0 release;
 nothing from the old "3.0" list on this page is left open.
 
-## 3.1 candidates
+## 3.1 — shipped
 
+See CHANGELOG.md and UPGRADE.md. `WiFi::connectTo()`, `--password-file`/stdin
+for the CLI, `wifi list --json`, real SSIDs for known networks, and a
+provisioning demo that caches its pre-hotspot scan and stops itself are the
+3.1 release; nothing from the old "3.1 candidates" list on this page is left
+open.
+
+## 3.2 candidates
+
+- **Argv-free passphrase for `nmcli` on Linux.** `--password-file` keeps the
+  passphrase off the `wifi` command line, but `NmcliBackend` still hands it
+  to `nmcli` as a plain argument, so `ps` can catch it for that instant. Feed
+  it via `nmcli`'s stdin instead, or write a connection profile the way the
+  Windows backend already does, to actually close that window.
 - **`iw`/`wpa_cli` backend.** A Linux fallback for images without
   NetworkManager: some minimal Raspberry Pi OS Lite installs and most
   embedded distros run `wpa_supplicant` directly, with no `nmcli` to drive.
@@ -22,17 +35,6 @@ nothing from the old "3.0" list on this page is left open.
   connection drops, automatically start the provisioning hotspot instead
   of requiring a manual `wifi hotspot start` over a connection that is
   already gone.
-- **Scan-then-cache for the provisioning demo.** The Pi has one radio;
-  while it runs the setup hotspot, `nmcli device wifi list` sees only the
-  hotspot itself — confirmed live (`docs/verified-on.md`). A real
-  provisioning flow scans the surrounding networks *before* starting the
-  hotspot and serves that cached list from the page instead.
-- **Per-connection SSID lookup for `KnownNetwork`.** `nmcli connection
-  show` in list mode cannot emit `802-11-wireless.ssid`, so
-  `KnownNetwork::$ssid` is really the connection *name* — a saved hotspot
-  profile shows `Hotspot`, not its real SSID. A per-connection `nmcli
-  connection show <name>` call could recover the real SSID, at the cost of
-  one extra command per known network returned.
 - **macOS CoreWLAN helper — declined for now.** The only way to get real
   SSIDs and BSSIDs on macOS 14+ is a small signed Swift helper that talks
   to CoreWLAN and returns JSON; that is a different, platform-specific
@@ -41,15 +43,6 @@ nothing from the old "3.0" list on this page is left open.
   `phplucidframe/console-table` into every install of the library.
   Splitting it into its own package would remove that, but no user has
   asked, and it would cost a second release process for a low-traffic CLI.
-- **`--password-file`/stdin for the CLI.** `connect`/`hotspot start`
-  currently take `--password` as a plain argv value, which is visible to
-  any other user on the box via `ps`. Accept a `--password-file` path or a
-  password piped on stdin as an alternative.
-- **A self-stopping provisioning unit.** `hotspot.sh`'s `php -S` keeps
-  serving — and the temporary hotspot stays up — after the device has
-  joined the real network; nothing stops the unit automatically. Have the
-  provisioning page (or a watcher) stop the `provision` systemd unit once
-  the target network has been joined successfully.
 
 ## Decisions the maintainer has to make
 
@@ -57,5 +50,5 @@ The macOS question — ship the best `system_profiler` can do and say so, or
 ship a signed CoreWLAN helper — was decided for 3.0 and stays decided:
 best-effort, no helper, until a user actually asks for real SSIDs and
 BSSIDs on macOS. No other decision is open right now; everything else
-under "3.1 candidates" above is a scoping call the maintainer can make
+under "3.2 candidates" above is a scoping call the maintainer can make
 independently once there is real demand for it.

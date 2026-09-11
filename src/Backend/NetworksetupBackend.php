@@ -6,6 +6,7 @@ namespace Sanchescom\WiFi\Backend;
 
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
+use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Parser\Darwin\AirportParser;
 use Sanchescom\WiFi\Parser\Darwin\HardwarePortsParser;
@@ -39,6 +40,14 @@ final class NetworksetupBackend implements Backend
         return new NetworkCollection($parser->parse($result->stdout));
     }
 
+    /**
+     * `networksetup -setairportnetwork` exits 0 even when the join failed,
+     * printing the reason on stdout instead: `Could not find network
+     * <ssid>.` for an unknown SSID, or `Failed to join network <ssid>.`
+     * (with an `apple80211API.error` line) for, e.g., a wrong passphrase.
+     * The exit code alone is therefore not enough — the output has to be
+     * inspected too.
+     */
     public function connect(string $ssid, Credentials $credentials, Device $device): void
     {
         $arguments = ['-setairportnetwork', $device->name, $ssid];
@@ -49,7 +58,20 @@ final class NetworksetupBackend implements Backend
             $arguments[] = $credentials->password;
         }
 
-        $this->run(new Command('networksetup', $arguments, secretIndexes: $secretIndexes));
+        $command = new Command('networksetup', $arguments, secretIndexes: $secretIndexes);
+        $result = $this->run($command);
+        $output = $result->stderr . "\n" . $result->stdout;
+
+        if (preg_match('/^Could not find network .*\.$/m', $output) === 1) {
+            throw NetworkNotFound::bySsid($ssid);
+        }
+
+        if (
+            preg_match('/^Failed to join network /m', $output) === 1
+            || str_contains($output, 'apple80211API.error')
+        ) {
+            throw CommandFailed::despiteZeroExit($command, $result, Os::Darwin);
+        }
     }
 
     /**

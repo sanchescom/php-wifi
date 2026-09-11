@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Sanchescom\WiFi\Backend\NetworksetupBackend;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
+use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Shell\Command;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
@@ -170,5 +171,88 @@ final class NetworksetupBackendTest extends TestCase
             $this->assertStringContainsString('***', $e->getMessage());
             $this->assertStringNotContainsString('hunter2', $e->getMessage());
         }
+    }
+
+    #[Test]
+    public function connect_throws_network_not_found_when_networksetup_exits_zero_but_could_not_find_the_ssid(): void
+    {
+        $runner = new FakeCommandRunner([
+            '-setairportnetwork' => [
+                'output' => "Could not find network NoSuchNetXYZ.\n",
+                'exit' => 0,
+            ],
+        ]);
+        $backend = new NetworksetupBackend($runner);
+
+        try {
+            $backend->connect('NoSuchNetXYZ', Credentials::none(), new Device('en0'));
+            $this->fail('Expected NetworkNotFound to be thrown.');
+        } catch (NetworkNotFound $e) {
+            $this->assertStringContainsString('NoSuchNetXYZ', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function connect_throws_command_failed_when_networksetup_exits_zero_but_the_join_failed(): void
+    {
+        $output = "Failed to join network BELL340.\n"
+            . "Error: -3912  The operation couldn\u{2019}t be completed. (com.apple.wifi.apple80211API.error error -3912.)\n"
+            . "Failed to join network BELL340.\n"
+            . "Error: -3912  The operation couldn\u{2019}t be completed. (com.apple.wifi.apple80211API.error error -3912.)\n";
+
+        $runner = new FakeCommandRunner([
+            '-setairportnetwork' => [
+                'output' => $output,
+                'exit' => 0,
+            ],
+        ]);
+        $backend = new NetworksetupBackend($runner);
+
+        try {
+            $backend->connect('BELL340', Credentials::password('hunter2'), new Device('en0'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed $e) {
+            $this->assertStringContainsString('***', $e->getMessage());
+            $this->assertStringNotContainsString('hunter2', $e->getMessage());
+            $this->assertStringContainsString('Failed to join network', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function connect_returns_normally_on_a_successful_join_and_records_exactly_one_command(): void
+    {
+        $runner = new FakeCommandRunner([
+            '-setairportnetwork' => [
+                'output' => '',
+                'exit' => 0,
+            ],
+        ]);
+        $backend = new NetworksetupBackend($runner);
+
+        $backend->connect('Cafe Corner', Credentials::password('hunter2'), new Device('en0'));
+
+        $this->assertCount(1, $runner->commands);
+    }
+
+    /**
+     * The failure text is matched per line, anchored at both ends, so an SSID
+     * a user actually chose that merely echoes the words back (in a shape
+     * that isn't the tool's own "Could not find network X." line) is never
+     * mistaken for a failure.
+     */
+    #[Test]
+    public function connect_does_not_mistake_an_ssid_that_echoes_the_failure_wording_for_a_real_failure(): void
+    {
+        $runner = new FakeCommandRunner([
+            '-setairportnetwork' => [
+                'output' => "Note: Could not find network X. was seen previously on this network.\n",
+                'exit' => 0,
+            ],
+        ]);
+        $backend = new NetworksetupBackend($runner);
+
+        $backend->connect('Could not find network X.', Credentials::none(), new Device('en0'));
+
+        $this->assertCount(1, $runner->commands);
     }
 }

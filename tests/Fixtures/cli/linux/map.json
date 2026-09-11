@@ -2,8 +2,18 @@
     "device wifi list": "../../linux/NetworksPi.txt",
     "-f DEVICE,TYPE device": "../../linux/Devices.txt",
     "connection show": "../../linux/Connections.txt",
+    "connection show BELL340": {
+        "output": "BELL340\n"
+    },
+    "connection show Cafe: Corner": {
+        "output": "Cafe Corner Wifi\n"
+    },
+    "connection show Hotspot": {
+        "output": "femus-setup\n"
+    },
     "connection delete": "Empty.txt",
     "device wifi hotspot": "Empty.txt",
+    "device wifi connect": "Empty.txt",
     "device disconnect": {
         "output": "",
         "exit": 1,

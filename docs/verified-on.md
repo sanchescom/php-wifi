@@ -199,3 +199,127 @@ profile `connect` had created, leaving the Pi exactly as found.
 - macOS `connect()`/`disconnect()` on real hardware: fixture-only; `scan()` and
   `device()` were run on macOS 26.5 (SSIDs redacted, as documented).
 - Hotspot on the 5 GHz band (`--band=5`): the Pi's radio was left on 2.4 GHz.
+
+---
+
+# Verified on real hardware — 3.1.0
+
+Same Raspberry Pi, **2026-09-11**, against the `3.1.0` branch at `f124fdf`
+(plus this file). Same board, OS, NetworkManager 1.52.1 and PHP 8.4.24 as the
+3.0.0 run above; the suite on the Pi: `OK (239 tests, 564 assertions)`. The
+radio was `disabled` before and after, and every profile created during the run
+was removed.
+
+## What 3.1 changes, seen on the device
+
+`known` now separates the connection name from the real SSID — the whole point
+of the N+1 lookup. With a hotspot profile saved:
+
+```
+$ php bin/wifi known
+ Name     SSID         Device  Active
+--------------------------------------
+ Hotspot  femus-setup  wlan0   true
+```
+
+In 3.0.0 both columns read `Hotspot`.
+
+`list --json` parses and carries every documented key:
+
+```
+$ php bin/wifi list --unique --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d),"objects; keys:",",".join(d[0].keys()))'
+3 objects; keys: ssid,hidden,bssid,channel,band,frequency,quality,dbm,security,securityFlags,connected
+```
+
+The hidden-SSID hint is now OS-aware (3.0.0 blamed macOS on a Linux box):
+
+```
+1 network(s) broadcast no SSID (hidden); they are shown as "-".
+```
+
+## The passphrase and `ps` — measured, not assumed
+
+`connect` was run with the passphrase on a pipe
+(`printf '%s' "$(cat ~/.wifi-pass)" | sudo php bin/wifi connect --ssid=BELL340 --password-file=-`)
+while a loop sampled `ps` for the passphrase:
+
+```
+ps sample 1: wifi-argv-with-password=0 nmcli-argv-with-password=0
+ps sample 2: wifi-argv-with-password=0 nmcli-argv-with-password=2
+ps sample 3: wifi-argv-with-password=0 nmcli-argv-with-password=2
+Connected to BELL340 via wlan0 (auto)
+```
+
+That is exactly what the README claims and no more: the passphrase never
+appears in the `wifi` process's own arguments, and it *does* appear in
+`nmcli`'s (twice — the `sh -c` wrapper and `nmcli` itself) for the duration of
+the call. Closing that window is a 3.2 candidate.
+
+`disconnect` and `forget` then confirmed themselves on stdout (`Disconnected
+via wlan0 (auto)`, `Forgot BELL340.`), which 3.0.0 did silently.
+
+## Provisioning, end to end
+
+Run as a transient systemd unit, the way `provision.service` runs it. The page
+served the networks scanned **before** the hotspot came up — the fix this
+release exists for:
+
+> Scanned before the hotspot started.
+> BELL340 · 2.4 GHz · 97%
+> VTECH_5764_9764 · 2.4 GHz · 70%
+
+[`examples/provision/screenshot.jpg`](../examples/provision/screenshot.jpg) is
+that page on a phone joined to `femus-setup`. In 3.0.0 the same page could only
+ever list the hotspot itself.
+
+Submitting the form with the correct passphrase:
+
+```
+t0    hotspot=active   marker=no
+t+5s  unit=inactive hotspot=inactive wlan0=connected:BELL340 marker=yes
+...
+$ php bin/wifi list --connected
+ SSID     BSSID              Channel  Band  Quality  dBm  Frequency  Connected  Security
+-----------------------------------------------------------------------------------------
+ BELL340  0e:ac:8a:99:58:5d  157      5     62%      -69  5785       true       WPA2
+```
+
+The page stopped the hotspot, joined, wrote the marker; the supervisor saw the
+marker, stopped the web server and the hotspot and exited — no timeout, no
+manual step.
+
+## Two things the live run found and 3.1 fixes
+
+Both were discovered here, not in review, and neither is reproducible from
+fixtures:
+
+1. **A mistyped passphrase used to end the session.** NetworkManager takes the
+   access point down to attempt a join and does not put it back; the page
+   became unreachable and the unit waited out its whole timeout.
+   NetworkManager's own journal for that attempt:
+   `4way_handshake -> disconnected`, `no secrets`,
+   `Activation: failed for connection 'BELL340'`. `hotspot.sh` now notices the
+   access point is gone without a marker and restarts it — verified by taking
+   the AP down by hand mid-run:
+
+   ```
+   t+0   hotspot=inactive
+   t+4s  hotspot=active wlan0=connected page=200
+   ```
+
+2. **The page could not join at all while holding the radio.** With the access
+   point up, NetworkManager's scan list is empty, so `nmcli` refused:
+   `exited with 10: Error: No network with SSID 'BELL340' found.` — even though
+   the page listed that network, because the page's list comes from the cached
+   pre-scan. The page now stops the hotspot before joining. Consequence worth
+   knowing: the phone always loses the page at that moment; with one radio
+   there is no way around it.
+
+## Not verified
+
+- Windows (`NetshBackend`, `ProfileFile`) — fixture-only, no machine.
+- macOS `connect()`/`disconnect()` on real hardware. The macOS false-success
+  fix in this release (`networksetup` exits 0 on failure) *was* confirmed on a
+  real Mac: `Could not find network NoSuchNetXYZ.` and `Failed to join network
+  BELL340.` / `Error: -3912` both come back with exit code 0.
+- The `--password-file=-` tty guard (no tty in the harness).

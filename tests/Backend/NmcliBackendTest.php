@@ -34,6 +34,9 @@ final class NmcliBackendTest extends TestCase
         return new FakeCommandRunner([
             'connection show --active' => "Hotspot\n",
             'connection show' => self::FIXTURES . '/Connections.txt',
+            'connection show BELL340' => "BELL340\n",
+            'connection show Cafe: Corner' => "Cafe Corner Wifi\n",
+            'connection show Hotspot' => "femus-setup\n",
             'connection delete' => '',
             'connection down' => '',
             'device wifi hotspot' => '',
@@ -163,6 +166,59 @@ final class NmcliBackendTest extends TestCase
         $networks = $backend->knownNetworks();
 
         $this->assertCount(3, $networks);
+    }
+
+    #[Test]
+    public function known_networks_resolve_their_real_ssid(): void
+    {
+        $runner = $this->runner();
+        $networks = (new NmcliBackend($runner))->knownNetworks();
+
+        $this->assertCount(3, $networks);
+        $this->assertSame('Hotspot', $networks[2]->name);
+        $this->assertSame('femus-setup', $networks[2]->ssid);
+        $this->assertCount(4, $runner->commands); // one list + three lookups
+    }
+
+    #[Test]
+    public function a_failing_ssid_lookup_falls_back_to_the_connection_name(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show --active' => "Hotspot\n",
+            'connection show' => self::FIXTURES . '/Connections.txt',
+            'connection show BELL340' => "BELL340\n",
+            'connection show Cafe: Corner' => "Cafe Corner Wifi\n",
+            'connection show Hotspot' => [
+                'output' => '',
+                'exit' => 10,
+                'stderr' => 'Error: unknown connection.',
+            ],
+        ]);
+
+        $networks = (new NmcliBackend($runner))->knownNetworks();
+
+        $this->assertSame('Hotspot', $networks[2]->name);
+        $this->assertSame('Hotspot', $networks[2]->ssid);
+    }
+
+    #[Test]
+    public function a_permission_denied_ssid_lookup_propagates(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show --active' => "Hotspot\n",
+            'connection show' => self::FIXTURES . '/Connections.txt',
+            'connection show BELL340' => "BELL340\n",
+            'connection show Cafe: Corner' => "Cafe Corner Wifi\n",
+            'connection show Hotspot' => [
+                'output' => '',
+                'exit' => 4,
+                'stderr' => 'Error: Not authorized to control networking.',
+            ],
+        ]);
+
+        $this->expectException(PermissionDenied::class);
+
+        (new NmcliBackend($runner))->knownNetworks();
     }
 
     #[Test]

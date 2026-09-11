@@ -91,6 +91,14 @@ foreach ($wifi->knownNetworks() as $known) {
 }
 ```
 
+`$known->name` is the NetworkManager connection name; `$known->ssid` is the
+real SSID, resolved with one extra `nmcli -g 802-11-wireless.ssid connection
+show <name>` call per profile — `knownNetworks()` costs N+1 `nmcli` commands
+for N wireless profiles, not one. The two differ for a saved hotspot profile:
+a connection named `Hotspot` reports its actual SSID in `$ssid`. A failed
+per-profile lookup falls back to the connection name rather than failing the
+whole list.
+
 ### Start a hotspot — Linux only
 
 ```php
@@ -116,20 +124,49 @@ systemd unit and install steps.
 
 ![Provisioning page on a phone](examples/provision/screenshot.jpg)
 
-This was taken live on the maintainer's Pi: a phone joined the
-`femus-setup` hotspot and opened `http://10.42.0.1:8080/`. It shows the
-honest limit of a single-radio Pi — the list contains only
-`femus-setup · 2.4 GHz · 0%`, because while `nmcli` is running the hotspot
-on the Pi's one radio, `nmcli device wifi list` can see the hotspot itself
-and nothing else. A real provisioning flow has to scan *before* starting
-the hotspot and serve that cached result instead — see
-[ROADMAP.md](ROADMAP.md) → "3.1 candidates".
+This was taken live on the maintainer's Pi during the 3.0 release, a phone
+joined the `femus-setup` hotspot and opened `http://10.42.0.1:8080/`. At the
+time the list showed only `femus-setup · 2.4 GHz · 0%`, because while
+`nmcli` is running the hotspot on the Pi's one radio, `nmcli device wifi
+list` can see the hotspot itself and nothing else — 3.1 fixes this with a
+cached scan (below).
 
-`hotspot.sh`'s `php -S` keeps serving the provisioning page — and the
-hotspot stays up — after the device has joined the real network; the unit
-does not stop itself. Stop it once provisioning is done
-(`sudo systemctl stop provision`), or it will keep the temporary hotspot
-and its open web server running indefinitely.
+A single Wi-Fi radio can either scan or run an access point, never both, so
+`hotspot.sh` scans first (`wifi list --unique --json`) and caches the result
+to `PROVISION_CACHE` *before* starting the hotspot. `index.php` reads that
+cache on every `GET` and labels the list "Scanned before the hotspot
+started."; a missing or unreadable cache falls back to a live scan.
+
+Pressing Connect stops the hotspot before joining: while the radio is
+running the access point, NetworkManager's own scan list is empty, so it
+refuses a join outright no matter what the cached list shows. The phone
+loses the page at that point — expected and unavoidable with one radio —
+and `index.php` waits a moment for the radio to leave AP mode, then joins
+through `WiFi::connect()`, which scans again to resolve the SSID (turning a
+typo into `NetworkNotFound` instead of an opaque `nmcli` exit code).
+
+Once a connection succeeds, `index.php` writes an empty marker file at
+`PROVISION_DONE` and the run ends with the hotspot down. `hotspot.sh` polls
+for that marker once a second (every `RESTART_BACKOFF` seconds while it is
+restarting a dropped hotspot), for at most `PROVISION_TIMEOUT` seconds (also
+giving up if the web server dies), then stops the built-in PHP server, runs
+`wifi hotspot stop` (a no-op by then), and exits — the unit ends itself once
+provisioning is done instead of running indefinitely. If the join fails
+instead, the hotspot is left down; `hotspot.sh`'s wait loop notices within a
+few seconds and brings it back so the phone can rejoin and the person can
+retry.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PROVISION_CACHE` | `/run/php-wifi-provision/networks.json` | Where the pre-hotspot scan is cached as JSON. |
+| `PROVISION_DONE` | `/run/php-wifi-provision/done` | Marker file created once a connection succeeds. |
+| `PROVISION_TIMEOUT` | `900` | Seconds `hotspot.sh` waits for `PROVISION_DONE` before giving up. |
+| `RESTART_BACKOFF` | `5` | Seconds to wait between attempts to bring a dropped hotspot back. |
+| `MAX_RESTARTS` | `5` | Consecutive failed hotspot restarts before `hotspot.sh` gives up (still exiting `0`). |
+
+See [`examples/provision/README.md`](examples/provision/README.md) for the
+full install steps and the `provision.service` unit that provisions
+`/run/php-wifi-provision` for these two files.
 
 ## Design
 
@@ -257,13 +294,13 @@ of this repository it is `php bin/wifi`.
 
 | Command | Options | Description |
 | --- | --- | --- |
-| `list` | `--unique`, `--connected` | Show surrounding Wi-Fi networks |
-| `connect` | `--ssid=`, `--bssid=`, `--password=`, `--device=` | Connect to a network — one of `--ssid`/`--bssid` is required |
+| `list` | `--unique`, `--connected`, `--json` | Show surrounding Wi-Fi networks |
+| `connect` | `--ssid=`, `--bssid=`, `--password=`, `--password-file=`, `--device=` | Connect to a network — one of `--ssid`/`--bssid` is required |
 | `disconnect` | `--device=` | Disconnect from the current network |
 | `device` | — | Show the detected Wi-Fi device |
 | `known` | — | List known (saved) networks |
 | `forget <ssid-or-name>` | — | Forget a known network; prints `Forgot <name>.` |
-| `hotspot start` | `--ssid=`, `--password=`, `--band=`, `--device=` | Start a hotspot (`--band` is `2.4` or `5`) |
+| `hotspot start` | `--ssid=`, `--password=`, `--password-file=`, `--band=`, `--device=` | Start a hotspot (`--band` is `2.4` or `5`) |
 | `hotspot stop` | — | Stop the hotspot |
 | `hotspot status` | — | Print `active` or `inactive` |
 
@@ -278,6 +315,63 @@ like an option to the CLI's own parser and must be passed after a literal
 underlying tool rejected) · `2` `UnsupportedOperation` — the active
 backend does not implement the capability (e.g. `known`/`hotspot` on
 macOS or Windows) · `3` `PermissionDenied`.
+
+**`--password-file`** reads the password from a file instead of a plain
+argv value, keeping the passphrase off the `wifi` command line itself.
+On Linux it is still passed to `nmcli` as an argument one process later,
+so a local user watching `ps` during the call can still see it; on
+Windows it never reaches a command line at all, since it goes through the
+temp connection-profile file instead. `--password-file=-` reads it from
+stdin instead:
+
+```bash
+printf '%s' "$PASSWORD" | wifi connect --ssid=home --password-file=-
+```
+
+Exactly one trailing newline is stripped and nothing else, so a passphrase
+may legitimately end in a space. `--password` and `--password-file` are
+mutually exclusive; an empty file, an empty value, a directory path, or a
+tty on stdin are each rejected with a clear message and exit `1`.
+
+**`--json`** prints one JSON object per network instead of the table;
+`--unique`/`--connected` still apply first, and the hidden-SSID hint stays
+on STDERR so stdout is valid JSON. Real output, trimmed to two networks,
+from `WIFI_FAKE_RUNNER=tests/Fixtures/cli/linux WIFI_FAKE_OS=Linux php
+bin/wifi list --unique --json`:
+
+```json
+[
+    {
+        "ssid": "BELL340",
+        "hidden": false,
+        "bssid": "02:00:00:00:00:01",
+        "channel": 1,
+        "band": "2.4",
+        "frequency": 2412,
+        "quality": 100,
+        "dbm": -50,
+        "security": "WPA2",
+        "securityFlags": "(none) pair_ccmp group_ccmp psk",
+        "connected": false
+    },
+    {
+        "ssid": "",
+        "hidden": true,
+        "bssid": "02:00:00:00:00:05",
+        "channel": 157,
+        "band": "5",
+        "frequency": 5785,
+        "quality": 67,
+        "dbm": -67,
+        "security": "WPA2",
+        "securityFlags": "(none) pair_ccmp group_ccmp psk",
+        "connected": false
+    }
+]
+```
+
+`bssid`, `channel`, `band`, `frequency`, `quality` and `dbm` are `null` when
+the platform does not report them.
 
 ### Testing the CLI without hardware
 
@@ -299,6 +393,7 @@ autoloaded in a `composer require --no-dev` install.
 | `new WiFi(Backend $backend)` | `self` | Construct directly over a given backend (tests, custom runners) |
 | `scan()` | `NetworkCollection` | Scan for surrounding networks |
 | `connect(Network\|string $network, Credentials $credentials, ?Device $device = null)` | `void` | Connect; a hidden/redacted `Network` throws `InvalidArgument` — pass the SSID as a string instead |
+| `connectTo(string $ssid, Credentials $credentials, ?Device $device = null)` | `void` | Join `$ssid` without scanning first — for callers who already know the SSID and want to skip the scan (custom backends, scripted flows); a wrong SSID then surfaces as the backend's own `CommandFailed` rather than `NetworkNotFound` |
 | `disconnect(?Device $device = null)` | `void` | Disconnect |
 | `device()` | `Device` | The detected wireless device |
 | `knownNetworks()` | `list<KnownNetwork>` | Saved connections (Linux only; `UnsupportedOperation` elsewhere) |
