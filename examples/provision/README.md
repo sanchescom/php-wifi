@@ -33,6 +33,18 @@ running as `www-data` unless polkit grants it. Install the polkit rule from
 the [Linux — Privileges (polkit)](../../README.md#linux--privileges-polkit)
 section of the project's main README.md before starting the service.
 
+Optional environment variables, all with sane defaults:
+
+| Variable            | Default                                  | Meaning                                                |
+|---------------------|-------------------------------------------|--------------------------------------------------------|
+| `PROVISION_CACHE`   | `/run/php-wifi-provision/networks.json`   | Where the pre-hotspot scan is cached as JSON.          |
+| `PROVISION_DONE`    | `/run/php-wifi-provision/done`            | Marker file created once a connection succeeds.        |
+| `PROVISION_TIMEOUT` | `900`                                      | Seconds `hotspot.sh` waits for `PROVISION_DONE` before giving up. |
+
+`RuntimeDirectory=php-wifi-provision` in `provision.service` makes systemd
+create and clean up `/run/php-wifi-provision` automatically, so these two
+files never need to be provisioned by hand.
+
 ## Run
 
 ```bash
@@ -43,6 +55,23 @@ sudo systemctl enable --now provision
 
 This starts a `femus-setup` hotspot and serves the provisioning page on it
 at `http://10.42.0.1:8080/` (NetworkManager's default hotspot address).
+
+## How it ends itself
+
+A single Wi-Fi radio can either scan or run an access point, never both, so
+`hotspot.sh` scans first (`wifi list --unique --json`) and caches the result
+to `PROVISION_CACHE` before starting the hotspot — that is why the page can
+still show the neighbouring networks even though, once the hotspot is up, a
+live scan would only see the hotspot itself. `index.php` reads that cache on
+every `GET` and labels the list "Scanned before the hotspot started."; a
+missing or unreadable cache falls back to a live scan.
+
+Once a connection succeeds, `index.php` writes an empty marker file at
+`PROVISION_DONE`. `hotspot.sh` polls for that marker once a second, and as
+soon as it appears (or `PROVISION_TIMEOUT` seconds pass, or the web server
+dies) it stops the built-in PHP server, runs `wifi hotspot stop`, and exits.
+The unit does not restart itself afterwards — the provisioning run is meant
+to happen once per boot.
 
 ## Use it from a phone
 

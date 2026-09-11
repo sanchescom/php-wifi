@@ -8,6 +8,8 @@ User=www-data
 EnvironmentFile=/etc/php-wifi-provision.env
 ExecStart=/usr/bin/env bash /opt/php-wifi/examples/provision/hotspot.sh
 Restart=on-failure
+RuntimeDirectory=php-wifi-provision
+RuntimeDirectoryMode=0750
 
 [Install]
 WantedBy=multi-user.target
