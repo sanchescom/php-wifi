@@ -35,10 +35,23 @@ use Sanchescom\WiFi\WiFi;
  * counting always reports zero, which — per the decision table — is treated
  * the same as "iw absent", i.e. nobody attached; the hotspot is still
  * managed correctly, just without the busy/idle distinction.
+ *
+ * "When did the hotspot go up" needs to survive this process dying and being
+ * restarted — a headless watchdog that forgets its retry clock on every
+ * crash-loop or routine restart would let an idle hotspot stand forever,
+ * defeating retryAfter entirely. That timestamp is therefore mirrored to a
+ * small JSON file ({@see $stateFile}, one field, no secrets) rather than
+ * kept only in memory: written when the hotspot is raised, read back by a
+ * fresh instance that finds the hotspot already up, and removed once the
+ * hotspot is stopped. Reading or writing it never throws — a missing,
+ * unreadable or malformed file falls back to treating the hotspot as just
+ * raised "now", because a watchdog must not die over its own bookkeeping.
  */
 final class Watchdog
 {
     private readonly CommandRunner $commandRunner;
+
+    private readonly string $stateFile;
 
     private ?int $hotspotRaisedAt = null;
 
@@ -47,8 +60,10 @@ final class Watchdog
         private readonly WatchdogConfig $config,
         private readonly Clock $clock,
         ?CommandRunner $commandRunner = null,
+        ?string $stateFile = null,
     ) {
         $this->commandRunner = $commandRunner ?? ShellCommandRunner::forCurrentOs();
+        $this->stateFile = $stateFile ?? sys_get_temp_dir() . '/php-wifi-watchdog.json';
     }
 
     /** One decision. Never sleeps. */
@@ -80,7 +95,7 @@ final class Watchdog
 
     private function manageActiveHotspot(): WatchdogState
     {
-        $this->hotspotRaisedAt ??= $this->clock->now();
+        $this->hotspotRaisedAt ??= $this->readHotspotRaisedAt() ?? $this->recordHotspotRaisedAt();
 
         $stations = $this->countHotspotStations();
 
@@ -95,7 +110,7 @@ final class Watchdog
         }
 
         $this->wifi->stopHotspot();
-        $this->hotspotRaisedAt = null;
+        $this->clearHotspotRaisedAt();
 
         return $this->recover();
     }
@@ -108,7 +123,7 @@ final class Watchdog
         }
 
         $this->wifi->startHotspot($this->config->hotspot);
-        $this->hotspotRaisedAt = $this->clock->now();
+        $this->recordHotspotRaisedAt();
 
         return WatchdogState::HotspotRaised;
     }
@@ -154,5 +169,61 @@ final class Watchdog
         }
 
         return (new StationDumpParser())->count($result->stdout);
+    }
+
+    /** Sets, persists and returns "now" as the moment the hotspot went up. */
+    private function recordHotspotRaisedAt(): int
+    {
+        $now = $this->clock->now();
+        $this->hotspotRaisedAt = $now;
+
+        $this->suppressingWarnings(
+            fn (): int|false => file_put_contents($this->stateFile, (string) json_encode(['hotspotRaisedAt' => $now])),
+        );
+
+        return $now;
+    }
+
+    private function clearHotspotRaisedAt(): void
+    {
+        $this->hotspotRaisedAt = null;
+
+        if (is_file($this->stateFile)) {
+            $this->suppressingWarnings(fn (): bool => unlink($this->stateFile));
+        }
+    }
+
+    /** Null on anything short of a clean, valid read — missing, unreadable or malformed alike. */
+    private function readHotspotRaisedAt(): ?int
+    {
+        if (!is_file($this->stateFile) || !is_readable($this->stateFile)) {
+            return null;
+        }
+
+        $contents = $this->suppressingWarnings(fn (): string|false => file_get_contents($this->stateFile));
+
+        if ($contents === false || $contents === '') {
+            return null;
+        }
+
+        $data = json_decode($contents, true);
+
+        return is_array($data) && is_int($data['hotspotRaisedAt'] ?? null) ? $data['hotspotRaisedAt'] : null;
+    }
+
+    /**
+     * @template T
+     * @param callable(): T $operation
+     * @return T
+     */
+    private function suppressingWarnings(callable $operation): mixed
+    {
+        set_error_handler(static fn (): bool => true);
+
+        try {
+            return $operation();
+        } finally {
+            restore_error_handler();
+        }
     }
 }

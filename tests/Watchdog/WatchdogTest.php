@@ -26,6 +26,26 @@ final class WatchdogTest extends TestCase
         'stderr' => 'Error: No network with SSID HomeNet found.',
     ];
 
+    private const HOTSPOT_ACTIVE_FAILS = [
+        'output' => '',
+        'exit' => 1,
+        'stderr' => 'Error: NetworkManager is not running.',
+    ];
+
+    /** @var list<string> every state file this test created, unlinked in tearDown() */
+    private array $stateFiles = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->stateFiles as $stateFile) {
+            if (is_file($stateFile)) {
+                unlink($stateFile);
+            }
+        }
+
+        parent::tearDown();
+    }
+
     private function hotspotConfig(): HotspotConfig
     {
         return new HotspotConfig('femus-setup', 'a-strong-passphrase');
@@ -39,12 +59,22 @@ final class WatchdogTest extends TestCase
         return "{$active}:HomeNet:{$bssid}:Infra:1:2412 MHz:70:WPA2:(none):pair_ccmp group_ccmp psk\n";
     }
 
+    /** A fresh path per call, so tests never share persisted watchdog state. */
+    private function freshStateFile(): string
+    {
+        $path = sys_get_temp_dir() . '/php-wifi-watchdog-test-' . bin2hex(random_bytes(8)) . '.json';
+        $this->stateFiles[] = $path;
+
+        return $path;
+    }
+
     private function watchdog(
         FakeCommandRunner $runner,
         TestClock $clock,
         ?string $ssid = 'HomeNet',
         int $retryAfter = 300,
         bool $requireIdleHotspot = true,
+        ?string $stateFile = null,
     ): Watchdog {
         $wifi = new WiFi(new NmcliBackend($runner));
         $config = new WatchdogConfig(
@@ -54,7 +84,7 @@ final class WatchdogTest extends TestCase
             requireIdleHotspot: $requireIdleHotspot,
         );
 
-        return new Watchdog($wifi, $config, $clock, $runner);
+        return new Watchdog($wifi, $config, $clock, $runner, $stateFile ?? $this->freshStateFile());
     }
 
     #[Test]
@@ -140,7 +170,7 @@ final class WatchdogTest extends TestCase
         $clock = new TestClock(1_000);
         $watchdog = $this->watchdog($runner, $clock, retryAfter: 300);
 
-        $state = $watchdog->tick();
+        $watchdog->tick();
         $clock->sleep(299);
         $state = $watchdog->tick();
 
@@ -196,6 +226,32 @@ final class WatchdogTest extends TestCase
         $this->assertStringContainsString('device wifi hotspot', $runner->last()->describe());
     }
 
+    /**
+     * A tick where isHotspotActive() itself blows up is the kind of failure
+     * none of the happy paths produce — it must come out the other side as
+     * Failed, and tick() must not let the exception escape.
+     */
+    #[Test]
+    public function an_unexpected_failure_while_checking_the_hotspot_is_reported_as_failed(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show --active' => self::HOTSPOT_ACTIVE_FAILS,
+        ]);
+        $watchdog = $this->watchdog($runner, new TestClock());
+
+        $state = $watchdog->tick();
+
+        $this->assertSame(WatchdogState::Failed, $state);
+    }
+
+    /**
+     * A missing iw must be read as "idle", not "occupied forever": elapse
+     * retryAfter and confirm the watchdog actually proceeds to stop the
+     * hotspot and attempt a reconnect. Asserting HotspotBusy alone (the
+     * previous version of this test) cannot tell "treated as idle" apart
+     * from "treated as busy" — both produce HotspotBusy before retryAfter
+     * elapses regardless of how the missing binary is read.
+     */
     #[Test]
     public function a_missing_iw_binary_is_treated_as_no_stations_attached(): void
     {
@@ -203,15 +259,21 @@ final class WatchdogTest extends TestCase
             'connection show --active' => "Hotspot\n",
             '-f DEVICE,TYPE device' => self::DEVICES,
             'station dump' => ['output' => '', 'exit' => 127, 'stderr' => 'iw: command not found'],
+            'connection down' => '',
+            'device wifi connect' => '',
         ]);
-        $watchdog = $this->watchdog($runner, new TestClock(1_000), retryAfter: 300);
+        $clock = new TestClock(1_000);
+        $watchdog = $this->watchdog($runner, $clock, retryAfter: 300);
 
+        $watchdog->tick();
+        $clock->sleep(300);
         $state = $watchdog->tick();
 
-        $this->assertSame(WatchdogState::HotspotBusy, $state);
-        foreach ($runner->commands as $command) {
-            $this->assertStringNotContainsString('connection down', $command->describe());
-        }
+        $this->assertSame(WatchdogState::Recovered, $state);
+        $this->assertStringContainsString('connection down', implode(' | ', array_map(
+            static fn ($command) => $command->describe(),
+            $runner->commands,
+        )));
     }
 
     #[Test]
@@ -247,5 +309,78 @@ final class WatchdogTest extends TestCase
         $this->expectException(InvalidArgument::class);
 
         new WatchdogConfig(ssid: null, hotspot: $this->hotspotConfig(), retryAfter: -1);
+    }
+
+    /**
+     * The age of the hotspot must survive this process dying and a fresh
+     * Watchdog taking over — otherwise a restart resets the retry clock and
+     * an idle hotspot could stand forever.
+     */
+    #[Test]
+    public function the_hotspots_age_survives_a_new_watchdog_instance_pointed_at_the_same_state_file(): void
+    {
+        $stateFile = $this->freshStateFile();
+        $runner = new FakeCommandRunner([
+            'connection show --active' => "Hotspot\n",
+            '-f DEVICE,TYPE device' => self::DEVICES,
+            'station dump' => '',
+            'connection down' => '',
+            'device wifi connect' => '',
+        ]);
+        $clock = new TestClock(1_000);
+
+        // First instance raises (records) the hotspot's start time and is discarded, as if the process died.
+        $this->watchdog($runner, $clock, retryAfter: 300, stateFile: $stateFile)->tick();
+
+        // A brand new instance, no in-memory state, reads the same file back.
+        $clock->sleep(300);
+        $state = $this->watchdog($runner, $clock, retryAfter: 300, stateFile: $stateFile)->tick();
+
+        $this->assertSame(WatchdogState::Recovered, $state);
+    }
+
+    #[Test]
+    public function a_corrupt_state_file_falls_back_to_treating_the_hotspot_as_just_raised(): void
+    {
+        $stateFile = $this->freshStateFile();
+        file_put_contents($stateFile, 'not valid json {{{');
+
+        $runner = new FakeCommandRunner([
+            'connection show --active' => "Hotspot\n",
+            '-f DEVICE,TYPE device' => self::DEVICES,
+            'station dump' => '',
+        ]);
+        $watchdog = $this->watchdog($runner, new TestClock(1_000), retryAfter: 300, stateFile: $stateFile);
+
+        $state = $watchdog->tick();
+
+        $this->assertSame(WatchdogState::HotspotBusy, $state);
+        foreach ($runner->commands as $command) {
+            $this->assertStringNotContainsString('connection down', $command->describe());
+        }
+    }
+
+    #[Test]
+    public function the_state_file_is_removed_once_a_reconnect_succeeds(): void
+    {
+        $stateFile = $this->freshStateFile();
+        $runner = new FakeCommandRunner([
+            'connection show --active' => "Hotspot\n",
+            '-f DEVICE,TYPE device' => self::DEVICES,
+            'station dump' => '',
+            'connection down' => '',
+            'device wifi connect' => '',
+        ]);
+        $clock = new TestClock(1_000);
+        $watchdog = $this->watchdog($runner, $clock, retryAfter: 300, stateFile: $stateFile);
+
+        $watchdog->tick();
+        $this->assertFileExists($stateFile, 'the hotspot was just raised, its start time should be on disk');
+
+        $clock->sleep(300);
+        $state = $watchdog->tick();
+
+        $this->assertSame(WatchdogState::Recovered, $state);
+        $this->assertFileDoesNotExist($stateFile);
     }
 }
