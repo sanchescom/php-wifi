@@ -122,6 +122,7 @@ final class WpaCliBackendTest extends TestCase
         $runner = self::runner([
             'scan_results' => self::FIXTURES . '/wpacli/ScanResults.txt',
             'scan' => '',
+            'status' => self::FIXTURES . '/wpacli/StatusInactive.txt',
         ]);
         $backend = new WpaCliBackend($runner, 'wlan0');
 
@@ -138,7 +139,11 @@ final class WpaCliBackendTest extends TestCase
      * The happy path: `scan_results` already has rows on the very first
      * read (a `wpa_supplicant` that had already finished a previous scan),
      * so {@see WpaCliBackend::scan()} never polls a second time — exactly
-     * one `scan_results` call, same as before this defect was fixed.
+     * one `scan_results` call, same as before this defect was fixed. A
+     * trailing `status` call then reports the interface as associated to
+     * BELL340 by BSSID, which marks exactly that row — the first of the
+     * four ({@see \Sanchescom\WiFi\Value\Network::$connected}) — and leaves
+     * the other three false.
      */
     #[Test]
     public function scan_triggers_a_scan_then_reads_scan_results(): void
@@ -146,6 +151,7 @@ final class WpaCliBackendTest extends TestCase
         $runner = self::runner([
             'scan_results' => self::FIXTURES . '/wpacli/ScanResults.txt',
             'scan' => '',
+            'status' => self::FIXTURES . '/wpacli/StatusAssociatedBell340.txt',
         ]);
         $backend = new WpaCliBackend($runner, 'wlan0');
 
@@ -153,8 +159,12 @@ final class WpaCliBackendTest extends TestCase
 
         $this->assertInstanceOf(NetworkCollection::class, $networks);
         $this->assertCount(4, $networks);
+        $this->assertTrue($networks[0]->connected);
+        $this->assertFalse($networks[1]->connected);
+        $this->assertFalse($networks[2]->connected);
+        $this->assertFalse($networks[3]->connected);
 
-        $this->assertCount(3, $runner->commands);
+        $this->assertCount(4, $runner->commands);
         $this->assertEquals(new Command('which', ['wpa_cli'], ['PATH' => self::searchPath()]), $runner->commands[0]);
         $this->assertEquals(
             new Command(self::WPA_CLI, ['-i', 'wlan0'], ['LANG' => 'C'], [], "scan\nquit\n"),
@@ -164,8 +174,13 @@ final class WpaCliBackendTest extends TestCase
             new Command(self::WPA_CLI, ['-i', 'wlan0'], ['LANG' => 'C'], [], "scan_results\nquit\n"),
             $runner->commands[2],
         );
+        $this->assertEquals(
+            new Command(self::WPA_CLI, ['-i', 'wlan0'], ['LANG' => 'C'], [], "status\nquit\n"),
+            $runner->commands[3],
+        );
         $this->assertSame(self::WPA_CLI, $runner->commands[1]->program);
         $this->assertSame(self::WPA_CLI, $runner->commands[2]->program);
+        $this->assertSame(self::WPA_CLI, $runner->commands[3]->program);
     }
 
     /**
@@ -183,6 +198,7 @@ final class WpaCliBackendTest extends TestCase
         $runner = self::runner([
             'scan_results' => ['', '', self::FIXTURES . '/wpacli/ScanResults.txt'],
             'scan' => '',
+            'status' => self::FIXTURES . '/wpacli/StatusInactive.txt',
         ]);
         $backend = new WpaCliBackend(
             $runner,
@@ -199,8 +215,8 @@ final class WpaCliBackendTest extends TestCase
         $this->assertInstanceOf(NetworkCollection::class, $networks);
         $this->assertCount(4, $networks);
 
-        // which wpa_cli, scan, then scan_results three times.
-        $this->assertCount(5, $runner->commands);
+        // which wpa_cli, scan, scan_results three times, then status.
+        $this->assertCount(6, $runner->commands);
         $this->assertSame(self::WPA_CLI, $runner->commands[1]->program);
         $this->assertSame("scan\nquit\n", $runner->commands[1]->stdin);
 
@@ -208,6 +224,9 @@ final class WpaCliBackendTest extends TestCase
             $this->assertSame(self::WPA_CLI, $runner->commands[$index]->program);
             $this->assertSame("scan_results\nquit\n", $runner->commands[$index]->stdin);
         }
+
+        $this->assertSame(self::WPA_CLI, $runner->commands[5]->program);
+        $this->assertSame("status\nquit\n", $runner->commands[5]->stdin);
 
         // One pause between each pair of reads: two, not three, since the
         // third (successful) read never needs to wait for another.
@@ -230,6 +249,7 @@ final class WpaCliBackendTest extends TestCase
         $runner = self::runner([
             'scan_results' => '',
             'scan' => '',
+            'status' => self::FIXTURES . '/wpacli/StatusInactive.txt',
         ]);
         $backend = new WpaCliBackend(
             $runner,
@@ -279,6 +299,7 @@ final class WpaCliBackendTest extends TestCase
         $runner = self::runner([
             'scan_results' => self::FIXTURES . '/wpacli/ScanResults.txt',
             'scan' => '',
+            'status' => self::FIXTURES . '/wpacli/StatusInactive.txt',
             'list_networks' => self::FIXTURES . '/wpacli/ListNetworks.txt',
         ]);
         $backend = new WpaCliBackend($runner, 'wlan0');
@@ -291,6 +312,77 @@ final class WpaCliBackendTest extends TestCase
             static fn (Command $command): bool => $command->describe() === 'which wpa_cli',
         );
         $this->assertCount(1, $whichWpaCli);
+    }
+
+    /**
+     * Two rows can legitimately share one SSID (two access points of the
+     * same mesh, or two unrelated neighbours who happened to pick the same
+     * name). `status` reporting a BSSID that only matches the second row
+     * must mark that row alone — matching by SSID first would have been
+     * unable to tell the two apart.
+     */
+    #[Test]
+    public function only_the_bssid_matching_row_is_marked_when_two_rows_share_one_ssid(): void
+    {
+        $scanResults = "bssid / frequency / signal level / flags / ssid\n"
+            . "aa:bb:cc:dd:ee:01\t2412\t-40\t[WPA2-PSK-CCMP][ESS]\tDuplicateNet\n"
+            . "aa:bb:cc:dd:ee:02\t2412\t-55\t[WPA2-PSK-CCMP][ESS]\tDuplicateNet\n";
+        $status = "bssid=aa:bb:cc:dd:ee:02\nssid=DuplicateNet\nwpa_state=COMPLETED\n";
+
+        $runner = self::runner([
+            'scan_results' => $scanResults,
+            'scan' => '',
+            'status' => $status,
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $networks = $backend->scan();
+
+        $this->assertCount(2, $networks);
+        $this->assertFalse($networks[0]->connected);
+        $this->assertTrue($networks[1]->connected);
+    }
+
+    /**
+     * `wpa_state=INACTIVE` with neither `ssid=` nor `bssid=` printed — the
+     * shape captured on real hardware while idle — must leave every row
+     * exactly as `scan_results` produced it.
+     */
+    #[Test]
+    public function nothing_is_marked_when_status_reports_no_association(): void
+    {
+        $runner = self::runner([
+            'scan_results' => self::FIXTURES . '/wpacli/ScanResults.txt',
+            'scan' => '',
+            'status' => self::FIXTURES . '/wpacli/StatusInactive.txt',
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $networks = $backend->scan();
+
+        $this->assertCount(4, $networks);
+        $this->assertCount(0, $networks->connected());
+    }
+
+    /**
+     * A `status` call that fails (here, a non-zero exit) must not fail the
+     * scan — a scan that works is more useful than no scan, so `scan()`
+     * swallows that one failure and returns the rows unmarked.
+     */
+    #[Test]
+    public function a_failing_status_call_does_not_fail_the_scan(): void
+    {
+        $runner = self::runner([
+            'scan_results' => self::FIXTURES . '/wpacli/ScanResults.txt',
+            'scan' => '',
+            'status' => ['output' => '', 'exit' => 1],
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $networks = $backend->scan();
+
+        $this->assertCount(4, $networks);
+        $this->assertCount(0, $networks->connected());
     }
 
     // --- connect() --------------------------------------------------------

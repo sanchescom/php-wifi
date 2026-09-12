@@ -19,11 +19,13 @@ use Sanchescom\WiFi\Shell\Command;
 use Sanchescom\WiFi\Shell\CommandResult;
 use Sanchescom\WiFi\Shell\CommandRunner;
 use Sanchescom\WiFi\Shell\Os;
+use Sanchescom\WiFi\Value\Bssid;
 use Sanchescom\WiFi\Value\Credentials;
 use Sanchescom\WiFi\Value\Device;
 use Sanchescom\WiFi\Value\Hotspot;
 use Sanchescom\WiFi\Value\HotspotConfig;
 use Sanchescom\WiFi\Value\KnownNetwork;
+use Sanchescom\WiFi\Value\Network;
 use Sanchescom\WiFi\Value\NetworkCollection;
 
 /**
@@ -125,6 +127,11 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * networks, and that is a valid answer for `scan()` to give. It is
      * {@see self::connect()} that turns "not found" into
      * {@see NetworkNotFound}, and that stays correct behaviour.
+     *
+     * Once the rows are in hand, {@see self::markConnectedNetwork()} makes
+     * one further `status` call to find out which of them (if any) is the
+     * network this interface is actually joined to — `scan_results` itself
+     * never says.
      */
     public function scan(): NetworkCollection
     {
@@ -147,7 +154,65 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
             }
         }
 
-        return new NetworkCollection($networks);
+        return new NetworkCollection($this->markConnectedNetwork($networks, $interface));
+    }
+
+    /**
+     * `scan_results` carries no "this one is connected" column ({@see
+     * ScanResultsParser}), so the only way to know which row is the network
+     * this interface actually joined is a separate `status` call, matched
+     * against the rows already parsed.
+     *
+     * Matching prefers BSSID over SSID: a BSSID is the access point's own
+     * hardware address, so it is exact and unambiguous, whereas two rows
+     * can legitimately share one SSID (two access points of the same mesh,
+     * or two unrelated neighbours who happened to pick the same name) —
+     * matching by SSID alone could then mark the wrong one. `status` only
+     * omits `bssid` when it also omits `ssid` (i.e. when idle), so falling
+     * back to SSID never actually loses precision in practice; it is kept
+     * only because the interface contract allows it.
+     *
+     * When `status` reports no association at all (`wpa_state=INACTIVE`,
+     * neither `ssid=` nor `bssid=` printed) every row is returned exactly
+     * as `scan_results` produced it, still `connected: false`. The same
+     * happens when the `status` call itself fails: a scan that returns
+     * unmarked rows is more useful than no scan at all, so that one
+     * failure is swallowed here instead of failing the whole call.
+     *
+     * @param list<Network> $networks
+     * @return list<Network>
+     */
+    private function markConnectedNetwork(array $networks, string $interface): array
+    {
+        try {
+            $result = $this->wpaCli($interface, ['status']);
+        } catch (CommandFailed) {
+            return $networks;
+        }
+
+        $status = (new StatusParser())->parse($result->stdout);
+        $bssid = isset($status['bssid']) ? Bssid::tryFrom($status['bssid']) : null;
+        $ssid = $status['ssid'] ?? null;
+
+        if ($bssid === null && $ssid === null) {
+            return $networks;
+        }
+
+        return array_map(
+            static fn (Network $network): Network => self::isAssociatedNetwork($network, $bssid, $ssid)
+                ? $network->withConnected(true)
+                : $network,
+            $networks,
+        );
+    }
+
+    private static function isAssociatedNetwork(Network $network, ?Bssid $bssid, ?string $ssid): bool
+    {
+        if ($bssid !== null) {
+            return $network->bssid?->equals($bssid) === true;
+        }
+
+        return $network->ssid === $ssid;
     }
 
     /**
