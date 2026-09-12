@@ -616,17 +616,51 @@ final class WpaCliBackendTest extends TestCase
         }
     }
 
-    // --- isHotspotActive() ------------------------------------------------------
+    // --- startHotspot() refuses a concurrent second start ---------------------
 
     #[Test]
-    public function is_hotspot_active_is_true_when_both_pid_files_hold_live_pids(): void
+    public function start_hotspot_refuses_a_second_start_while_one_is_already_running(): void
     {
         file_put_contents(sys_get_temp_dir() . self::HOSTAPD_PID_FILE, "111\n");
         file_put_contents(sys_get_temp_dir() . self::DNSMASQ_PID_FILE, "222\n");
 
         $runner = new FakeCommandRunner([
-            'ps -p 111' => '',
-            'ps -p 222' => '',
+            'ps -p 111' => "hostapd\n",
+            'ps -p 222' => "dnsmasq\n",
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        try {
+            $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed $exception) {
+            $this->assertStringContainsString('already running', $exception->getMessage());
+            $this->assertStringContainsString(sys_get_temp_dir() . self::HOSTAPD_PID_FILE, $exception->getMessage());
+            $this->assertStringContainsString(sys_get_temp_dir() . self::DNSMASQ_PID_FILE, $exception->getMessage());
+        }
+
+        // Nothing that would start a second daemon ran; only the liveness
+        // probe (ps) used to decide a hotspot was already active did.
+        foreach ($runner->commands as $command) {
+            $this->assertNotContains($command->program, ['wpa_cli', 'ip', 'hostapd', 'dnsmasq']);
+        }
+
+        // The pid files belong to the still-running first hotspot: untouched.
+        $this->assertFileExists(sys_get_temp_dir() . self::HOSTAPD_PID_FILE);
+        $this->assertFileExists(sys_get_temp_dir() . self::DNSMASQ_PID_FILE);
+    }
+
+    // --- isHotspotActive() ------------------------------------------------------
+
+    #[Test]
+    public function is_hotspot_active_is_true_when_both_pid_files_hold_live_pids_naming_the_right_binary(): void
+    {
+        file_put_contents(sys_get_temp_dir() . self::HOSTAPD_PID_FILE, "111\n");
+        file_put_contents(sys_get_temp_dir() . self::DNSMASQ_PID_FILE, "222\n");
+
+        $runner = new FakeCommandRunner([
+            'ps -p 111' => "hostapd\n",
+            'ps -p 222' => "dnsmasq\n",
         ]);
         $backend = new WpaCliBackend($runner, 'wlan0');
 
@@ -638,7 +672,7 @@ final class WpaCliBackendTest extends TestCase
     {
         file_put_contents(sys_get_temp_dir() . self::HOSTAPD_PID_FILE, "111\n");
 
-        $runner = new FakeCommandRunner(['ps -p 111' => '']);
+        $runner = new FakeCommandRunner(['ps -p 111' => "hostapd\n"]);
         $backend = new WpaCliBackend($runner, 'wlan0');
 
         $this->assertFalse($backend->isHotspotActive());
@@ -651,12 +685,38 @@ final class WpaCliBackendTest extends TestCase
         file_put_contents(sys_get_temp_dir() . self::DNSMASQ_PID_FILE, "222\n");
 
         $runner = new FakeCommandRunner([
-            'ps -p 111' => '',
+            'ps -p 111' => "hostapd\n",
             'ps -p 222' => ['output' => '', 'exit' => 1],
         ]);
         $backend = new WpaCliBackend($runner, 'wlan0');
 
         $this->assertFalse($backend->isHotspotActive());
+    }
+
+    /**
+     * A crashed daemon can leave its pid file behind; if the kernel later
+     * reuses that number for an unrelated process (here, `vim`), the pid is
+     * alive but it is not ours — this must read as "not running", not
+     * "alive", and the stale file must not keep fooling future checks.
+     */
+    #[Test]
+    public function is_hotspot_active_is_false_and_removes_the_stale_pid_file_when_the_pid_names_a_different_process(): void
+    {
+        file_put_contents(sys_get_temp_dir() . self::HOSTAPD_PID_FILE, "111\n");
+        file_put_contents(sys_get_temp_dir() . self::DNSMASQ_PID_FILE, "222\n");
+
+        $runner = new FakeCommandRunner([
+            'ps -p 111' => "vim\n",
+            'ps -p 222' => "dnsmasq\n",
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $this->assertFalse($backend->isHotspotActive());
+        $this->assertFileDoesNotExist(sys_get_temp_dir() . self::HOSTAPD_PID_FILE);
+
+        foreach ($runner->commands as $command) {
+            $this->assertNotSame('kill', $command->program);
+        }
     }
 
     #[Test]
@@ -679,8 +739,8 @@ final class WpaCliBackendTest extends TestCase
         file_put_contents(sys_get_temp_dir() . self::DNSMASQ_PID_FILE, "222\n");
 
         $secondRunner = new FakeCommandRunner([
-            'ps -p 111' => '',
-            'ps -p 222' => '',
+            'ps -p 111' => "hostapd\n",
+            'ps -p 222' => "dnsmasq\n",
         ]);
         $secondBackend = new WpaCliBackend($secondRunner, 'wlan0');
 
@@ -696,6 +756,8 @@ final class WpaCliBackendTest extends TestCase
         file_put_contents(sys_get_temp_dir() . self::DNSMASQ_PID_FILE, "222\n");
 
         $runner = new FakeCommandRunner([
+            'ps -p 111' => "hostapd\n",
+            'ps -p 222' => "dnsmasq\n",
             'kill 111' => '',
             'kill 222' => '',
             'ip addr flush dev wlan0' => '',
@@ -706,12 +768,45 @@ final class WpaCliBackendTest extends TestCase
         $backend->stopHotspot();
 
         $programs = array_map(static fn (Command $command): string => $command->program, $runner->commands);
-        $this->assertSame(['kill', 'kill', 'ip', 'wpa_cli'], $programs);
+        $this->assertSame(['ps', 'kill', 'ps', 'kill', 'ip', 'wpa_cli'], $programs);
 
-        $this->assertSame(['111'], $runner->commands[0]->arguments);
-        $this->assertSame(['222'], $runner->commands[1]->arguments);
-        $this->assertSame(['addr', 'flush', 'dev', 'wlan0'], $runner->commands[2]->arguments);
-        $this->assertSame("reconnect\nquit\n", $runner->commands[3]->stdin);
+        $this->assertSame(['111'], $runner->commands[1]->arguments);
+        $this->assertSame(['222'], $runner->commands[3]->arguments);
+        $this->assertSame(['addr', 'flush', 'dev', 'wlan0'], $runner->commands[4]->arguments);
+        $this->assertSame("reconnect\nquit\n", $runner->commands[5]->stdin);
+
+        $this->assertFileDoesNotExist(sys_get_temp_dir() . self::HOSTAPD_PID_FILE);
+        $this->assertFileDoesNotExist(sys_get_temp_dir() . self::DNSMASQ_PID_FILE);
+    }
+
+    /**
+     * The pid a pid file names may belong to an unrelated process (see the
+     * `isHotspotActive()` "stale pid file" test above); `stopHotspot()`
+     * must apply the same check before ever sending a signal, so it never
+     * kills a stranger — while still cleaning up the now-useless pid file.
+     */
+    #[Test]
+    public function stop_hotspot_does_not_signal_a_process_that_does_not_match_the_expected_binary(): void
+    {
+        file_put_contents(sys_get_temp_dir() . self::HOSTAPD_PID_FILE, "111\n");
+        file_put_contents(sys_get_temp_dir() . self::DNSMASQ_PID_FILE, "222\n");
+
+        $runner = new FakeCommandRunner([
+            'ps -p 111' => "vim\n",
+            'ps -p 222' => "dnsmasq\n",
+            'kill 222' => '',
+            'ip addr flush dev wlan0' => '',
+            'reconnect' => "OK\n",
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $backend->stopHotspot();
+
+        $killed = array_values(array_map(
+            static fn (Command $command): array => $command->arguments,
+            array_filter($runner->commands, static fn (Command $command): bool => $command->program === 'kill'),
+        ));
+        $this->assertSame([['222']], $killed);
 
         $this->assertFileDoesNotExist(sys_get_temp_dir() . self::HOSTAPD_PID_FILE);
         $this->assertFileDoesNotExist(sys_get_temp_dir() . self::DNSMASQ_PID_FILE);
@@ -724,6 +819,8 @@ final class WpaCliBackendTest extends TestCase
         file_put_contents(sys_get_temp_dir() . self::DNSMASQ_PID_FILE, "222\n");
 
         $runner = new FakeCommandRunner([
+            'ps -p 111' => "hostapd\n",
+            'ps -p 222' => "dnsmasq\n",
             'kill 111' => '',
             'kill 222' => '',
             'ip addr flush dev wlan0' => '',

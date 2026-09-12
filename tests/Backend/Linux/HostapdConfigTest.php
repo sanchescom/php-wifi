@@ -102,6 +102,14 @@ final class HostapdConfigTest extends TestCase
     }
 
     #[Test]
+    public function a_passphrase_containing_a_carriage_return_is_rejected(): void
+    {
+        $this->expectException(InvalidArgument::class);
+
+        new HostapdConfig('wlan0', new HotspotConfig('femus-setup', "hunter2\rssid=evil"), $this->dir);
+    }
+
+    #[Test]
     public function delete_without_a_created_file_returns_false(): void
     {
         $config = new HostapdConfig('wlan0', new HotspotConfig('femus-setup', 'password1'), $this->dir);

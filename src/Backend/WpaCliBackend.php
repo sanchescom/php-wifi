@@ -45,9 +45,14 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     private const DNSMASQ_PID_FILE = 'php-wifi-dnsmasq.pid';
 
+    private const HOSTAPD_BINARY = 'hostapd';
+
+    private const DNSMASQ_BINARY = 'dnsmasq';
+
     private const HOTSPOT_ADDRESS = '10.42.0.1/24';
 
     private const DHCP_RANGE = '10.42.0.10,10.42.0.100,12h';
+
     public function __construct(
         private readonly CommandRunner $runner,
         private readonly ?string $interface = null,
@@ -160,9 +165,19 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * `hostapd` daemonises (`-B`), so by the time it has started it has
      * already read the file. If `hostapd` fails, `dnsmasq` is never
      * reached, and the config file is still deleted.
+     *
+     * Refuses to run at all when a hotspot already looks active: two
+     * concurrent starts would both write the same fixed pid files, so the
+     * first daemon's pid would be overwritten and become unreachable by
+     * both {@see self::isHotspotActive()} and {@see self::stopHotspot()} —
+     * it would keep running with nothing able to stop it.
+     *
+     * @throws CommandFailed when a hotspot is already running
      */
     public function startHotspot(HotspotConfig $config, Device $device): Hotspot
     {
+        $this->guardAgainstAlreadyRunningHotspot();
+
         $interface = $device->name;
         $hostapdConfig = new HostapdConfig($interface, $config);
         $confFile = $hostapdConfig->create();
@@ -195,14 +210,16 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * hands the radio back to `wpa_supplicant` (stdin `reconnect`). Every
      * step tolerates "already gone" — a missing pid file is skipped, a
      * `kill` of an already-dead pid is not treated as failure — so calling
-     * this twice in a row is harmless.
+     * this twice in a row is harmless. A pid file whose pid names a
+     * different process than expected is never signalled (see
+     * {@see self::killPidFile()}); its stale file is still removed.
      */
     public function stopHotspot(): void
     {
         $interface = $this->resolveInterface();
 
-        $this->killPidFile($this->hostapdPidFile());
-        $this->killPidFile($this->dnsmasqPidFile());
+        $this->killPidFile($this->hostapdPidFile(), self::HOSTAPD_BINARY);
+        $this->killPidFile($this->dnsmasqPidFile(), self::DNSMASQ_BINARY);
 
         $this->run(new Command('ip', ['addr', 'flush', 'dev', $interface]));
 
@@ -211,12 +228,18 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     /**
      * True only when both pid files exist, each holds a bare numeric pid,
-     * and `ps -p <pid>` (run through the {@see CommandRunner}, never
-     * `posix_kill`, so tests can drive it) exits successfully for both.
+     * that pid is alive, and it names the expected binary (`hostapd` /
+     * `dnsmasq`) — checked through the {@see CommandRunner} (`ps -p <pid>
+     * -o comm=`), never `posix_kill`, so tests can drive it. A pid that is
+     * alive but names something else is a stale file left behind by a
+     * daemon that crashed without cleaning up, whose number the kernel
+     * later reused for an unrelated process; that pid file is dropped here
+     * (see {@see self::pidMatches()}) so it stops looking like a hotspot.
      */
     public function isHotspotActive(): bool
     {
-        return $this->pidIsAlive($this->hostapdPidFile()) && $this->pidIsAlive($this->dnsmasqPidFile());
+        return $this->pidMatches($this->hostapdPidFile(), self::HOSTAPD_BINARY)
+            && $this->pidMatches($this->dnsmasqPidFile(), self::DNSMASQ_BINARY);
     }
 
     private function hostapdPidFile(): string
@@ -229,7 +252,41 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         return sys_get_temp_dir() . '/' . self::DNSMASQ_PID_FILE;
     }
 
-    private function pidIsAlive(string $pidFile): bool
+    /**
+     * Throws when both pid files already name live, matching processes —
+     * i.e. {@see self::isHotspotActive()} is true — before this method (or
+     * any of its callers) has run a single `wpa_cli`, `ip` or `hostapd`
+     * command, so a second concurrent start can never overwrite the first
+     * daemon's pid file.
+     *
+     * @throws CommandFailed when a hotspot is already running
+     */
+    private function guardAgainstAlreadyRunningHotspot(): void
+    {
+        if (!$this->isHotspotActive()) {
+            return;
+        }
+
+        throw new CommandFailed(
+            new Command('hostapd', ['-B', '-P', $this->hostapdPidFile()]),
+            new CommandResult(1, '', ''),
+            sprintf(
+                'A hotspot is already running (pid files: %s, %s); refusing to start a second one.',
+                $this->hostapdPidFile(),
+                $this->dnsmasqPidFile(),
+            ),
+        );
+    }
+
+    /**
+     * True when the pid file holds a live pid whose process name (basename
+     * of `ps -p <pid> -o comm=`, which may be truncated or path-free)
+     * matches $expectedBinary. A pid that is alive but names something
+     * else is not ours — never signalled — and its now-stale pid file is
+     * unlinked here so it self-heals instead of permanently mimicking a
+     * running hotspot.
+     */
+    private function pidMatches(string $pidFile, string $expectedBinary): bool
     {
         $pid = $this->readPid($pidFile);
 
@@ -237,20 +294,48 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
             return false;
         }
 
-        return $this->runner->run(new Command('ps', ['-p', $pid]))->isSuccessful();
+        $name = $this->processName($pid);
+
+        if ($name === $expectedBinary) {
+            return true;
+        }
+
+        if ($name !== '') {
+            unlink($pidFile);
+        }
+
+        return false;
     }
 
-    private function killPidFile(string $pidFile): void
+    /**
+     * Kills the pid a pid file names, but only when that pid is alive and
+     * names $expectedBinary — a stale file whose pid was reused by an
+     * unrelated process must never be signalled. The pid file is removed
+     * unconditionally afterwards, matched, mismatched, or already gone.
+     */
+    private function killPidFile(string $pidFile, string $expectedBinary): void
     {
         $pid = $this->readPid($pidFile);
 
-        if ($pid !== null) {
+        if ($pid !== null && $this->processName($pid) === $expectedBinary) {
             $this->runner->run(new Command('kill', [$pid]));
         }
 
         if (file_exists($pidFile)) {
             unlink($pidFile);
         }
+    }
+
+    /** @return string the basename of `ps -p <pid> -o comm=`'s output, or '' when $pid is not alive */
+    private function processName(string $pid): string
+    {
+        $result = $this->runner->run(new Command('ps', ['-p', $pid, '-o', 'comm=']));
+
+        if (!$result->isSuccessful()) {
+            return '';
+        }
+
+        return basename(trim($result->stdout));
     }
 
     private function readPid(string $pidFile): ?string
