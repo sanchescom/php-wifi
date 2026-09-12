@@ -33,6 +33,28 @@ final class ShellCommandRunnerTest extends TestCase
         $this->assertTrue($result->stdout === '' || $result->stderr !== '');
     }
 
+    /**
+     * proc_open() with array-form arguments execs directly, and on some
+     * platforms a failed exec (missing binary) is reported back
+     * synchronously as a PHP E_WARNING, not just the non-zero exit code
+     * this method already returns. PHPUnit's `failOnWarning="true"`
+     * configuration turns any unsuppressed warning straight into a test
+     * failure, so simply reaching the assertions below — with clean,
+     * untouched output — is itself part of what this test proves; a
+     * regression here would fail loudly rather than silently.
+     * `WpaCliBackend::commandExists()` relies on exactly this: probing for a
+     * DHCP client that is not installed must never look like a PHP error.
+     */
+    #[Test]
+    public function probing_a_nonexistent_binary_emits_no_php_warning_and_produces_clean_output(): void
+    {
+        $result = (new ShellCommandRunner())->run(new Command('php-wifi-definitely-not-a-binary'));
+
+        $this->assertNotSame(0, $result->exitCode);
+        $this->assertSame('', $result->stdout);
+        $this->assertSame('', $result->stderr);
+    }
+
     #[Test]
     public function a_large_stderr_payload_does_not_deadlock_before_stdout_is_read(): void
     {

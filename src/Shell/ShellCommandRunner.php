@@ -66,7 +66,23 @@ final class ShellCommandRunner implements CommandRunner
             2 => ['pipe', 'w'],
         ];
 
-        $process = proc_open($command->toArgv(), $descriptors, $pipes, null, $this->environment($command));
+        // proc_open() with array-form arguments (no shell) execs directly, and
+        // when that exec fails — e.g. probing for a DHCP client binary that
+        // does not exist, which WpaCliBackend::connect() does on every call —
+        // some platforms report the failure back synchronously as a PHP
+        // E_WARNING ("proc_open(): Exec failed: ..."), even though the
+        // non-zero/127 exit code below already says the same thing. A plain
+        // `@` does not survive PHPUnit's error handler (see drain()), so the
+        // warning is suppressed the same way: a scoped handler that swallows
+        // it, restored immediately after. The exit code and exception
+        // behaviour of the caller are unchanged either way.
+        set_error_handler(static fn (): bool => true);
+
+        try {
+            $process = proc_open($command->toArgv(), $descriptors, $pipes, null, $this->environment($command));
+        } finally {
+            restore_error_handler();
+        }
 
         if (!is_resource($process)) {
             return new CommandResult(127, '', 'Unable to start: ' . $command->describe());
@@ -94,7 +110,15 @@ final class ShellCommandRunner implements CommandRunner
                 2 => ['file', $stderrPath, 'w'],
             ];
 
-            $process = proc_open($command->toArgv(), $descriptors, $pipes, null, $this->environment($command));
+            // See the matching comment in runViaPipes(): suppress the same
+            // possible E_WARNING from a failed exec, the same way.
+            set_error_handler(static fn (): bool => true);
+
+            try {
+                $process = proc_open($command->toArgv(), $descriptors, $pipes, null, $this->environment($command));
+            } finally {
+                restore_error_handler();
+            }
 
             if (!is_resource($process)) {
                 return new CommandResult(127, '', 'Unable to start: ' . $command->describe());

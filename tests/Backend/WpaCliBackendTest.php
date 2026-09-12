@@ -12,6 +12,7 @@ use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Shell\Command;
+use Sanchescom\WiFi\Shell\ShellCommandRunner;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Value\Credentials;
 use Sanchescom\WiFi\Value\Device;
@@ -120,7 +121,7 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
-            'command -v' => ['output' => '', 'exit' => 1],
+            'which' => ['output' => '', 'exit' => 1],
         ]);
         $backend = new WpaCliBackend($runner);
 
@@ -160,7 +161,7 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
-            'command -v' => ['output' => '', 'exit' => 1],
+            'which' => ['output' => '', 'exit' => 1],
         ]);
         $backend = new WpaCliBackend($runner);
 
@@ -182,7 +183,7 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "3\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
-            'command -v' => ['output' => '', 'exit' => 1],
+            'which' => ['output' => '', 'exit' => 1],
         ]);
         $backend = new WpaCliBackend($runner);
 
@@ -255,7 +256,7 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
-            'command -v dhcpcd' => "/sbin/dhcpcd\n",
+            'which dhcpcd' => "/sbin/dhcpcd\n",
             'dhcpcd -U wlan0' => ['output' => '', 'exit' => 1],
             'dhcpcd -n wlan0' => "\n",
         ]);
@@ -265,7 +266,7 @@ final class WpaCliBackendTest extends TestCase
 
         $this->assertCount(6, $runner->commands);
         $last = array_slice($runner->commands, -3);
-        $this->assertEquals(new Command('command', ['-v', 'dhcpcd']), $last[0]);
+        $this->assertEquals(new Command('which', ['dhcpcd']), $last[0]);
         $this->assertEquals(new Command('dhcpcd', ['-U', 'wlan0']), $last[1]);
         $this->assertEquals(new Command('dhcpcd', ['-n', 'wlan0']), $last[2]);
     }
@@ -277,17 +278,17 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
-            'command -v dhcpcd' => "/sbin/dhcpcd\n",
+            'which dhcpcd' => "/sbin/dhcpcd\n",
             'dhcpcd -U wlan0' => "reason=BOUND\n",
         ]);
         $backend = new WpaCliBackend($runner);
 
         $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
 
-        // add_network, set_network script, status, "command -v dhcpcd", "dhcpcd -U wlan0" — nothing beyond that.
+        // add_network, set_network script, status, "which dhcpcd", "dhcpcd -U wlan0" — nothing beyond that.
         $this->assertCount(5, $runner->commands);
         $last = array_slice($runner->commands, -2);
-        $this->assertEquals(new Command('command', ['-v', 'dhcpcd']), $last[0]);
+        $this->assertEquals(new Command('which', ['dhcpcd']), $last[0]);
         $this->assertEquals(new Command('dhcpcd', ['-U', 'wlan0']), $last[1]);
 
         foreach ($runner->commands as $command) {
@@ -302,8 +303,8 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
-            'command -v dhcpcd' => ['output' => '', 'exit' => 1],
-            'command -v udhcpc' => "/sbin/udhcpc\n",
+            'which dhcpcd' => ['output' => '', 'exit' => 1],
+            'which udhcpc' => "/sbin/udhcpc\n",
             'udhcpc -i wlan0 -n -q' => "\n",
         ]);
         $backend = new WpaCliBackend($runner);
@@ -320,9 +321,9 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
-            'command -v dhcpcd' => ['output' => '', 'exit' => 1],
-            'command -v udhcpc' => ['output' => '', 'exit' => 1],
-            'command -v dhclient' => "/sbin/dhclient\n",
+            'which dhcpcd' => ['output' => '', 'exit' => 1],
+            'which udhcpc' => ['output' => '', 'exit' => 1],
+            'which dhclient' => "/sbin/dhclient\n",
             'dhclient -1 wlan0' => "\n",
         ]);
         $backend = new WpaCliBackend($runner);
@@ -339,7 +340,7 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
-            'command -v' => ['output' => '', 'exit' => 1],
+            'which' => ['output' => '', 'exit' => 1],
         ]);
         $backend = new WpaCliBackend($runner);
 
@@ -357,7 +358,7 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
-            'command -v dhcpcd' => "/sbin/dhcpcd\n",
+            'which dhcpcd' => "/sbin/dhcpcd\n",
             'dhcpcd -U wlan0' => ['output' => '', 'exit' => 1],
             'dhcpcd -n wlan0' => ['output' => '', 'exit' => 1, 'stderr' => "dhcpcd: no valid lease\n"],
         ]);
@@ -369,6 +370,34 @@ final class WpaCliBackendTest extends TestCase
         } catch (CommandFailed $exception) {
             $this->assertStringContainsString('dhcpcd', $exception->getMessage());
         }
+    }
+
+    // --- requestAddress() probe mechanism (real process, no fake runner) ----
+
+    /**
+     * Every other test in this file drives {@see FakeCommandRunner}, which
+     * never execs anything — nothing there could have caught the bug fixed
+     * alongside this test (probing with the `command` shell builtin, which
+     * Debian and Raspberry Pi OS ship no binary for, so every probe silently
+     * exec'd nothing and reported absent). This proves the actual mechanism
+     * {@see WpaCliBackend::commandExists()} relies on — `which <name>`
+     * through a real {@see ShellCommandRunner} — reports present/absent
+     * correctly on this machine, for a real process, no fixture involved.
+     */
+    #[Test]
+    public function which_reports_a_binary_that_certainly_exists_as_present(): void
+    {
+        $result = ShellCommandRunner::forCurrentOs()->run(new Command('which', ['ls']));
+
+        $this->assertTrue($result->isSuccessful());
+    }
+
+    #[Test]
+    public function which_reports_a_binary_that_certainly_does_not_exist_as_absent(): void
+    {
+        $result = ShellCommandRunner::forCurrentOs()->run(new Command('which', ['php-wifi-definitely-not-a-binary']));
+
+        $this->assertFalse($result->isSuccessful());
     }
 
     // --- disconnect() -------------------------------------------------------
