@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [3.2.0] - 2026-09-12
 
-A second Linux backend, the supervisor that raises it automatically, and the
-last of the passphrase-off-argv work 3.1 started. Nothing in this release
-changes calling code — see [UPGRADE.md](UPGRADE.md#31--32). Verified live on
+A second Linux backend, the supervisor that raises it automatically, and a
+further step of the passphrase-off-argv work 3.1 started: on both Linux
+backends `connect()` now keeps it out of every process's arguments, while
+`NmcliBackend::startHotspot()` and the macOS backend still pass it as one —
+see the security notes in [README.md](README.md#security). Nothing in this
+release changes calling code — see [UPGRADE.md](UPGRADE.md#31--32). Verified live on
 the maintainer's Raspberry Pi — see
 [docs/verified-on.md](docs/verified-on.md).
 
