@@ -62,6 +62,17 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
      * {@see Command::$stdinIsSecret}) delivers it — no `password` argument
      * is ever built. `Credentials::none()` keeps the exact command this
      * backend has always run: no `--ask`, no stdin.
+     *
+     * Measured on real hardware: `--ask` only prompts when nmcli has no
+     * secret of its own already. A saved profile for this SSID that already
+     * holds a (possibly stale) passphrase makes nmcli connect with that
+     * stored secret and ignore whatever arrives on stdin — a freshly typed,
+     * corrected passphrase would then silently never take effect. So a
+     * passphrase here first deletes any existing profile for $ssid; its
+     * failure (there usually is no such profile) is expected and ignored —
+     * this call must never throw. This also drops any other setting that
+     * profile held (static IP, autoconnect), which is the price of
+     * honouring a freshly supplied passphrase over a stale saved one.
      */
     public function connect(string $ssid, Credentials $credentials, Device $device): void
     {
@@ -70,6 +81,8 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         $stdinIsSecret = false;
 
         if ($credentials->password !== null) {
+            $this->runner->run(new Command('nmcli', ['connection', 'delete', $ssid], ['LANG' => 'C']));
+
             $arguments[] = '--ask';
             $stdin = $credentials->password . "\n";
             $stdinIsSecret = true;

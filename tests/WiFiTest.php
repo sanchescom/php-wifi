@@ -64,6 +64,7 @@ final class WiFiTest extends TestCase
     {
         return new FakeCommandRunner([
             '-f DEVICE,TYPE device' => self::LINUX_FIXTURES . '/Devices.txt',
+            'connection delete' => '',
             'device wifi connect' => '',
         ]);
     }
@@ -94,18 +95,35 @@ final class WiFiTest extends TestCase
         );
     }
 
+    /**
+     * A passphrase adds a fifth-wheel step between device detection and the
+     * connect itself: any saved profile for the SSID is deleted first (see
+     * {@see NmcliBackend::connect()}), so a stale stored secret can never
+     * shadow a freshly supplied one. Asserted by identity, not just count,
+     * so the sequence — not merely its length — stays proven.
+     */
     #[Test]
     public function connect_with_a_string_scans_detects_the_device_then_connects_in_order(): void
     {
         $runner = $this->linuxRunner();
         $wifi = new WiFi(new NmcliBackend($runner));
 
-        $wifi->connect('AlphaNet-foiEmE', Credentials::password('p'));
+        $wifi->connect('AlphaNet-foiEmE', Credentials::password('hunter2'));
 
-        $this->assertCount(3, $runner->commands);
+        $this->assertCount(4, $runner->commands);
         $this->assertStringContainsString('device wifi list', $runner->commands[0]->describe());
         $this->assertStringContainsString('-f DEVICE,TYPE device', $runner->commands[1]->describe());
-        $this->assertStringContainsString('device wifi connect', $runner->commands[2]->describe());
+        $this->assertSame(['connection', 'delete', 'AlphaNet-foiEmE'], $runner->commands[2]->arguments);
+        $this->assertSame(
+            ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'AlphaNet-foiEmE', 'ifname', 'wlan0'],
+            $runner->commands[3]->arguments,
+        );
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('hunter2', $argument);
+            }
+        }
     }
 
     #[Test]
@@ -128,15 +146,23 @@ final class WiFiTest extends TestCase
     {
         $runner = new FakeCommandRunner([
             '-f DEVICE,TYPE device' => self::LINUX_FIXTURES . '/Devices.txt',
+            'connection delete' => '',
             'device wifi connect' => '',
         ]);
         $wifi = new WiFi(new NmcliBackend($runner));
 
-        $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('p'));
+        $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('hunter2'));
 
-        $this->assertCount(2, $runner->commands);
+        $this->assertCount(3, $runner->commands);
         $this->assertStringContainsString('-f DEVICE,TYPE device', $runner->commands[0]->describe());
-        $this->assertStringContainsString('device wifi connect', $runner->commands[1]->describe());
+        $this->assertSame(['connection', 'delete', 'AlphaNet-foiEmE'], $runner->commands[1]->arguments);
+        $this->assertStringContainsString('device wifi connect', $runner->commands[2]->describe());
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('hunter2', $argument);
+            }
+        }
     }
 
     #[Test]
@@ -185,14 +211,22 @@ final class WiFiTest extends TestCase
     public function connect_with_an_explicit_device_skips_device_detection(): void
     {
         $runner = new FakeCommandRunner([
+            'connection delete' => '',
             'device wifi connect' => '',
         ]);
         $wifi = new WiFi(new NmcliBackend($runner));
 
-        $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('p'), new Device('wlan0'));
+        $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('hunter2'), new Device('wlan0'));
 
-        $this->assertCount(1, $runner->commands);
-        $this->assertStringContainsString('device wifi connect', $runner->commands[0]->describe());
+        $this->assertCount(2, $runner->commands);
+        $this->assertSame(['connection', 'delete', 'AlphaNet-foiEmE'], $runner->commands[0]->arguments);
+        $this->assertStringContainsString('device wifi connect', $runner->commands[1]->describe());
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('hunter2', $argument);
+            }
+        }
     }
 
     #[Test]
@@ -203,8 +237,10 @@ final class WiFiTest extends TestCase
 
         $wifi->connectTo('BELL340', Credentials::password('p w'), new Device('wlan0'));
 
-        $this->assertCount(1, $runner->commands);
-        $command = $runner->commands[0];
+        $this->assertCount(2, $runner->commands);
+        $this->assertSame(['connection', 'delete', 'BELL340'], $runner->commands[0]->arguments);
+
+        $command = $runner->commands[1];
 
         $this->assertSame(
             ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'BELL340', 'ifname', 'wlan0'],
@@ -213,8 +249,10 @@ final class WiFiTest extends TestCase
         $this->assertSame('p w' . "\n", $command->stdin);
         $this->assertTrue($command->stdinIsSecret);
 
-        foreach ($command->arguments as $argument) {
-            $this->assertStringNotContainsString('p w', $argument);
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('p w', $argument);
+            }
         }
     }
 

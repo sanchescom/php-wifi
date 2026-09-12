@@ -116,6 +116,66 @@ final class NmcliBackendTest extends TestCase
         }
     }
 
+    /**
+     * `--ask` only prompts when nmcli holds no secret of its own for the
+     * SSID already; a saved profile with a stale passphrase would otherwise
+     * make nmcli silently reuse it and ignore a freshly typed, corrected
+     * one. So a passphrase-carrying connect() first deletes any existing
+     * profile for the SSID, then runs the `--ask` connect — in exactly that
+     * order, and the passphrase appears in no argument of either command.
+     */
+    #[Test]
+    public function connect_with_a_passphrase_deletes_any_saved_profile_first(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        $backend->connect('Home', Credentials::password('p w'), new Device('wlan0'));
+
+        $this->assertCount(2, $runner->commands);
+
+        $delete = $runner->commands[0];
+        $this->assertSame(['connection', 'delete', 'Home'], $delete->arguments);
+        $this->assertSame(['LANG' => 'C'], $delete->env);
+        $this->assertNull($delete->stdin);
+
+        $connect = $runner->commands[1];
+        $this->assertSame(
+            ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'Home', 'ifname', 'wlan0'],
+            $connect->arguments,
+        );
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('p w', $argument);
+            }
+        }
+    }
+
+    /**
+     * The normal case — no profile exists yet for this SSID — makes
+     * `nmcli connection delete` exit non-zero. That must never fail
+     * connect(): the delete's result is deliberately never inspected.
+     */
+    #[Test]
+    public function connect_ignores_a_profile_delete_that_fails(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection delete' => [
+                'output' => '',
+                'exit' => 10,
+                'stderr' => 'Error: unknown connection.',
+            ],
+            'device wifi connect' => '',
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $backend->connect('Home', Credentials::password('p w'), new Device('wlan0'));
+
+        $this->assertCount(2, $runner->commands);
+        $this->assertSame(['-w', '10', '--ask', 'device', 'wifi', 'connect', 'Home', 'ifname', 'wlan0'], $runner->last()->arguments);
+    }
+
     #[Test]
     public function connect_with_a_passphrase_masks_it_in_the_displayed_command(): void
     {
@@ -138,6 +198,7 @@ final class NmcliBackendTest extends TestCase
 
         $backend->connect('Home', Credentials::none(), new Device('wlan0'));
 
+        $this->assertCount(1, $runner->commands);
         $command = $runner->last();
 
         $this->assertSame(
