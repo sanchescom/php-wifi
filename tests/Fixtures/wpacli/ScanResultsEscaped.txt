@@ -1,0 +1,4 @@
+# SYNTHETIC: wpa_cli -i wlan0 scan_results, with printf-encoded SSIDs
+bssid / frequency / signal level / flags / ssid
+12:34:56:78:9a:bc	2437	-55	[WPA2-PSK-CCMP][ESS]	\xd0\x9f\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82
+12:34:56:78:9a:bd	2442	-58	[WPA2-PSK-CCMP][ESS]	\xff

@@ -16,11 +16,11 @@ final class ScanResultsParserTest extends TestCase
     private const FIXTURES = __DIR__ . '/../../Fixtures/wpacli';
 
     #[Test]
-    public function it_parses_six_networks_from_the_fixture(): void
+    public function it_parses_four_networks_from_the_fixture(): void
     {
         $networks = (new ScanResultsParser())->parse((string) file_get_contents(self::FIXTURES . '/ScanResults.txt'));
 
-        $this->assertCount(6, $networks);
+        $this->assertCount(4, $networks);
 
         $bell = $this->findBySsid($networks, 'BELL340');
         $this->assertSame('0e:ac:8a:99:58:5c', (string) $bell->bssid);
@@ -64,7 +64,9 @@ final class ScanResultsParserTest extends TestCase
     #[Test]
     public function an_ssid_escaped_as_xnn_bytes_that_reassemble_a_multi_byte_utf8_character_is_decoded(): void
     {
-        $networks = (new ScanResultsParser())->parse((string) file_get_contents(self::FIXTURES . '/ScanResults.txt'));
+        $networks = (new ScanResultsParser())->parse(
+            (string) file_get_contents(self::FIXTURES . '/ScanResultsEscaped.txt'),
+        );
 
         $cyrillic = $this->findByBssid($networks, '12:34:56:78:9a:bc');
 
@@ -74,7 +76,9 @@ final class ScanResultsParserTest extends TestCase
     #[Test]
     public function an_ssid_escaped_as_a_single_invalid_utf8_byte_survives_unchanged(): void
     {
-        $networks = (new ScanResultsParser())->parse((string) file_get_contents(self::FIXTURES . '/ScanResults.txt'));
+        $networks = (new ScanResultsParser())->parse(
+            (string) file_get_contents(self::FIXTURES . '/ScanResultsEscaped.txt'),
+        );
 
         $invalid = $this->findByBssid($networks, '12:34:56:78:9a:bd');
 

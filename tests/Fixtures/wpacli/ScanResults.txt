@@ -4,5 +4,3 @@ bssid / frequency / signal level / flags / ssid
 a6:97:5c:b7:97:64	2412	-61	[WPA2-PSK-CCMP+TKIP][ESS]	VTECH_5764_9764
 0e:ac:8a:99:58:5e	5785	-64	[WPA2-PSK-CCMP][ESS]	
 04:8d:38:22:78:9e	5180	-70	[ESS]	OpenCafe
-12:34:56:78:9a:bc	2437	-55	[WPA2-PSK-CCMP][ESS]	\xd0\x9f\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82
-12:34:56:78:9a:bd	2442	-58	[WPA2-PSK-CCMP][ESS]	\xff
