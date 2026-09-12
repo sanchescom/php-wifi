@@ -96,12 +96,13 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'command -v' => ['output' => '', 'exit' => 1],
         ]);
         $backend = new WpaCliBackend($runner);
 
         $backend->connect('BELL340', Credentials::password('p w'), new Device('wlan0'));
 
-        $this->assertCount(3, $runner->commands);
+        $this->assertCount(6, $runner->commands);
 
         $addNetwork = $runner->commands[0];
         $this->assertSame(['-i', 'wlan0'], $addNetwork->arguments);
@@ -135,6 +136,7 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'command -v' => ['output' => '', 'exit' => 1],
         ]);
         $backend = new WpaCliBackend($runner);
 
@@ -156,6 +158,7 @@ final class WpaCliBackendTest extends TestCase
             'add_network' => "3\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'command -v' => ['output' => '', 'exit' => 1],
         ]);
         $backend = new WpaCliBackend($runner);
 
@@ -217,6 +220,131 @@ final class WpaCliBackendTest extends TestCase
             static fn (Command $command): bool => $command->stdin === "status\nquit\n",
         );
         $this->assertCount(3, $statusCommands);
+    }
+
+    // --- connect() -> requestAddress() ---------------------------------------
+
+    #[Test]
+    public function connect_asks_dhcpcd_for_an_address_when_dhcpcd_is_present_and_not_already_supervising(): void
+    {
+        $runner = new FakeCommandRunner([
+            'add_network' => "0\n",
+            'set_network' => "OK\n",
+            'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'command -v dhcpcd' => "/sbin/dhcpcd\n",
+            'dhcpcd -U wlan0' => ['output' => '', 'exit' => 1],
+            'dhcpcd -n wlan0' => "\n",
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
+
+        $this->assertCount(6, $runner->commands);
+        $last = array_slice($runner->commands, -3);
+        $this->assertEquals(new Command('command', ['-v', 'dhcpcd']), $last[0]);
+        $this->assertEquals(new Command('dhcpcd', ['-U', 'wlan0']), $last[1]);
+        $this->assertEquals(new Command('dhcpcd', ['-n', 'wlan0']), $last[2]);
+    }
+
+    #[Test]
+    public function connect_leaves_an_already_supervising_dhcpcd_alone(): void
+    {
+        $runner = new FakeCommandRunner([
+            'add_network' => "0\n",
+            'set_network' => "OK\n",
+            'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'command -v dhcpcd' => "/sbin/dhcpcd\n",
+            'dhcpcd -U wlan0' => "reason=BOUND\n",
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
+
+        // add_network, set_network script, status, "command -v dhcpcd", "dhcpcd -U wlan0" — nothing beyond that.
+        $this->assertCount(5, $runner->commands);
+        $last = array_slice($runner->commands, -2);
+        $this->assertEquals(new Command('command', ['-v', 'dhcpcd']), $last[0]);
+        $this->assertEquals(new Command('dhcpcd', ['-U', 'wlan0']), $last[1]);
+
+        foreach ($runner->commands as $command) {
+            $this->assertFalse($command->program === 'dhcpcd' && in_array('-n', $command->arguments, true));
+        }
+    }
+
+    #[Test]
+    public function connect_asks_udhcpc_for_an_address_when_only_udhcpc_is_present(): void
+    {
+        $runner = new FakeCommandRunner([
+            'add_network' => "0\n",
+            'set_network' => "OK\n",
+            'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'command -v dhcpcd' => ['output' => '', 'exit' => 1],
+            'command -v udhcpc' => "/sbin/udhcpc\n",
+            'udhcpc -i wlan0 -n -q' => "\n",
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
+
+        $this->assertEquals(new Command('udhcpc', ['-i', 'wlan0', '-n', '-q']), $runner->last());
+    }
+
+    #[Test]
+    public function connect_asks_dhclient_for_an_address_when_only_dhclient_is_present(): void
+    {
+        $runner = new FakeCommandRunner([
+            'add_network' => "0\n",
+            'set_network' => "OK\n",
+            'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'command -v dhcpcd' => ['output' => '', 'exit' => 1],
+            'command -v udhcpc' => ['output' => '', 'exit' => 1],
+            'command -v dhclient' => "/sbin/dhclient\n",
+            'dhclient -1 wlan0' => "\n",
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
+
+        $this->assertEquals(new Command('dhclient', ['-1', 'wlan0']), $runner->last());
+    }
+
+    #[Test]
+    public function connect_still_succeeds_and_records_no_dhcp_command_when_no_client_is_present(): void
+    {
+        $runner = new FakeCommandRunner([
+            'add_network' => "0\n",
+            'set_network' => "OK\n",
+            'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'command -v' => ['output' => '', 'exit' => 1],
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
+
+        foreach ($runner->commands as $command) {
+            $this->assertNotContains($command->program, ['dhcpcd', 'udhcpc', 'dhclient']);
+        }
+    }
+
+    #[Test]
+    public function connect_throws_command_failed_when_the_dhcp_client_exits_non_zero(): void
+    {
+        $runner = new FakeCommandRunner([
+            'add_network' => "0\n",
+            'set_network' => "OK\n",
+            'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'command -v dhcpcd' => "/sbin/dhcpcd\n",
+            'dhcpcd -U wlan0' => ['output' => '', 'exit' => 1],
+            'dhcpcd -n wlan0' => ['output' => '', 'exit' => 1, 'stderr' => "dhcpcd: no valid lease\n"],
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        try {
+            $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed $exception) {
+            $this->assertStringContainsString('dhcpcd', $exception->getMessage());
+        }
     }
 
     // --- disconnect() -------------------------------------------------------

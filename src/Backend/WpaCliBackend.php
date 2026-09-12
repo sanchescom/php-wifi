@@ -88,6 +88,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks
         $this->wpaCli($interface, $lines, $secret);
 
         $this->awaitAssociation($interface);
+
+        $this->requestAddress($device);
     }
 
     public function disconnect(Device $device): void
@@ -196,6 +198,50 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks
                 $lastState,
             ),
         );
+    }
+
+    /**
+     * `wpa_supplicant` only associates; nothing else hands out an address on
+     * a machine without NetworkManager. Probes `dhcpcd`, `udhcpc`, then
+     * `dhclient` (via `command -v`, never `is_executable()` — the runner is
+     * the only way a test can observe the probe) and runs the first one
+     * found. `dhcpcd` is special: `dhcpcd -U <iface>` succeeding means a
+     * `dhcpcd` daemon already supervises this interface, so it is left
+     * alone — two DHCP clients fighting over one interface is worse than
+     * one running. No client present is not a failure: association already
+     * succeeded, and something else (systemd-networkd, a static address)
+     * may be responsible for addressing.
+     */
+    private function requestAddress(Device $device): void
+    {
+        $interface = $device->name;
+
+        if ($this->commandExists('dhcpcd')) {
+            $lease = $this->runner->run(new Command('dhcpcd', ['-U', $interface]));
+
+            if ($lease->isSuccessful()) {
+                return;
+            }
+
+            $this->run(new Command('dhcpcd', ['-n', $interface]));
+
+            return;
+        }
+
+        if ($this->commandExists('udhcpc')) {
+            $this->run(new Command('udhcpc', ['-i', $interface, '-n', '-q']));
+
+            return;
+        }
+
+        if ($this->commandExists('dhclient')) {
+            $this->run(new Command('dhclient', ['-1', $interface]));
+        }
+    }
+
+    private function commandExists(string $name): bool
+    {
+        return $this->runner->run(new Command('command', ['-v', $name]))->isSuccessful();
     }
 
     /**
