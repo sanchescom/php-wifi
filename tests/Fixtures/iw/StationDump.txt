@@ -1,0 +1,6 @@
+# SYNTHETIC: iw dev wlan0 station dump
+Station aa:bb:cc:dd:ee:01 (on wlan0)
+	inactive time:	120 ms
+	rx bytes:	4096
+Station aa:bb:cc:dd:ee:02 (on wlan0)
+	inactive time:	40 ms

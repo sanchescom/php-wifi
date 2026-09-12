@@ -1,0 +1,5 @@
+# SYNTHETIC: wpa_cli -i wlan0 list_networks
+network id / ssid / bssid / flags
+0	BELL340	any	[CURRENT]
+1	Cafe: Corner	any	
+2	OldNet	any	[DISABLED]
