@@ -15,7 +15,8 @@ use Sanchescom\WiFi\Value\Signal;
  * Parses `wpa_cli -i <iface> scan_results`: a tab-separated table with header
  * `bssid / frequency / signal level / flags / ssid`. wpa_cli never reports a
  * connected/active row here, so every {@see Network} comes back with
- * `connected: false`.
+ * `connected: false`. The `ssid` field is decoded through {@see Printf} since
+ * wpa_supplicant printf-escapes non-printable-ASCII bytes there.
  */
 final class ScanResultsParser implements NetworkParser
 {
@@ -35,6 +36,7 @@ final class ScanResultsParser implements NetworkParser
             }
 
             [$bssid, $freq, $signal, $flags, $ssid] = $fields;
+            $ssid = Printf::decode($ssid);
 
             $frequency = is_numeric($freq) ? (int) $freq : null;
             $band = null;

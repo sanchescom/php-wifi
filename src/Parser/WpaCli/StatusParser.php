@@ -15,6 +15,10 @@ namespace Sanchescom\WiFi\Parser\WpaCli;
  *
  * Every other key wpa_supplicant prints (`freq`, `id`, `mode`, `address`, ...)
  * is kept in the returned map as well, unclassified.
+ *
+ * The `ssid` value is decoded through {@see Printf} since wpa_supplicant
+ * printf-escapes non-printable-ASCII bytes there; every other key is passed
+ * through verbatim.
  */
 final class StatusParser
 {
@@ -30,7 +34,7 @@ final class StatusParser
 
             [$key, $value] = explode('=', $line, 2);
 
-            $status[$key] = $value;
+            $status[$key] = $key === 'ssid' ? Printf::decode($value) : $value;
         }
 
         return $status;

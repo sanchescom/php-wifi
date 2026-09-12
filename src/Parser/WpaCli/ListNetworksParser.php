@@ -14,6 +14,9 @@ use Sanchescom\WiFi\Value\KnownNetwork;
  * SSID, so `KnownNetwork::$name` is set to the SSID. It also never reports
  * which network interface owns a configured network, so
  * `KnownNetwork::$device` is always null here.
+ *
+ * The `ssid` field is decoded through {@see Printf} since wpa_supplicant
+ * printf-escapes non-printable-ASCII bytes there.
  */
 final class ListNetworksParser
 {
@@ -33,7 +36,7 @@ final class ListNetworksParser
                 continue;
             }
 
-            $ssid = $fields[1];
+            $ssid = Printf::decode($fields[1]);
             $flags = $fields[3] ?? '';
 
             $networks[] = new KnownNetwork(

@@ -53,4 +53,17 @@ final class ListNetworksParserTest extends TestCase
         $this->assertFalse($old->active);
         $this->assertNull($old->device);
     }
+
+    #[Test]
+    public function a_printf_escaped_ssid_is_decoded(): void
+    {
+        $output = "# SYNTHETIC: wpa_cli -i wlan0 list_networks\n"
+            . "network id / ssid / bssid / flags\n"
+            . "0\t\\xd0\\x9f\\xd1\\x80\\xd0\\xb8\\xd0\\xb2\\xd0\\xb5\\xd1\\x82\tany\t[CURRENT]\n";
+
+        $networks = (new ListNetworksParser())->parse($output);
+
+        $this->assertSame('Привет', $networks[0]->ssid);
+        $this->assertSame('Привет', $networks[0]->name);
+    }
 }

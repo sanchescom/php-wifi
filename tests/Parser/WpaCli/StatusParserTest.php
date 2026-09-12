@@ -39,4 +39,16 @@ final class StatusParserTest extends TestCase
 
         $this->assertSame([], $status);
     }
+
+    #[Test]
+    public function the_ssid_value_is_printf_decoded_while_other_keys_are_left_alone(): void
+    {
+        $output = "ssid=\\xd0\\x9f\\xd1\\x80\\xd0\\xb8\\xd0\\xb2\\xd0\\xb5\\xd1\\x82\n"
+            . "id_str=\\x41\\x42\n";
+
+        $status = (new StatusParser())->parse($output);
+
+        $this->assertSame('Привет', $status['ssid']);
+        $this->assertSame('\x41\x42', $status['id_str']);
+    }
 }
