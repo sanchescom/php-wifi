@@ -6,11 +6,14 @@ namespace Sanchescom\WiFi\Test\Watchdog;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Sanchescom\WiFi\Backend\NmcliBackend;
 use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Test\Support\TestClock;
+use Sanchescom\WiFi\Value\Device;
 use Sanchescom\WiFi\Value\HotspotConfig;
+use Sanchescom\WiFi\Watchdog\Clock;
 use Sanchescom\WiFi\Watchdog\Watchdog;
 use Sanchescom\WiFi\Watchdog\WatchdogConfig;
 use Sanchescom\WiFi\Watchdog\WatchdogState;
@@ -70,11 +73,12 @@ final class WatchdogTest extends TestCase
 
     private function watchdog(
         FakeCommandRunner $runner,
-        TestClock $clock,
+        Clock $clock,
         ?string $ssid = 'HomeNet',
         int $retryAfter = 300,
         bool $requireIdleHotspot = true,
         ?string $stateFile = null,
+        ?Device $device = null,
     ): Watchdog {
         $wifi = new WiFi(new NmcliBackend($runner));
         $config = new WatchdogConfig(
@@ -82,6 +86,7 @@ final class WatchdogTest extends TestCase
             hotspot: $this->hotspotConfig(),
             retryAfter: $retryAfter,
             requireIdleHotspot: $requireIdleHotspot,
+            device: $device,
         );
 
         return new Watchdog($wifi, $config, $clock, $runner, $stateFile ?? $this->freshStateFile());
@@ -382,5 +387,149 @@ final class WatchdogTest extends TestCase
 
         $this->assertSame(WatchdogState::Recovered, $state);
         $this->assertFileDoesNotExist($stateFile);
+    }
+
+    /**
+     * On a multi-radio host, a pinned device must govern reconnection too,
+     * not just the hotspot it raises — otherwise a reconnect attempt could
+     * run against whatever WiFi::device() happens to auto-detect, which
+     * need not be the interface the operator configured.
+     */
+    #[Test]
+    public function a_configured_device_is_used_to_reconnect_without_auto_detecting_one(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show --active' => "\n",
+            'device wifi list' => $this->networkList(connected: false),
+            'device wifi connect' => '',
+        ]);
+        $watchdog = $this->watchdog($runner, new TestClock(), device: new Device('wlan1'));
+
+        $state = $watchdog->tick();
+
+        $this->assertSame(WatchdogState::Recovered, $state);
+        $this->assertStringContainsString('wlan1', $runner->last()->describe());
+
+        // No "-f DEVICE,TYPE device" fixture exists; if the Watchdog had
+        // called WiFi::device() anyway, the FakeCommandRunner would have
+        // thrown "No fixture for command" instead of reaching this line.
+        foreach ($runner->commands as $command) {
+            $this->assertStringNotContainsString('DEVICE,TYPE', $command->describe());
+        }
+    }
+
+    /** The station-dump side of the same pinning, while a hotspot is up. */
+    #[Test]
+    public function a_configured_device_is_used_for_the_station_dump_without_auto_detecting_one(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show --active' => "Hotspot\n",
+            'station dump' => "Station 11:22:33:44:55:66 (on wlan1)\n",
+        ]);
+        $watchdog = $this->watchdog($runner, new TestClock(), device: new Device('wlan1'));
+
+        $state = $watchdog->tick();
+
+        $this->assertSame(WatchdogState::HotspotBusy, $state);
+        $this->assertStringContainsString('wlan1', $runner->last()->describe());
+        foreach ($runner->commands as $command) {
+            $this->assertStringNotContainsString('DEVICE,TYPE', $command->describe());
+        }
+    }
+
+    /** Without a configured device, both call sites fall back to detection, as before this option existed. */
+    #[Test]
+    public function without_a_configured_device_reconnect_falls_back_to_the_detected_one(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show --active' => "\n",
+            'device wifi list' => $this->networkList(connected: false),
+            '-f DEVICE,TYPE device' => self::DEVICES,
+            'device wifi connect' => '',
+        ]);
+        $watchdog = $this->watchdog($runner, new TestClock());
+
+        $state = $watchdog->tick();
+
+        $this->assertSame(WatchdogState::Recovered, $state);
+        $this->assertStringContainsString('wlan0', $runner->last()->describe());
+    }
+
+    #[Test]
+    public function a_failed_tick_records_the_underlying_error_message(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show --active' => self::HOTSPOT_ACTIVE_FAILS,
+        ]);
+        $watchdog = $this->watchdog($runner, new TestClock());
+
+        $state = $watchdog->tick();
+
+        $this->assertSame(WatchdogState::Failed, $state);
+        $this->assertStringContainsString('NetworkManager is not running', (string) $watchdog->lastError());
+    }
+
+    #[Test]
+    public function last_error_is_null_when_the_most_recent_tick_did_not_fail(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show --active' => "\n",
+            'device wifi list' => $this->networkList(connected: true),
+        ]);
+        $watchdog = $this->watchdog($runner, new TestClock());
+
+        $watchdog->tick();
+
+        $this->assertNull($watchdog->lastError());
+    }
+
+    /**
+     * run() must call the observer with every tick's state so a caller
+     * (the CLI, logging to STDERR) can report liveness without run() doing
+     * any I/O itself. run() never returns, so the fake Clock below throws
+     * once it has let two ticks through — the only way to observe a
+     * "forever" loop's behaviour without actually waiting forever.
+     */
+    #[Test]
+    public function run_calls_the_observer_with_the_state_after_every_tick(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show --active' => "\n",
+            'device wifi list' => $this->networkList(connected: true),
+        ]);
+        $clock = new class implements Clock {
+            public int $sleeps = 0;
+
+            private int $now = 1_000;
+
+            public function now(): int
+            {
+                return $this->now;
+            }
+
+            public function sleep(int $seconds): void
+            {
+                $this->sleeps++;
+
+                if ($this->sleeps >= 2) {
+                    throw new RuntimeException('stop the loop');
+                }
+
+                $this->now += $seconds;
+            }
+        };
+        $watchdog = $this->watchdog($runner, $clock);
+        $states = [];
+
+        try {
+            $watchdog->run(static function (WatchdogState $state) use (&$states): void {
+                $states[] = $state;
+            });
+            $this->fail('run() must never return.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('stop the loop', $exception->getMessage());
+        }
+
+        $this->assertSame([WatchdogState::Connected, WatchdogState::Connected], $states);
     }
 }

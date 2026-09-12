@@ -46,6 +46,13 @@ use Sanchescom\WiFi\WiFi;
  * hotspot is stopped. Reading or writing it never throws — a missing,
  * unreadable or malformed file falls back to treating the hotspot as just
  * raised "now", because a watchdog must not die over its own bookkeeping.
+ *
+ * {@see WatchdogConfig::$device}, when set, is the interface both
+ * tryReconnect() and countHotspotStations() use, instead of each calling
+ * {@see WiFi::device()} separately — on a multi-radio host that keeps a
+ * pinned `--device` from silently drifting between the interface a hotspot
+ * was raised on and the one reconnection attempts and station counts run
+ * against.
  */
 final class Watchdog
 {
@@ -54,6 +61,8 @@ final class Watchdog
     private readonly string $stateFile;
 
     private ?int $hotspotRaisedAt = null;
+
+    private ?string $lastError = null;
 
     public function __construct(
         private readonly WiFi $wifi,
@@ -69,6 +78,8 @@ final class Watchdog
     /** One decision. Never sleeps. */
     public function tick(): WatchdogState
     {
+        $this->lastError = null;
+
         try {
             if ($this->wifi->isHotspotActive()) {
                 return $this->manageActiveHotspot();
@@ -79,16 +90,40 @@ final class Watchdog
             }
 
             return $this->recover();
-        } catch (WiFiException) {
+        } catch (WiFiException $exception) {
+            $this->lastError = $exception->getMessage();
+
             return WatchdogState::Failed;
         }
     }
 
-    /** tick(), then sleep(interval) — forever. The only place that sleeps. */
-    public function run(): never
+    /**
+     * The exception message behind the most recent {@see WatchdogState::Failed},
+     * or null when the last tick() did not fail. Lets a caller that only
+     * gets a state back (run()'s observer, --once's printed value) explain
+     * why, without tick() itself doing any I/O.
+     */
+    public function lastError(): ?string
+    {
+        return $this->lastError;
+    }
+
+    /**
+     * tick(), then sleep(interval) — forever. The only place that sleeps.
+     * $onTick, when given, is called with the state right after each
+     * tick() — the class stays free of I/O; a caller wanting to log or
+     * otherwise observe ticks (a headless watch loop under systemd, say)
+     * supplies its own callback.
+     */
+    public function run(?callable $onTick = null): never
     {
         while (true) {
-            $this->tick();
+            $state = $this->tick();
+
+            if ($onTick !== null) {
+                $onTick($state);
+            }
+
             $this->clock->sleep($this->config->interval);
         }
     }
@@ -130,7 +165,7 @@ final class Watchdog
 
     private function tryReconnect(): bool
     {
-        $device = $this->wifi->device();
+        $device = $this->config->device ?? $this->wifi->device();
 
         foreach ($this->candidateSsids() as $ssid) {
             try {
@@ -161,7 +196,7 @@ final class Watchdog
     /** iw absent, or the dump otherwise unreadable, counts as nobody attached. */
     private function countHotspotStations(): int
     {
-        $device = $this->wifi->device();
+        $device = $this->config->device ?? $this->wifi->device();
         $result = $this->commandRunner->run(new Command('iw', ['dev', $device->name, 'station', 'dump']));
 
         if (!$result->isSuccessful()) {

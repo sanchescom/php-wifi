@@ -23,6 +23,7 @@ use Sanchescom\WiFi\Value\NetworkCollection;
 use Sanchescom\WiFi\Watchdog\SystemClock;
 use Sanchescom\WiFi\Watchdog\Watchdog;
 use Sanchescom\WiFi\Watchdog\WatchdogConfig;
+use Sanchescom\WiFi\Watchdog\WatchdogState;
 use Sanchescom\WiFi\WiFi;
 use splitbrain\phpcli\CLI;
 use splitbrain\phpcli\Options;
@@ -428,7 +429,8 @@ final class WiFiCli extends CLI
      * resulting state's backing value, for both interactive checking and
      * live verification. Without it, {@see Watchdog::run()} loops forever —
      * a command this method never returns from, so no test may take that
-     * branch.
+     * branch — logging every tick worth an operator's attention to STDERR
+     * via {@see self::watchLogger()}.
      */
     private function cmdWatch(Options $options): void
     {
@@ -457,8 +459,9 @@ final class WiFiCli extends CLI
         $config = new WatchdogConfig(
             ssid: $ssidOpt !== false ? $ssidOpt : null,
             hotspot: $hotspot,
-            interval: $this->optPositiveInt($options, 'interval', 30),
-            retryAfter: $this->optPositiveInt($options, 'retry', 300),
+            interval: $this->optInt($options, 'interval', 30),
+            retryAfter: $this->optInt($options, 'retry', 300),
+            device: $device,
         );
 
         $watchdog = new Watchdog($this->wifi, $config, new SystemClock(), $this->commandRunner);
@@ -469,7 +472,42 @@ final class WiFiCli extends CLI
             return;
         }
 
-        $watchdog->run();
+        $watchdog->run($this->watchLogger($watchdog));
+    }
+
+    /**
+     * Builds the observer passed to {@see Watchdog::run()}: one timestamped
+     * line to STDERR (so it lands in the journal under systemd) per tick an
+     * operator needs to see.
+     *
+     * Not every tick is logged: at the default 30s interval, logging every
+     * `connected` tick forever during ordinary, uneventful operation would
+     * bury the ticks that matter in noise. Instead every state other than
+     * Connected is logged unconditionally — a hotspot going up, staying
+     * busy, or a failure are all worth a line each time — and Connected is
+     * logged only the first time it is reached after some other state, the
+     * "we're back" line, not on every tick that follows while nothing
+     * changes. A Failed line also carries {@see Watchdog::lastError()}, so
+     * the journal says why, not just that something went wrong.
+     */
+    private function watchLogger(Watchdog $watchdog): callable
+    {
+        $previous = null;
+
+        return static function (WatchdogState $state) use ($watchdog, &$previous): void {
+            $changed = $state !== $previous;
+            $previous = $state;
+
+            if ($state === WatchdogState::Connected && !$changed) {
+                return;
+            }
+
+            $detail = $state === WatchdogState::Failed && $watchdog->lastError() !== null
+                ? ': ' . $watchdog->lastError()
+                : '';
+
+            fwrite(STDERR, sprintf('%s watch: %s%s', date(DATE_ATOM), $state->value, $detail) . PHP_EOL);
+        };
     }
 
     /**
@@ -479,7 +517,7 @@ final class WiFiCli extends CLI
      * rejects anything <= 0 (a non-numeric string casts to 0), so the
      * validation is not duplicated.
      */
-    private function optPositiveInt(Options $options, string $name, int $default): int
+    private function optInt(Options $options, string $name, int $default): int
     {
         $value = $this->optString($options, $name);
 
