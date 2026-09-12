@@ -238,8 +238,14 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      */
     public function isHotspotActive(): bool
     {
-        return $this->pidMatches($this->hostapdPidFile(), self::HOSTAPD_BINARY)
-            && $this->pidMatches($this->dnsmasqPidFile(), self::DNSMASQ_BINARY);
+        // Both are evaluated deliberately, without short-circuiting: each
+        // call also drops its own pid file when the pid has been reused by
+        // an unrelated process, and a stale dnsmasq file must self-heal
+        // even when the hostapd one already told us there is no hotspot.
+        $hostapd = $this->pidMatches($this->hostapdPidFile(), self::HOSTAPD_BINARY);
+        $dnsmasq = $this->pidMatches($this->dnsmasqPidFile(), self::DNSMASQ_BINARY);
+
+        return $hostapd && $dnsmasq;
     }
 
     private function hostapdPidFile(): string
@@ -256,8 +262,15 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * Throws when both pid files already name live, matching processes —
      * i.e. {@see self::isHotspotActive()} is true — before this method (or
      * any of its callers) has run a single `wpa_cli`, `ip` or `hostapd`
-     * command, so a second concurrent start can never overwrite the first
-     * daemon's pid file.
+     * command.
+     *
+     * This narrows the window in which a second start could overwrite the
+     * first daemon's pid file; it does not close it. Two callers can still
+     * both read "no hotspot" before either starts one, because the check
+     * and the start are not atomic. Closing that gap needs a lock (an
+     * `flock`ed file around the whole start), which 3.2 does not attempt:
+     * the realistic caller is one CLI invocation or one watchdog process
+     * per device.
      *
      * @throws CommandFailed when a hotspot is already running
      */
