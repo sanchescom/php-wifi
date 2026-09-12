@@ -26,6 +26,8 @@ final class CliTest extends TestCase
 
     private const LINUX_HOTSPOT_STOP_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-hotspot-stop';
 
+    private const LINUX_WATCH_DISCONNECTED_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-watch-disconnected';
+
     #[Test]
     public function list_unique_shows_four_rows_with_the_strongest_bell340_first(): void
     {
@@ -418,6 +420,127 @@ final class CliTest extends TestCase
 
         $this->assertSame(1, $result['exit']);
         $this->assertStringContainsString('is a directory', $result['stderr']);
+    }
+
+    #[Test]
+    public function watch_once_prints_connected_and_exits_zero_when_already_joined(): void
+    {
+        $passwordFile = $this->writeTempFile('hotspot-pass');
+
+        try {
+            $result = $this->runCli(
+                [
+                    'watch',
+                    '--once',
+                    '--hotspot-ssid=femus-setup',
+                    '--hotspot-password-file=' . $passwordFile,
+                ],
+                self::LINUX_CONNECTED_FIXTURES,
+                'Linux',
+            );
+
+            $this->assertSame(0, $result['exit'], $result['stderr']);
+            $this->assertSame('connected', trim($result['stdout']));
+        } finally {
+            unlink($passwordFile);
+        }
+    }
+
+    #[Test]
+    public function watch_once_raises_the_hotspot_and_prints_hotspot_raised_when_disconnected(): void
+    {
+        $passwordFile = $this->writeTempFile('hotspot-pass');
+
+        try {
+            $result = $this->runCli(
+                [
+                    'watch',
+                    '--once',
+                    '--ssid=DoesNotExist',
+                    '--hotspot-ssid=femus-setup',
+                    '--hotspot-password-file=' . $passwordFile,
+                ],
+                self::LINUX_WATCH_DISCONNECTED_FIXTURES,
+                'Linux',
+            );
+
+            $this->assertSame(0, $result['exit'], $result['stderr']);
+            $this->assertSame('hotspot_raised', trim($result['stdout']));
+        } finally {
+            unlink($passwordFile);
+        }
+    }
+
+    #[Test]
+    public function watch_rejects_a_non_positive_interval(): void
+    {
+        $passwordFile = $this->writeTempFile('hotspot-pass');
+
+        try {
+            $result = $this->runCli(
+                [
+                    'watch',
+                    '--once',
+                    '--interval=0',
+                    '--hotspot-ssid=femus-setup',
+                    '--hotspot-password-file=' . $passwordFile,
+                ],
+                self::LINUX_FIXTURES,
+                'Linux',
+            );
+
+            $this->assertSame(1, $result['exit']);
+            $this->assertStringContainsString('interval must be a positive number of seconds', $result['stderr']);
+        } finally {
+            unlink($passwordFile);
+        }
+    }
+
+    #[Test]
+    public function watch_requires_a_hotspot_passphrase(): void
+    {
+        $result = $this->runCli(
+            ['watch', '--once', '--hotspot-ssid=femus-setup'],
+            self::LINUX_FIXTURES,
+            'Linux',
+        );
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertStringContainsString('passphrase must be 8', $result['stderr']);
+    }
+
+    #[Test]
+    public function watch_is_unsupported_on_darwin(): void
+    {
+        $passwordFile = $this->writeTempFile('hotspot-pass');
+
+        try {
+            $result = $this->runCli(
+                [
+                    'watch',
+                    '--once',
+                    '--hotspot-ssid=femus-setup',
+                    '--hotspot-password-file=' . $passwordFile,
+                ],
+                self::DARWIN_FIXTURES,
+                'Darwin',
+            );
+
+            $this->assertSame(2, $result['exit']);
+            $this->assertStringContainsString('does not support', $result['stderr']);
+        } finally {
+            unlink($passwordFile);
+        }
+    }
+
+    /** Writes $contents to a fresh temp file and returns its path. */
+    private function writeTempFile(string $contents): string
+    {
+        $file = tempnam(sys_get_temp_dir(), 'php-wifi-pass-');
+        self::assertIsString($file);
+        file_put_contents($file, $contents);
+
+        return $file;
     }
 
     /**

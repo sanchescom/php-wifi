@@ -11,6 +11,7 @@ use Sanchescom\WiFi\Backend\SupportsHotspot;
 use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
+use Sanchescom\WiFi\Shell\CommandRunner;
 use Sanchescom\WiFi\Shell\Os;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Value\Band;
@@ -19,6 +20,9 @@ use Sanchescom\WiFi\Value\Device;
 use Sanchescom\WiFi\Value\HotspotConfig;
 use Sanchescom\WiFi\Value\Network;
 use Sanchescom\WiFi\Value\NetworkCollection;
+use Sanchescom\WiFi\Watchdog\SystemClock;
+use Sanchescom\WiFi\Watchdog\Watchdog;
+use Sanchescom\WiFi\Watchdog\WatchdogConfig;
 use Sanchescom\WiFi\WiFi;
 use splitbrain\phpcli\CLI;
 use splitbrain\phpcli\Options;
@@ -32,13 +36,22 @@ final class WiFiCli extends CLI
 {
     private readonly WiFi $wifi;
 
+    /**
+     * The CommandRunner the WiFi facade's backend was built with, when the
+     * WIFI_FAKE_RUNNER test hook is active; null in production. Reused for
+     * {@see Watchdog}'s own `iw` invocations so a test's fixtures govern
+     * every command the watch command issues, not just the ones the facade
+     * makes on its own.
+     */
+    private readonly ?CommandRunner $commandRunner;
+
     public function __construct()
     {
         self::normalizeHotspotArgv();
 
         parent::__construct();
 
-        $this->wifi = self::buildWifi();
+        [$this->wifi, $this->commandRunner] = self::buildWifi();
     }
 
     protected function setup(Options $options): void
@@ -107,6 +120,48 @@ final class WiFiCli extends CLI
             true,
             'hotspot',
         );
+
+        $options->registerCommand(
+            'watch',
+            'Keep rejoining a wifi network, raising a provisioning hotspot when it cannot',
+        );
+        $options->registerOption(
+            'ssid',
+            'Target SSID to keep rejoining (default: any known network)',
+            null,
+            true,
+            'watch',
+        );
+        $options->registerOption('interval', 'Seconds between checks (default: 30)', null, true, 'watch');
+        $options->registerOption(
+            'retry',
+            'Seconds an idle, unattended hotspot is left up before retrying (default: 300)',
+            null,
+            true,
+            'watch',
+        );
+        $options->registerOption('hotspot-ssid', 'SSID of the hotspot to raise', null, true, 'watch');
+        $options->registerOption(
+            'hotspot-password-file',
+            'Read the hotspot passphrase from a file, or from stdin when given "-"',
+            null,
+            true,
+            'watch',
+        );
+        $options->registerOption(
+            'device',
+            'Which device to use (auto-detected when omitted)',
+            null,
+            true,
+            'watch',
+        );
+        $options->registerOption(
+            'once',
+            'Run a single check, print the resulting state and exit, instead of looping forever',
+            null,
+            false,
+            'watch',
+        );
     }
 
     protected function main(Options $options): void
@@ -135,6 +190,7 @@ final class WiFiCli extends CLI
             'known' => $this->cmdKnown(),
             'forget' => $this->cmdForget($options),
             'hotspot' => $this->cmdHotspot($options),
+            'watch' => $this->cmdWatch($options),
             default => throw new InvalidArgument('No known command was given; see --help.'),
         };
     }
@@ -367,6 +423,69 @@ final class WiFiCli extends CLI
         echo ($this->wifi->isHotspotActive() ? 'active' : 'inactive') . PHP_EOL;
     }
 
+    /**
+     * `--once` runs a single {@see Watchdog::tick()} and prints the
+     * resulting state's backing value, for both interactive checking and
+     * live verification. Without it, {@see Watchdog::run()} loops forever —
+     * a command this method never returns from, so no test may take that
+     * branch.
+     */
+    private function cmdWatch(Options $options): void
+    {
+        if (!$this->wifi->supports(SupportsHotspot::class)) {
+            throw UnsupportedOperation::by($this->wifi->backend()::class, SupportsHotspot::class);
+        }
+
+        $hotspotSsidOpt = $this->optString($options, 'hotspot-ssid');
+
+        if ($hotspotSsidOpt === false) {
+            throw new InvalidArgument('watch: --hotspot-ssid is required.');
+        }
+
+        $hotspotPasswordOpt = $this->resolvePassword($options, 'hotspot-password-file', null);
+
+        [$device] = $this->resolveDevice($options);
+
+        $hotspot = new HotspotConfig(
+            ssid: $hotspotSsidOpt,
+            password: $hotspotPasswordOpt !== false ? $hotspotPasswordOpt : '',
+            device: $device,
+        );
+
+        $ssidOpt = $this->optString($options, 'ssid');
+
+        $config = new WatchdogConfig(
+            ssid: $ssidOpt !== false ? $ssidOpt : null,
+            hotspot: $hotspot,
+            interval: $this->optPositiveInt($options, 'interval', 30),
+            retryAfter: $this->optPositiveInt($options, 'retry', 300),
+        );
+
+        $watchdog = new Watchdog($this->wifi, $config, new SystemClock(), $this->commandRunner);
+
+        if ($options->getOpt('once')) {
+            echo $watchdog->tick()->value . PHP_EOL;
+
+            return;
+        }
+
+        $watchdog->run();
+    }
+
+    /**
+     * An integer option's value, or $default when it was not given. A
+     * non-numeric or non-positive value is not rejected here: it is handed
+     * straight to {@see WatchdogConfig}, whose own constructor already
+     * rejects anything <= 0 (a non-numeric string casts to 0), so the
+     * validation is not duplicated.
+     */
+    private function optPositiveInt(Options $options, string $name, int $default): int
+    {
+        $value = $this->optString($options, $name);
+
+        return $value !== false ? (int) $value : $default;
+    }
+
     /** @return array{0: Device, 1: bool} device and whether it was auto-detected */
     private function resolveDevice(Options $options): array
     {
@@ -387,17 +506,24 @@ final class WiFiCli extends CLI
     }
 
     /**
-     * Resolves --password / --password-file for both connect and hotspot
-     * start. `false` means no password was given at all (an open network for
-     * connect; an empty passphrase, rejected by HotspotConfig, for hotspot).
+     * Resolves a --password / --password-file pair. `false` means no
+     * password was given at all (an open network for connect; an empty
+     * passphrase, rejected by HotspotConfig, for hotspot and watch).
+     *
+     * $inlineOption is null for `watch`'s hotspot passphrase, which has no
+     * inline `--hotspot-password` option at all — a passphrase must come
+     * from a file or stdin, never argv.
      */
-    private function resolvePassword(Options $options): string|false
-    {
-        $inline = $this->optString($options, 'password');
-        $file = $this->optString($options, 'password-file');
+    private function resolvePassword(
+        Options $options,
+        string $fileOption = 'password-file',
+        ?string $inlineOption = 'password',
+    ): string|false {
+        $inline = $inlineOption !== null ? $this->optString($options, $inlineOption) : false;
+        $file = $this->optString($options, $fileOption);
 
         if ($inline !== false && $file !== false) {
-            throw new InvalidArgument('Use --password or --password-file, not both.');
+            throw new InvalidArgument(sprintf('Use --%s or --%s, not both.', $inlineOption, $fileOption));
         }
 
         if ($inline !== false) {
@@ -410,13 +536,15 @@ final class WiFiCli extends CLI
 
         if ($file === '-') {
             if (stream_isatty(STDIN)) {
-                throw new InvalidArgument('--password-file=- expects the password on stdin.');
+                throw new InvalidArgument(sprintf('--%s=- expects the password on stdin.', $fileOption));
             }
 
             $contents = stream_get_contents(STDIN);
         } else {
             if ($file === '') {
-                throw new InvalidArgument('--password-file needs a path, or "-" to read the password from stdin.');
+                throw new InvalidArgument(
+                    sprintf('--%s needs a path, or "-" to read the password from stdin.', $fileOption),
+                );
             }
 
             if (is_dir($file)) {
@@ -518,14 +646,21 @@ final class WiFiCli extends CLI
         return $fixtures;
     }
 
-    /** Builds the facade, wiring a FakeCommandRunner when the test hook is active. */
-    private static function buildWifi(): WiFi
+    /**
+     * Builds the facade, wiring a FakeCommandRunner when the test hook is
+     * active. Also returns that runner (null in production) so it can be
+     * handed to a {@see Watchdog} too: the watch command's own `iw`
+     * invocations must be driven by the same fixtures as the facade's.
+     *
+     * @return array{0: WiFi, 1: ?CommandRunner}
+     */
+    private static function buildWifi(): array
     {
         $fakeRunnerDir = getenv('WIFI_FAKE_RUNNER');
         $fakeOsName = getenv('WIFI_FAKE_OS');
 
         if ($fakeRunnerDir === false || $fakeOsName === false) {
-            return WiFi::create();
+            return [WiFi::create(), null];
         }
 
         if (!class_exists(FakeCommandRunner::class)) {
@@ -539,7 +674,7 @@ final class WiFiCli extends CLI
             $logPath === false || $logPath === '' ? null : $logPath,
         );
 
-        return new WiFi(BackendFactory::forOs(Os::from($fakeOsName), $runner));
+        return [new WiFi(BackendFactory::forOs(Os::from($fakeOsName), $runner)), $runner];
     }
 
     /**
