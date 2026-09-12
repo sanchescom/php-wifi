@@ -317,7 +317,12 @@ final class CliTest extends TestCase
 
             $this->assertSame(0, $result['exit'], $result['stderr']);
             $connect = $this->lastLoggedCommand($log, 'device wifi connect');
-            $this->assertSame('p w ', $connect['arguments'][7]);
+            $this->assertSame('p w ' . "\n", $connect['stdin']);
+            $this->assertTrue($connect['stdinIsSecret']);
+
+            foreach ($connect['arguments'] as $argument) {
+                $this->assertStringNotContainsString('p w', (string) $argument);
+            }
         } finally {
             unlink($file);
             unlink($log);
@@ -341,7 +346,12 @@ final class CliTest extends TestCase
 
             $this->assertSame(0, $result['exit'], $result['stderr']);
             $connect = $this->lastLoggedCommand($log, 'device wifi connect');
-            $this->assertSame('p w', $connect['arguments'][7]);
+            $this->assertSame('p w' . "\n", $connect['stdin']);
+            $this->assertTrue($connect['stdinIsSecret']);
+
+            foreach ($connect['arguments'] as $argument) {
+                $this->assertStringNotContainsString('p w', (string) $argument);
+            }
         } finally {
             unlink($log);
         }
@@ -592,7 +602,14 @@ final class CliTest extends TestCase
      * Reads the JSON lines FakeCommandRunner appended to $log and returns the
      * last one whose rendered arguments contain $needle, decoded as an array.
      *
-     * @return array{program: string, arguments: list<mixed>, env: array<string, string>, secretIndexes: list<int>}
+     * @return array{
+     *     program: string,
+     *     arguments: list<mixed>,
+     *     env: array<string, string>,
+     *     secretIndexes: list<int>,
+     *     stdin: ?string,
+     *     stdinIsSecret: bool,
+     * }
      */
     private function lastLoggedCommand(string $log, string $needle): array
     {
@@ -605,6 +622,8 @@ final class CliTest extends TestCase
              *     arguments: list<mixed>,
              *     env: array<string, string>,
              *     secretIndexes: list<int>,
+             *     stdin: ?string,
+             *     stdinIsSecret: bool,
              * } $decoded
              */
             $decoded = json_decode($lines[$i], true);

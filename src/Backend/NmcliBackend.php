@@ -55,21 +55,29 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         return new NetworkCollection((new ListParser())->parse($result->stdout));
     }
 
+    /**
+     * With a passphrase, the secret goes on stdin, never in argv: `--ask`
+     * makes `nmcli` prompt for the missing secret on its standard input,
+     * which is where {@see Command::$stdin} (marked
+     * {@see Command::$stdinIsSecret}) delivers it — no `password` argument
+     * is ever built. `Credentials::none()` keeps the exact command this
+     * backend has always run: no `--ask`, no stdin.
+     */
     public function connect(string $ssid, Credentials $credentials, Device $device): void
     {
-        $arguments = ['-w', '10', 'device', 'wifi', 'connect', $ssid];
-        $secretIndexes = [];
+        $arguments = ['-w', '10'];
+        $stdin = null;
+        $stdinIsSecret = false;
 
         if ($credentials->password !== null) {
-            $arguments[] = 'password';
-            $secretIndexes[] = count($arguments);
-            $arguments[] = $credentials->password;
+            $arguments[] = '--ask';
+            $stdin = $credentials->password . "\n";
+            $stdinIsSecret = true;
         }
 
-        $arguments[] = 'ifname';
-        $arguments[] = $device->name;
+        $arguments = [...$arguments, 'device', 'wifi', 'connect', $ssid, 'ifname', $device->name];
 
-        $this->run(new Command('nmcli', $arguments, ['LANG' => 'C'], $secretIndexes));
+        $this->run(new Command('nmcli', $arguments, ['LANG' => 'C'], [], $stdin, $stdinIsSecret));
     }
 
     public function disconnect(Device $device): void

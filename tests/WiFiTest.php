@@ -204,10 +204,18 @@ final class WiFiTest extends TestCase
         $wifi->connectTo('BELL340', Credentials::password('p w'), new Device('wlan0'));
 
         $this->assertCount(1, $runner->commands);
+        $command = $runner->commands[0];
+
         $this->assertSame(
-            ['-w', '10', 'device', 'wifi', 'connect', 'BELL340', 'password', 'p w', 'ifname', 'wlan0'],
-            $runner->commands[0]->arguments,
+            ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'BELL340', 'ifname', 'wlan0'],
+            $command->arguments,
         );
+        $this->assertSame('p w' . "\n", $command->stdin);
+        $this->assertTrue($command->stdinIsSecret);
+
+        foreach ($command->arguments as $argument) {
+            $this->assertStringNotContainsString('p w', $argument);
+        }
     }
 
     #[Test]

@@ -12,6 +12,7 @@ use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
 use Sanchescom\WiFi\Shell\Command;
+use Sanchescom\WiFi\Shell\Os;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Value\Band;
 use Sanchescom\WiFi\Value\Credentials;
@@ -89,7 +90,7 @@ final class NmcliBackendTest extends TestCase
     }
 
     #[Test]
-    public function connect_passes_the_password_as_a_secret_argument(): void
+    public function connect_puts_the_passphrase_on_stdin_instead_of_argv(): void
     {
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
@@ -99,15 +100,38 @@ final class NmcliBackendTest extends TestCase
         $command = $runner->last();
 
         $this->assertSame(
-            ['-w', '10', 'device', 'wifi', 'connect', 'Home', 'password', 'p w', 'ifname', 'wlan0'],
+            ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'Home', 'ifname', 'wlan0'],
             $command->arguments,
         );
-        $this->assertSame([7], $command->secretIndexes);
+        $this->assertSame([], $command->secretIndexes);
+        $this->assertSame('p w' . "\n", $command->stdin);
+        $this->assertTrue($command->stdinIsSecret);
         $this->assertSame(['LANG' => 'C'], $command->env);
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('p w', $argument);
+                $this->assertStringNotContainsString('password', $argument);
+            }
+        }
     }
 
     #[Test]
-    public function connect_without_credentials_omits_the_password_pair(): void
+    public function connect_with_a_passphrase_masks_it_in_the_displayed_command(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        $backend->connect('Home', Credentials::password('hunter2'), new Device('wlan0'));
+
+        $display = $runner->last()->toDisplay(Os::Linux);
+
+        $this->assertStringContainsString('***', $display);
+        $this->assertStringNotContainsString('hunter2', $display);
+    }
+
+    #[Test]
+    public function connect_without_credentials_omits_ask_and_stdin(): void
     {
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
@@ -121,6 +145,8 @@ final class NmcliBackendTest extends TestCase
             $command->arguments,
         );
         $this->assertSame([], $command->secretIndexes);
+        $this->assertNull($command->stdin);
+        $this->assertFalse($command->stdinIsSecret);
     }
 
     #[Test]
@@ -364,7 +390,7 @@ final class NmcliBackendTest extends TestCase
     }
 
     #[Test]
-    public function connect_throws_command_failed_masking_the_password_on_other_failures(): void
+    public function connect_throws_command_failed_masking_the_passphrase_on_other_failures(): void
     {
         $runner = new FakeCommandRunner([
             'connect' => [
