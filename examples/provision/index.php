@@ -77,7 +77,8 @@ $readCache = static function (string $path) use ($bandLabel): ?array {
     return $networks;
 };
 
-// Null unless the file is readable, decodes to a well-formed record, and is under an hour old.
+// Null unless the file is readable, decodes to a well-formed record, and its age is 0-59:59 —
+// a future $at (a clock not yet NTP-corrected) is rejected too, not just a stale one.
 $readState = static function (string $path): ?array {
     $raw = is_readable($path) ? file_get_contents($path) : false;
     $decoded = $raw !== false && trim($raw) !== '' ? json_decode($raw, true) : null;
@@ -95,7 +96,9 @@ $readState = static function (string $path): ?array {
         return null;
     }
 
-    return time() - $at < 3600 ? ['ssid' => $ssid, 'ok' => $ok, 'error' => $error] : null;
+    $age = time() - $at;
+
+    return $age >= 0 && $age < 3600 ? ['ssid' => $ssid, 'ok' => $ok, 'error' => $error] : null;
 };
 
 // Survives the reload after the AP drops. Never the passphrase; a write failure is only logged.
