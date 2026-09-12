@@ -39,20 +39,35 @@ final class ShellCommandRunnerTest extends TestCase
      * synchronously as a PHP E_WARNING, not just the non-zero exit code
      * this method already returns. PHPUnit's `failOnWarning="true"`
      * configuration turns any unsuppressed warning straight into a test
-     * failure, so simply reaching the assertions below — with clean,
-     * untouched output — is itself part of what this test proves; a
+     * failure, so simply reaching the assertions below — with a clean exit
+     * and no thrown exception — is itself part of what this test proves; a
      * regression here would fail loudly rather than silently.
      * `WpaCliBackend::commandExists()` relies on exactly this: probing for a
      * DHCP client that is not installed must never look like a PHP error.
+     *
+     * What stdout/stderr actually contain is platform-dependent and is NOT
+     * part of the guarantee above — measured on a Raspberry Pi running
+     * Debian 13 (PHP 8.2): there, proc_open() detects the failed exec of a
+     * missing binary SYNCHRONOUSLY and returns a non-resource, so
+     * ShellCommandRunner::run() itself takes the `!is_resource($process)`
+     * fallback branch (see runViaPipes()) and fills $result->stderr with
+     * its own "Unable to start: <program>" message. On this Mac, proc_open()
+     * instead returns a resource for a child that forks and exits
+     * immediately on the failed exec, writing nothing to either pipe, so
+     * stderr comes back empty. Both are correct outcomes of the same
+     * contract (non-zero exit, no warning, a CommandResult rather than a
+     * thrown exception) — do not "fix" this back to asserting stderr is
+     * always empty.
      */
     #[Test]
     public function probing_a_nonexistent_binary_emits_no_php_warning_and_produces_clean_output(): void
     {
-        $result = (new ShellCommandRunner())->run(new Command('php-wifi-definitely-not-a-binary'));
+        $command = new Command('php-wifi-definitely-not-a-binary');
+        $result = (new ShellCommandRunner())->run($command);
 
         $this->assertNotSame(0, $result->exitCode);
         $this->assertSame('', $result->stdout);
-        $this->assertSame('', $result->stderr);
+        $this->assertContains($result->stderr, ['', 'Unable to start: ' . $command->describe()]);
     }
 
     #[Test]
