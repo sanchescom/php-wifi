@@ -323,3 +323,160 @@ fixtures:
   real Mac: `Could not find network NoSuchNetXYZ.` and `Failed to join network
   BELL340.` / `Error: -3912` both come back with exit code 0.
 - The `--password-file=-` tty guard (no tty in the harness).
+
+---
+
+# Verified on real hardware — 3.2.0
+
+Same Raspberry Pi, **2026-09-12**, against the `3.2.0` branch at `481c7b2`
+(plus this file). Board, OS, NetworkManager 1.52.1 and PHP 8.4.24 as in the
+earlier runs. Installed for this release — installed only, nothing on that
+machine was ever removed: `hostapd` (then immediately masked so it cannot
+auto-start). `iw`, `wpa_supplicant`/`wpa_cli`, `dnsmasq` and `dhcpcd` were
+already present.
+
+The `wpa_cli` backend needs a `wpa_supplicant` that owns the radio, so each run
+below took `wlan0` away from NetworkManager (`nmcli device set wlan0 managed
+no`, NetworkManager stopped), started
+`wpa_supplicant -B -i wlan0 -c <conf> -D nl80211` with
+`ctrl_interface=/run/wpa_supplicant`, and gave everything back afterwards.
+`eth0`, which carries the SSH session, was never touched.
+
+## The suite, on the Pi
+
+`./vendor/bin/phpunit` → `OK (387 tests)`. Running it there also caught three
+tests that passed on macOS and failed on Linux — they would have failed CI on
+the first push. Fixed before the tag; see the CHANGELOG.
+
+## Choosing a backend
+
+Measured both ways on the same machine:
+
+```
+$ # NetworkManager running
+Sanchescom\WiFi\Backend\NmcliBackend
+$ LANG=C nmcli -t -f RUNNING general
+running
+$ # NetworkManager stopped
+Sanchescom\WiFi\Backend\WpaCliBackend
+```
+
+## The `wpa_cli` backend, end to end
+
+```
+$ sudo php bin/wifi list --unique
+ SSID             BSSID              Channel  Band  Quality  dBm  Frequency  Connected  Security
+-------------------------------------------------------------------------------------------------
+ BELL340          0e:ac:8a:99:58:5c  1        2.4   100%     -41  2412       false      WPA2
+ VTECH_5764_9764  a6:97:5c:b7:97:64  1        2.4   92%      -54  2412       false      WPA2
+
+$ printf '%s' "$PASSPHRASE" | sudo php bin/wifi connect --ssid=BELL340 --password-file=-
+wlan0: connected to Access Point: BELL340
+wlan0: leased 192.168.2.76 for 259200 seconds
+Connected to BELL340 via wlan0 (auto)
+[exit 0]
+
+$ sudo php bin/wifi list --connected
+ SSID     BSSID              Channel  Band  Quality  dBm  Frequency  Connected  Security
+-----------------------------------------------------------------------------------------
+ BELL340  0e:ac:8a:99:58:5d  157      5     92%      -54  5785       true       WPA2
+
+$ ip -4 -br addr show wlan0
+wlan0            UP             192.168.2.76/24
+$ sudo php bin/wifi disconnect
+Disconnected via wlan0 (auto)
+$ sudo php bin/wifi forget BELL340
+Forgot BELL340.
+```
+
+The address came from `dhcpcd`, invoked by the backend after association —
+`wpa_supplicant` associates and nothing more, so without that step the
+interface would have been associated and unusable.
+
+## The passphrase and `ps` — measured, and this time it is zero
+
+3.1 could only claim the passphrase left the `wifi` command line; `nmcli` still
+carried it. Both Linux backends now keep it out of every process's arguments.
+Measured during a live `connect`, with the search pattern read **from a file**
+so the measuring `grep` could not carry the secret itself:
+
+```
+$ ps -ww -eo args > /tmp/ps.txt
+$ grep -c -F -f ~/.wifi-pass /tmp/ps.txt
+0
+```
+
+Same check while the hotspot was up: `hotspot passphrase in any argv: 0` — it
+reaches only the `hostapd` config file, which is `tempnam`-created at 0600 and
+deleted once `hostapd` has read it.
+
+## Hotspot on `hostapd` and `dnsmasq`
+
+```
+$ printf '%s' "$HOTSPOT_PW" | sudo php bin/wifi hotspot start --ssid=femus-setup --password-file=-
+Hotspot femus-setup started on wlan0 (auto)
+$ sudo php bin/wifi hotspot status
+active
+$ ip -4 -br addr show wlan0
+wlan0            UP             10.42.0.1/24
+$ pgrep -a hostapd
+50638 /usr/sbin/hostapd -B -P /tmp/php-wifi-hostapd.pid /tmp/php-wifi-hostapd-eipg9m6ilk2n5bSVEYV
+$ pgrep -a dnsmasq
+50643 /usr/sbin/dnsmasq --interface=wlan0 --bind-interfaces --except-interface=lo --dhcp-range=10.42.0.10,10.42.0.100,12h --pid-file=/tmp/php-wifi-dnsmasq.pid
+$ sudo php bin/wifi hotspot stop
+Hotspot stopped.
+$ sudo php bin/wifi hotspot status
+inactive
+```
+
+`hostapd` was measured gone one second after `stop`, the address flushed and
+the radio handed back to `wpa_supplicant`.
+
+## The watchdog
+
+`wifi watch --once` in three of its states, on the device:
+
+```
+disconnected, nothing known   -> hotspot_raised   (and the hotspot really came up)
+hotspot up, nobody attached   -> hotspot_busy     (and it was not torn down)
+connected                     -> connected
+```
+
+## Five defects this run found that no amount of reading would have
+
+1. **Every Linux tool was unreachable.** `wpa_cli`, `iw`, `dnsmasq` and
+   `dhcpcd` live in `/usr/sbin`, which is not in an unprivileged `PATH` on
+   Debian, and 3.2 had just removed the shell from the execution path. Passing
+   `PATH` in the command's environment does not help — PHP resolves the program
+   with the *parent's* `PATH`. Measured directly:
+   `proc_open(["wpa_cli","-v"], …)` failed; `["/sbin/wpa_cli","-v"]` exited 0.
+   The backend now resolves each tool's absolute path with `which` first.
+2. **`nmcli --ask` ignores a freshly supplied passphrase** when a profile for
+   that SSID already exists: with the device disconnected and a stored correct
+   secret, feeding a deliberately wrong one still reported
+   `Device 'wlan0' successfully activated`. `connect()` now deletes the
+   existing profile first when a passphrase is given.
+3. **A scan was read before it finished.** On a cold `wpa_supplicant`,
+   `scan_results` is empty for several seconds, so every SSID looked absent and
+   `connect()` failed with `NetworkNotFound`. `scan()` now waits for rows.
+4. **Association was given microseconds.** The poll ran its fifteen attempts
+   back to back with no pause, so `connect()` could never succeed on real
+   hardware: `did not reach wpa_state=COMPLETED within 15 attempt(s); last
+   state: SCANNING`. There is now a real interval between attempts.
+5. **A hotspot could be raised but never stopped.** While the radio serves as
+   an access point `iw dev` reports `type AP`, and device detection had been
+   tightened to accept only `type managed`, so `hotspot stop` died with
+   `iw dev listed no wireless interface` and the access point stayed up. The
+   parser now prefers a managed interface and falls back to any non-P2P one.
+
+## Not verified
+
+- Someone actually attached to the hotspot: the watchdog's "a person is using
+  the page, leave the access point alone" branch is covered by unit tests but
+  has not been exercised with a real phone on this backend.
+- The provisioning demo on the `wpa_cli` backend (it was verified on
+  NetworkManager in 3.1.0).
+- `NmcliBackend::startHotspot()` still passes the hotspot passphrase as an
+  argument — nmcli has no stdin mode for that command, and the argv-free route
+  is a keyfile. Listed in ROADMAP for 3.3.
+- Windows and macOS are untouched by this release.
