@@ -6,10 +6,11 @@
 # PHP WiFi
 
 A cross-platform PHP library for scanning and joining Wi-Fi networks. One
-object facade (`WiFi`) drives `nmcli` on Linux, `networksetup` on macOS and
-`netsh` on Windows through a shared `Backend` interface, returns immutable
-value objects instead of arrays, and ships a CLI (`bin/wifi`) on top of the
-same API.
+object facade (`WiFi`) drives `nmcli` or `wpa_cli` on Linux, `networksetup` on
+macOS and `netsh` on Windows through a shared `Backend` interface, returns
+immutable value objects instead of arrays, and ships a CLI (`bin/wifi`) on top
+of the same API. Linux has two backends, picked automatically — see "Linux —
+two backends" below.
 
 ## `wifi list` on a Raspberry Pi
 
@@ -44,8 +45,9 @@ and fixed the earlier, OS-wrong version of it.)
 - `illuminate/collections` 11, 12 or 13 (pulled in automatically; the
   constraint lets the package coexist with Laravel 11–13 applications)
 - Linux, macOS (Darwin) or Windows, with the matching system tool: `nmcli`
-  (NetworkManager) on Linux, `networksetup` (built in) on macOS, `netsh`
-  (built in) on Windows
+  (NetworkManager) or `wpa_supplicant`/`wpa_cli` on Linux (see "Linux — two
+  backends" below), `networksetup` (built in) on macOS, `netsh` (built in) on
+  Windows
 
 ## Installation
 
@@ -91,13 +93,22 @@ foreach ($wifi->knownNetworks() as $known) {
 }
 ```
 
-`$known->name` is the NetworkManager connection name; `$known->ssid` is the
-real SSID, resolved with one extra `nmcli -g 802-11-wireless.ssid connection
-show <name>` call per profile — `knownNetworks()` costs N+1 `nmcli` commands
-for N wireless profiles, not one. The two differ for a saved hotspot profile:
-a connection named `Hotspot` reports its actual SSID in `$ssid`. A failed
-per-profile lookup falls back to the connection name rather than failing the
-whole list.
+On `NmcliBackend`, `$known->name` is the NetworkManager connection name;
+`$known->ssid` is the real SSID, resolved with one extra `nmcli -g
+802-11-wireless.ssid connection show <name>` call per profile —
+`knownNetworks()` costs N+1 `nmcli` commands for N wireless profiles, not
+one. The two differ for a saved hotspot profile: a connection named
+`Hotspot` reports its actual SSID in `$ssid`. A failed per-profile lookup
+falls back to the connection name rather than failing the whole list.
+
+On `WpaCliBackend`, `wpa_supplicant` has no notion of a connection name
+distinct from the SSID, so `$known->name` always equals `$known->ssid`, and
+`$known->device` is always `null` (`wpa_supplicant`'s `list_networks` never
+reports which interface owns a configured network). `$known->active`
+reflects `list_networks`' `[CURRENT]` flag, which means the network is
+*selected* — the one `wpa_supplicant` is trying or last used — not
+necessarily *associated right now*; a network can show `active: true` while
+the radio is actually disconnected from it.
 
 ### Start a hotspot — Linux only
 
@@ -156,10 +167,20 @@ instead, the hotspot is left down; `hotspot.sh`'s wait loop notices within a
 few seconds and brings it back so the phone can rejoin and the person can
 retry.
 
+A mistyped passphrase drops the access point without ever delivering an HTTP
+response, so `index.php` also writes the outcome of every submitted attempt
+to `PROVISION_STATE` — `{"at": <unix time>, "ssid": …, "ok": false, "error":
+"…"}` — and shows "Last attempt: … failed — &lt;reason&gt;" the next time the
+page loads. This is the only way a person learns why their attempt failed
+once the page itself is unreachable; the record is ignored (and the page
+falls back to no banner) once it is more than an hour old, or timestamped in
+the future. The passphrase is never part of it.
+
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `PROVISION_CACHE` | `/run/php-wifi-provision/networks.json` | Where the pre-hotspot scan is cached as JSON. |
 | `PROVISION_DONE` | `/run/php-wifi-provision/done` | Marker file created once a connection succeeds. |
+| `PROVISION_STATE` | `/run/php-wifi-provision/last-attempt.json` | Where the outcome of the last connection attempt is recorded as JSON. |
 | `PROVISION_TIMEOUT` | `900` | Seconds `hotspot.sh` waits for `PROVISION_DONE` before giving up. |
 | `RESTART_BACKOFF` | `5` | Seconds to wait between attempts to bring a dropped hotspot back. |
 | `MAX_RESTARTS` | `5` | Consecutive failed hotspot restarts before `hotspot.sh` gives up (still exiting `0`). |
@@ -191,24 +212,111 @@ mean "unknown".
 
 **Capability interfaces, not silent no-ops.** Known-networks and hotspot
 support are declared as `SupportsKnownNetworks` and `SupportsHotspot`
-interfaces that only `NmcliBackend` implements. Calling `knownNetworks()`
-or `startHotspot()` against a `Backend` that does not implement the
-relevant interface throws `UnsupportedOperation` immediately, instead of
-returning an empty list or silently doing nothing.
+interfaces, implemented by both Linux backends (`NmcliBackend` and, since
+3.2, `WpaCliBackend`) and neither macOS nor Windows backend. Calling
+`knownNetworks()` or `startHotspot()` against a `Backend` that does not
+implement the relevant interface throws `UnsupportedOperation` immediately,
+instead of returning an empty list or silently doing nothing.
+
+## Linux — two backends
+
+Linux has two backends behind the one `WiFi` facade:
+
+- **`NmcliBackend`** drives NetworkManager's `nmcli`. Full parity, and the
+  only Linux backend before 3.2.
+- **`WpaCliBackend`** drives `wpa_supplicant` directly through `wpa_cli`, for
+  machines with no NetworkManager at all — minimal Raspberry Pi OS Lite
+  images and most embedded distributions run `wpa_supplicant` directly and
+  have no `nmcli` to drive. It has the same parity: scan, connect (including
+  asking a DHCP client for an address once associated), disconnect, known
+  networks, forget, and a hotspot — through `hostapd` + `dnsmasq` instead of
+  `nmcli`'s built-in one.
+
+`WiFi::create()` picks between them automatically, through
+`BackendFactory::forLinux()`: it runs one cheap probe, `nmcli -t -f RUNNING
+general` (with `LANG=C`), and returns `NmcliBackend` when it exits `0` and
+prints `running`, `WpaCliBackend` otherwise — a missing `nmcli` binary, a
+stopped NetworkManager, or any other failure. The probe never throws: a
+failed probe is itself the answer ("no usable NetworkManager here"), not an
+error. `BackendFactory::forOs(Os::Linux, …)` is unchanged and always returns
+`NmcliBackend`, so code and tests that build a backend directly for a fixed
+OS are unaffected; only `forCurrentOs()` (and therefore `WiFi::create()`)
+routes Linux through the probe.
+
+```php
+use Sanchescom\WiFi\Backend\BackendFactory;
+use Sanchescom\WiFi\Shell\ShellCommandRunner;
+
+$backend = BackendFactory::forLinux(ShellCommandRunner::forCurrentOs());
+// NmcliBackend when NetworkManager is running, WpaCliBackend otherwise.
+```
+
+### What `WpaCliBackend` needs installed
+
+| Tool | Used for | Required? |
+| --- | --- | --- |
+| `wpa_supplicant` / `wpa_cli` | Everything — scan, connect, disconnect, known networks, forget | Always |
+| `iw` | Device detection (`iw dev`); `wifi watch`'s station count (`iw dev <iface> station dump`) | Always |
+| A DHCP client — `dhcpcd`, `udhcpc`, or `dhclient` | Getting an address after `connect()` associates | Recommended — `connect()` still succeeds without one, but the interface is then associated with no address; something else (a static configuration, `systemd-networkd`) has to address it |
+| `hostapd` | The hotspot access point | Only for `startHotspot()` / `stopHotspot()` / `isHotspotActive()` |
+| `dnsmasq` | DHCP for hotspot clients | Only for the hotspot |
+
+Every tool above is spawned by its absolute path, resolved with `which`
+against a fixed search path that includes `/usr/local/sbin`, `/usr/sbin` and
+`/sbin` (`Backend\Linux\ToolPath`) — directories absent from an unprivileged
+user's `PATH` on Debian and Raspberry Pi OS, where `proc_open()` resolves a
+bare program name using PHP's own `PATH`, never the `Command`'s own `$env`.
+This was found live on the Pi: `proc_open(["wpa_cli", "-v"], …)` failed while
+`["/sbin/wpa_cli", "-v"]` exited `0` — see
+[`docs/verified-on.md`](docs/verified-on.md).
+
+### Privileges — `WpaCliBackend`
+
+`docs/verified-on.md`'s 3.2.0 run drove every `WpaCliBackend` command —
+`list`, `connect`, `disconnect`, `forget`, `hotspot start`/`status`/`stop` —
+under `sudo`; that is the only privilege level this release measured.
+`PermissionDenied::fromWpaCli()`'s own hint names an alternative that was
+not exercised this release: a `wpa_supplicant` whose `ctrl_interface` config
+line grants a `GROUP` (e.g. `netdev`) lets a member of that group talk to
+the control socket without root. Raising the hotspot needs root regardless
+of that setting — `startHotspot()` flushes and assigns the interface's IP
+address (`ip addr`) and binds `hostapd` and `dnsmasq` to it, all privileged
+operations — and so do most DHCP clients when asked to configure an
+interface.
+
+### Two behaviour changes worth knowing about
+
+- **`connect()` with a passphrase now replaces an existing NetworkManager
+  profile for that SSID** (`NmcliBackend`). Measured on the Pi: `nmcli --ask`
+  only prompts for a secret when it has none of its own already, so a saved
+  profile holding a stale passphrase made `nmcli` connect with that stored
+  secret and silently ignore a freshly typed, corrected one. `connect()` now
+  runs `nmcli connection delete <ssid>` first when a passphrase is given, so
+  the new passphrase actually wins — at the cost of any other setting that
+  profile held, such as a static address or `autoconnect=no`.
+- **`KnownNetwork::$active` means something different on the two Linux
+  backends.** On `NmcliBackend` it reflects `nmcli`'s own idea of the active
+  connection. On `WpaCliBackend` it is `wpa_supplicant`'s `[CURRENT]` flag
+  from `list_networks`, which means the network is *selected* — the one
+  `wpa_supplicant` is trying or already used — not necessarily *associated*
+  right now. A network can show `active: true` while the radio is actually
+  disconnected from it.
 
 ## Platform matrix
 
-| Capability | Linux (`nmcli`) | macOS (`networksetup`) | Windows (`netsh`) |
-| --- | --- | --- | --- |
-| scan | ✅ verified live (NetworkManager 1.52.1) | ✅ verified live — SSIDs come back redacted unless the process running PHP has Location Services; BSSIDs are never reported for other networks | ✅ tests only — no Windows machine |
-| connect | ✅ verified live | ✅ tests only — not run against real hardware in 3.0 | ✅ tests only |
-| disconnect | ✅ verified live | ✅ tests only — not run against real hardware in 3.0 | ✅ tests only |
-| detect (`device()`) | ✅ verified live | ✅ verified live | ✅ tests only |
-| known networks | ✅ verified live | ❌ throws `UnsupportedOperation` | ❌ throws `UnsupportedOperation` |
-| hotspot | ✅ verified live | ❌ throws `UnsupportedOperation` | ❌ throws `UnsupportedOperation` |
+| Capability | Linux (`nmcli`) | Linux (`wpa_cli`) | macOS (`networksetup`) | Windows (`netsh`) |
+| --- | --- | --- | --- | --- |
+| scan | ✅ verified live (NetworkManager 1.52.1) | ✅ verified live (NetworkManager stopped, `wpa_supplicant` driving the radio directly) | ✅ verified live — SSIDs come back redacted unless the process running PHP has Location Services; BSSIDs are never reported for other networks | ✅ tests only — no Windows machine |
+| connect | ✅ verified live | ✅ verified live, including DHCP (`dhcpcd`) | ✅ tests only — not run against real hardware in 3.0 | ✅ tests only |
+| disconnect | ✅ verified live | ✅ verified live | ✅ tests only — not run against real hardware in 3.0 | ✅ tests only |
+| detect (`device()`) | ✅ verified live | ✅ verified live (implicit — no `--device` was passed in any 3.2.0 run, so `iw dev` resolved it every time) | ✅ verified live | ✅ tests only |
+| known networks | ✅ verified live | `forget()` ✅ verified live; `knownNetworks()` (`wifi known`) — tests only, not shown in the 3.2.0 run | ❌ throws `UnsupportedOperation` | ❌ throws `UnsupportedOperation` |
+| hotspot | ✅ verified live | ✅ verified live (`hostapd` + `dnsmasq`) | ❌ throws `UnsupportedOperation` | ❌ throws `UnsupportedOperation` |
 
 See [`docs/verified-on.md`](docs/verified-on.md) for the raw commands
-behind every "verified live" cell above.
+behind every "verified live" cell above. `wifi watch` (Linux only, either
+backend) was verified live in three of its five states — see the CLI
+reference below.
 
 On Windows, a 6 GHz network is only reported as `Band::GHz6` when `netsh`
 prints a `Band :` field for it (Windows 11 22H2 and later); on older
@@ -280,12 +388,51 @@ read it, including on failure. `CommandFailed::$command` keeps the
 original `Command` with the unmasked argument list — `getMessage()` is
 masked, but do not dump the exception object into logs or error pages.
 
+Since 3.2, `ShellCommandRunner` execs with an argv array
+(`proc_open($command->toArgv(), …)`) instead of a rendered shell string, so
+no `/bin/sh -c` (or, on Windows, a bare `cmd` wrapper) sits between this
+library and the tool it runs — one fewer process, and one fewer place a
+secret could show up in `ps`. The one deliberate exception is
+`NetshBackend::scan()`'s `cmd /c "chcp 65001 >nul & netsh …"` composite,
+which keeps working unchanged: `cmd` is the program there, not a shell
+wrapper around one. A command can also carry input for the child's stdin
+(`Command::$stdin`, masked in `toDisplay()` as `<<< '***'` when
+`$stdinIsSecret` is set) — the mechanism both Linux backends use below.
+
+**Where a passphrase reaches a process's own arguments, precisely, as of
+3.2.0:**
+
+- **Neither Linux backend puts a `connect()` passphrase in any process's
+  arguments.** `NmcliBackend::connect()` passes it to `nmcli --ask` on
+  stdin; `WpaCliBackend::connect()` passes it to `wpa_cli`'s interactive
+  stdin. Measured on the Pi during a live `connect`, sampling `ps -ww -eo
+  args` for the passphrase (read from a file, so the measuring `grep`
+  itself never carries the secret): `0` matches, on both backends — see
+  [`docs/verified-on.md`](docs/verified-on.md). 3.1 could only make this
+  claim for the `wifi` process's own argv; `nmcli` itself still carried the
+  secret for the duration of that call. 3.2 closes that window on both
+  Linux backends.
+- **`NmcliBackend::startHotspot()` still passes the hotspot passphrase as a
+  plain argument** (`nmcli device wifi hotspot … password <secret>`) —
+  `nmcli` has no stdin mode for that subcommand. Closing this is a 3.3
+  candidate (a keyfile, the way the Windows backend already avoids the
+  equivalent problem for `netsh`); see ROADMAP.md.
+- **`WpaCliBackend::startHotspot()`'s passphrase never reaches any
+  process's arguments.** It is written to a `hostapd` config file
+  (`Backend\Linux\HostapdConfig`, created via `tempnam()` at mode `0600`)
+  and deleted once `hostapd` has read it. Measured on the Pi during a live
+  hotspot: `0` matches in the same `ps` sample.
+- **macOS's `NetworksetupBackend::connect()` passes the passphrase as a
+  plain `networksetup` argument**, unchanged and untouched by this
+  release (`networksetup -setairportnetwork <device> <ssid> <password>`).
+
 ## Verified on
 
 [`docs/verified-on.md`](docs/verified-on.md) is the release gate for every
 tag from 3.0.0 on: the raw output of `device`, `list`, `list --unique`,
-`known`, `hotspot start`/`status`/`stop`, `forget`, and one real `connect`
-to the maintainer's own network, run on a Raspberry Pi.
+`known`, `hotspot start`/`status`/`stop`, `forget`, `watch --once`, and a
+real `connect` to the maintainer's own network, run on a Raspberry Pi — on
+`NmcliBackend` since 3.0.0, and on `WpaCliBackend` as well since 3.2.0.
 
 ## CLI reference
 
@@ -303,6 +450,7 @@ of this repository it is `php bin/wifi`.
 | `hotspot start` | `--ssid=`, `--password=`, `--password-file=`, `--band=`, `--device=` | Start a hotspot (`--band` is `2.4` or `5`) |
 | `hotspot stop` | — | Stop the hotspot |
 | `hotspot status` | — | Print `active` or `inactive` |
+| `watch` | `--ssid=`, `--interval=`, `--retry=`, `--hotspot-ssid=`, `--hotspot-password-file=`, `--device=`, `--once` | Keep rejoining a network, raising a provisioning hotspot when it cannot (requires `SupportsHotspot`, i.e. either Linux backend) |
 
 `--device` is optional everywhere it appears; the wireless device is
 detected automatically when omitted.
@@ -372,6 +520,52 @@ bin/wifi list --unique --json`:
 
 `bssid`, `channel`, `band`, `frequency`, `quality` and `dbm` are `null` when
 the platform does not report them.
+
+### `wifi watch`
+
+Keeps a headless device reachable. On every tick it checks whether the
+device is already connected; if not, it tries to rejoin the target network
+(or every known network, in order, when `--ssid` is omitted); if that fails
+too, it raises a provisioning hotspot. While the hotspot is up, it counts
+attached stations (`iw dev <iface> station dump`) and leaves it alone as
+long as someone is attached — a person typing a passphrase must never be
+dropped mid-session, a lesson from 3.1's live run. Once nobody is attached
+and `--retry` seconds have passed since the hotspot went up, it tears the
+hotspot down and tries the real network again.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--ssid=` | any known network | The SSID to keep rejoining; omit to try every known network in order |
+| `--interval=` | `30` | Seconds between ticks (only used by the looping form, not `--once`) |
+| `--retry=` | `300` | Seconds an idle, unattended hotspot is left up before the next retry |
+| `--hotspot-ssid=` | — (required) | SSID of the hotspot to raise |
+| `--hotspot-password-file=` | — (required) | Read the hotspot passphrase from a file, or from stdin with `-`; omitting it fails with "passphrase must be 8…" — `HotspotConfig` requires one, so `watch` cannot raise an open hotspot |
+| `--device=` | auto-detected | Pins the interface both reconnection attempts and station counts use |
+| `--once` | off | Run a single tick, print the resulting state to stdout, and exit, instead of looping forever — how the release gate checks each state on the Pi |
+
+`watch` requires the active backend to implement `SupportsHotspot` (either
+Linux backend); on macOS or Windows it exits `2` like any other unsupported
+operation.
+
+Each tick resolves to one of five states. `--once` prints it to stdout; the
+looping form logs a timestamped line to STDERR on every state *change*
+(`connected` is otherwise logged only the first time it is reached, not on
+every uneventful tick that follows):
+
+| State | Meaning |
+| --- | --- |
+| `connected` | Already joined to a client network; nothing was done |
+| `recovered` | Was disconnected (or the hotspot was stopped); a join attempt succeeded |
+| `hotspot_raised` | No client connection could be recovered; the hotspot is now up |
+| `hotspot_busy` | The hotspot is up and either occupied or not yet due for a retry; nothing was touched |
+| `failed` | An unexpected failure while acting; the loop keeps running |
+
+Verified live on the Pi in three of these states (`docs/verified-on.md`):
+disconnected with nothing known → `hotspot_raised`; hotspot up with nobody
+attached → `hotspot_busy`; already connected → `connected`. `recovered` and
+`failed`, and the "someone is actually attached" branch of `hotspot_busy`,
+are covered by unit tests but were not exercised with real hardware this
+release.
 
 ### Testing the CLI without hardware
 
