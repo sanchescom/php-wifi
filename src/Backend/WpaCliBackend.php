@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\Backend;
 
+use Sanchescom\WiFi\Backend\Linux\HostapdConfig;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
@@ -18,6 +19,8 @@ use Sanchescom\WiFi\Shell\CommandRunner;
 use Sanchescom\WiFi\Shell\Os;
 use Sanchescom\WiFi\Value\Credentials;
 use Sanchescom\WiFi\Value\Device;
+use Sanchescom\WiFi\Value\Hotspot;
+use Sanchescom\WiFi\Value\HotspotConfig;
 use Sanchescom\WiFi\Value\KnownNetwork;
 use Sanchescom\WiFi\Value\NetworkCollection;
 
@@ -28,12 +31,23 @@ use Sanchescom\WiFi\Value\NetworkCollection;
  * `wpa_cli -i <iface>` interactively and writes the command script to the
  * child's stdin, terminated by `quit` — a secret never appears in argv.
  *
- * Hotspot support ({@see SupportsHotspot}) is added in a later release; this
- * class deliberately does not declare that interface yet, so
- * `WiFi::supports()` never advertises a capability this class cannot back.
+ * The hotspot ({@see SupportsHotspot}) is raised through `hostapd` and
+ * `dnsmasq` rather than `wpa_supplicant`, so its two pid files live at a
+ * fixed, derivable path (the system temp directory plus a fixed file name)
+ * instead of an instance property: a second `WpaCliBackend` instance — the
+ * CLI's `wifi hotspot status`, or the watchdog, running in a different
+ * process from the one that called {@see self::startHotspot()} — discovers
+ * a running hotspot through those same two files.
  */
-final class WpaCliBackend implements Backend, SupportsKnownNetworks
+final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHotspot
 {
+    private const HOSTAPD_PID_FILE = 'php-wifi-hostapd.pid';
+
+    private const DNSMASQ_PID_FILE = 'php-wifi-dnsmasq.pid';
+
+    private const HOTSPOT_ADDRESS = '10.42.0.1/24';
+
+    private const DHCP_RANGE = '10.42.0.10,10.42.0.100,12h';
     public function __construct(
         private readonly CommandRunner $runner,
         private readonly ?string $interface = null,
@@ -136,6 +150,118 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks
         }
 
         throw NetworkNotFound::bySsid($ssidOrName);
+    }
+
+    /**
+     * Releases the interface from `wpa_supplicant` (stdin `disconnect`),
+     * addresses it, then raises `hostapd` and `dnsmasq` on it. The
+     * `HostapdConfig` file is the only place the passphrase ever exists in
+     * clear text; it is deleted in a `finally` regardless of outcome —
+     * `hostapd` daemonises (`-B`), so by the time it has started it has
+     * already read the file. If `hostapd` fails, `dnsmasq` is never
+     * reached, and the config file is still deleted.
+     */
+    public function startHotspot(HotspotConfig $config, Device $device): Hotspot
+    {
+        $interface = $device->name;
+        $hostapdConfig = new HostapdConfig($interface, $config);
+        $confFile = $hostapdConfig->create();
+
+        try {
+            $this->wpaCli($interface, ['disconnect']);
+
+            $this->run(new Command('ip', ['addr', 'flush', 'dev', $interface]));
+            $this->run(new Command('ip', ['addr', 'add', self::HOTSPOT_ADDRESS, 'dev', $interface]));
+            $this->run(new Command('ip', ['link', 'set', $interface, 'up']));
+
+            $this->run(new Command('hostapd', ['-B', '-P', $this->hostapdPidFile(), $confFile]));
+
+            $this->run(new Command('dnsmasq', [
+                '--interface=' . $interface,
+                '--bind-interfaces',
+                '--except-interface=lo',
+                '--dhcp-range=' . self::DHCP_RANGE,
+                '--pid-file=' . $this->dnsmasqPidFile(),
+            ]));
+        } finally {
+            $hostapdConfig->delete();
+        }
+
+        return new Hotspot('hostapd', $config->ssid, $device);
+    }
+
+    /**
+     * Terminates both daemons, flushes the address off the interface and
+     * hands the radio back to `wpa_supplicant` (stdin `reconnect`). Every
+     * step tolerates "already gone" — a missing pid file is skipped, a
+     * `kill` of an already-dead pid is not treated as failure — so calling
+     * this twice in a row is harmless.
+     */
+    public function stopHotspot(): void
+    {
+        $interface = $this->resolveInterface();
+
+        $this->killPidFile($this->hostapdPidFile());
+        $this->killPidFile($this->dnsmasqPidFile());
+
+        $this->run(new Command('ip', ['addr', 'flush', 'dev', $interface]));
+
+        $this->wpaCli($interface, ['reconnect']);
+    }
+
+    /**
+     * True only when both pid files exist, each holds a bare numeric pid,
+     * and `ps -p <pid>` (run through the {@see CommandRunner}, never
+     * `posix_kill`, so tests can drive it) exits successfully for both.
+     */
+    public function isHotspotActive(): bool
+    {
+        return $this->pidIsAlive($this->hostapdPidFile()) && $this->pidIsAlive($this->dnsmasqPidFile());
+    }
+
+    private function hostapdPidFile(): string
+    {
+        return sys_get_temp_dir() . '/' . self::HOSTAPD_PID_FILE;
+    }
+
+    private function dnsmasqPidFile(): string
+    {
+        return sys_get_temp_dir() . '/' . self::DNSMASQ_PID_FILE;
+    }
+
+    private function pidIsAlive(string $pidFile): bool
+    {
+        $pid = $this->readPid($pidFile);
+
+        if ($pid === null) {
+            return false;
+        }
+
+        return $this->runner->run(new Command('ps', ['-p', $pid]))->isSuccessful();
+    }
+
+    private function killPidFile(string $pidFile): void
+    {
+        $pid = $this->readPid($pidFile);
+
+        if ($pid !== null) {
+            $this->runner->run(new Command('kill', [$pid]));
+        }
+
+        if (file_exists($pidFile)) {
+            unlink($pidFile);
+        }
+    }
+
+    private function readPid(string $pidFile): ?string
+    {
+        if (!file_exists($pidFile)) {
+            return null;
+        }
+
+        $contents = trim((string) file_get_contents($pidFile));
+
+        return preg_match('/^\d+$/', $contents) === 1 ? $contents : null;
     }
 
     private function resolveInterface(): string
