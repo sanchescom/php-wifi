@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\Backend;
 
+use Closure;
 use Sanchescom\WiFi\Backend\Linux\HostapdConfig;
 use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\CommandFailed;
@@ -67,30 +68,83 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     private readonly ToolPath $toolPath;
 
+    /** @var Closure(int): void */
+    private readonly Closure $sleep;
+
+    /**
+     * $scanAttempts and $scanPollIntervalMicroseconds bound how long
+     * {@see self::scan()} waits for a cold `wpa_supplicant` to finish
+     * scanning (see that method's docblock for the reasoning behind the
+     * numbers). $sleep is the seam that makes the wait fake in tests: it
+     * defaults to a real, blocking `usleep()`, but any test can hand in a
+     * no-op (or recording) closure instead, so the suite never actually
+     * waits.
+     *
+     * @param Closure(int): void|null $sleep called with a microsecond count
+     *        between scan-result polls; defaults to a real `usleep()`
+     */
     public function __construct(
         private readonly CommandRunner $runner,
         private readonly ?string $interface = null,
         private readonly int $associationAttempts = 15,
+        private readonly int $scanAttempts = 11,
+        private readonly int $scanPollIntervalMicroseconds = 500_000,
+        ?Closure $sleep = null,
     ) {
         $this->toolPath = new ToolPath($runner);
+        $this->sleep = $sleep ?? static function (int $microseconds): void {
+            usleep($microseconds);
+        };
     }
 
     /**
-     * Triggers a scan and immediately reads back the results. Real
-     * `wpa_supplicant` keeps the previous scan's results available while a
-     * fresh one runs, so `scan_results` still returns useful (if possibly
-     * slightly stale) data without this backend sleeping between the two
-     * calls — which would only slow down every test and every caller for no
-     * correctness gain.
+     * Triggers a scan, then polls `scan_results` until it reports at least
+     * one network, or the attempt budget runs out.
+     *
+     * A freshly started `wpa_supplicant` — the normal state on a
+     * NetworkManager-free device right after boot — is still
+     * `wpa_state=SCANNING` for a few seconds after `scan` is sent, with an
+     * empty results table until the scan finishes; reading `scan_results`
+     * only once, immediately, made every SSID look absent on real hardware
+     * (the defect this method fixes). So this polls instead of reading
+     * once, sleeping {@see self::$scanPollIntervalMicroseconds} between
+     * attempts through the injectable {@see self::$sleep}, up to
+     * {@see self::$scanAttempts} times.
+     *
+     * Defaults: 11 attempts, 500ms apart, i.e. 10 pauses = 5.0 seconds of
+     * total wait before giving up — close to the multi-second scan latency
+     * observed on the Pi that reported this defect, while still being a
+     * small, bounded number of `wpa_cli` invocations (11, not a tight
+     * sub-100ms poll that would spawn it dozens of times per call).
+     *
+     * Exhausting the budget is not an error: it returns whatever the last
+     * read gave, even an empty collection — a genuinely empty area has no
+     * networks, and that is a valid answer for `scan()` to give. It is
+     * {@see self::connect()} that turns "not found" into
+     * {@see NetworkNotFound}, and that stays correct behaviour.
      */
     public function scan(): NetworkCollection
     {
         $interface = $this->resolveInterface();
 
         $this->wpaCli($interface, ['scan']);
-        $result = $this->wpaCli($interface, ['scan_results']);
 
-        return new NetworkCollection((new ScanResultsParser())->parse($result->stdout));
+        $networks = [];
+
+        for ($attempt = 0; $attempt < $this->scanAttempts; $attempt++) {
+            $result = $this->wpaCli($interface, ['scan_results']);
+            $networks = (new ScanResultsParser())->parse($result->stdout);
+
+            if ($networks !== []) {
+                break;
+            }
+
+            if ($attempt < $this->scanAttempts - 1) {
+                ($this->sleep)($this->scanPollIntervalMicroseconds);
+            }
+        }
+
+        return new NetworkCollection($networks);
     }
 
     /**

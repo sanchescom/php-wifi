@@ -25,6 +25,13 @@ use Sanchescom\WiFi\Shell\CommandRunner;
  * int, stderr?: string}. Lines starting with "# SYNTHETIC:" are stripped
  * from file fixtures.
  *
+ * A fixture may instead be a list of such fixtures — e.g. `['' , '' ,
+ * FIXTURES . '/Foo.txt']` — for a command run more than once with the same
+ * needle but a different reply each time (a cold `wpa_supplicant` whose
+ * `scan_results` starts empty and only later gains rows). Each call
+ * consumes the next entry; once the list is exhausted, its last entry is
+ * repeated for every further call.
+ *
  * Test-only: the match haystack is never masked, and when $logPath is set,
  * every received Command is appended to it as one raw JSON line, also
  * unmasked — both may contain secret arguments or a secret stdin script in
@@ -36,7 +43,12 @@ final class FakeCommandRunner implements CommandRunner
     /** @var list<Command> */
     public array $commands = [];
 
-    /** @param array<string, string|array{output: string, exit?: int, stderr?: string}> $fixtures */
+    /** @var array<string, int> how many times each needle has matched so far */
+    private array $matchCounts = [];
+
+    /**
+     * @param array<string, string|array{output: string, exit?: int, stderr?: string}|list<string|array{output: string, exit?: int, stderr?: string}>> $fixtures
+     */
     public function __construct(private readonly array $fixtures, private readonly ?string $logPath = null)
     {
     }
@@ -74,6 +86,14 @@ final class FakeCommandRunner implements CommandRunner
             }
 
             $fixture = $this->fixtures[$needle];
+            $needleKey = (string) $needle;
+
+            if (is_array($fixture) && array_is_list($fixture)) {
+                $callIndex = $this->matchCounts[$needleKey] ?? 0;
+                $this->matchCounts[$needleKey] = $callIndex + 1;
+                $fixture = $fixture[min($callIndex, count($fixture) - 1)];
+            }
+
             $spec = is_string($fixture) ? ['output' => $fixture] : $fixture;
             $output = is_file($spec['output']) ? (string) file_get_contents($spec['output']) : $spec['output'];
             $output = preg_replace('/^# SYNTHETIC:[^\n]*\n/', '', $output) ?? $output;

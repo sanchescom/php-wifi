@@ -134,6 +134,12 @@ final class WpaCliBackendTest extends TestCase
 
     // --- scan() ---------------------------------------------------------------
 
+    /**
+     * The happy path: `scan_results` already has rows on the very first
+     * read (a `wpa_supplicant` that had already finished a previous scan),
+     * so {@see WpaCliBackend::scan()} never polls a second time — exactly
+     * one `scan_results` call, same as before this defect was fixed.
+     */
     #[Test]
     public function scan_triggers_a_scan_then_reads_scan_results(): void
     {
@@ -160,6 +166,94 @@ final class WpaCliBackendTest extends TestCase
         );
         $this->assertSame(self::WPA_CLI, $runner->commands[1]->program);
         $this->assertSame(self::WPA_CLI, $runner->commands[2]->program);
+    }
+
+    /**
+     * The defect fixed in 3.2: a cold `wpa_supplicant` replies to the first
+     * few `scan_results` reads with nothing while the scan is still
+     * running, then starts returning rows. `scan()` must keep polling
+     * through exactly that shape and still return the eventual rows — via
+     * an injected no-op {@see \Closure} standing in for {@see
+     * WpaCliBackend::$sleep}, so this test never actually waits.
+     */
+    #[Test]
+    public function scan_polls_scan_results_until_a_cold_supplicant_finishes_scanning(): void
+    {
+        $sleeps = [];
+        $runner = self::runner([
+            'scan_results' => ['', '', self::FIXTURES . '/wpacli/ScanResults.txt'],
+            'scan' => '',
+        ]);
+        $backend = new WpaCliBackend(
+            $runner,
+            'wlan0',
+            sleep: function (int $microseconds) use (&$sleeps): void {
+                $sleeps[] = $microseconds;
+            },
+        );
+
+        $startedAt = microtime(true);
+        $networks = $backend->scan();
+        $elapsed = microtime(true) - $startedAt;
+
+        $this->assertInstanceOf(NetworkCollection::class, $networks);
+        $this->assertCount(4, $networks);
+
+        // which wpa_cli, scan, then scan_results three times.
+        $this->assertCount(5, $runner->commands);
+        $this->assertSame(self::WPA_CLI, $runner->commands[1]->program);
+        $this->assertSame("scan\nquit\n", $runner->commands[1]->stdin);
+
+        foreach ([2, 3, 4] as $index) {
+            $this->assertSame(self::WPA_CLI, $runner->commands[$index]->program);
+            $this->assertSame("scan_results\nquit\n", $runner->commands[$index]->stdin);
+        }
+
+        // One pause between each pair of reads: two, not three, since the
+        // third (successful) read never needs to wait for another.
+        $this->assertSame([500_000, 500_000], $sleeps);
+
+        // The sleeper is a no-op closure: nothing here ever really waited.
+        $this->assertLessThan(1.0, $elapsed);
+    }
+
+    /**
+     * Exhausting the poll budget is not an error: a genuinely empty area
+     * has no networks, and returning an empty collection is the correct,
+     * valid answer — it is `connect()`'s job, not `scan()`'s, to turn "no
+     * match" into {@see \Sanchescom\WiFi\Exception\NetworkNotFound}.
+     */
+    #[Test]
+    public function scan_returns_an_empty_collection_once_the_poll_budget_is_exhausted(): void
+    {
+        $sleeps = [];
+        $runner = self::runner([
+            'scan_results' => '',
+            'scan' => '',
+        ]);
+        $backend = new WpaCliBackend(
+            $runner,
+            'wlan0',
+            scanAttempts: 4,
+            sleep: function (int $microseconds) use (&$sleeps): void {
+                $sleeps[] = $microseconds;
+            },
+        );
+
+        $networks = $backend->scan();
+
+        $this->assertInstanceOf(NetworkCollection::class, $networks);
+        $this->assertCount(0, $networks);
+
+        $scanResultsCalls = array_filter(
+            $runner->commands,
+            static fn (Command $command): bool => $command->stdin === "scan_results\nquit\n",
+        );
+        $this->assertCount(4, $scanResultsCalls);
+
+        // Three pauses between four reads — never a fifth, wasted one after
+        // the last, already-final read.
+        $this->assertSame([500_000, 500_000, 500_000], $sleeps);
     }
 
     #[Test]
