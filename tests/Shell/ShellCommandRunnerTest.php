@@ -160,10 +160,17 @@ final class ShellCommandRunnerTest extends TestCase
     #[Test]
     public function the_environment_is_merged_not_replaced(): void
     {
-        $runner = new ShellCommandRunner(Os::Linux);
-        $result = $runner->run(new Command('sh', ['-c', 'echo "$LANG-$PATH"'], ['LANG' => 'C']));
+        $hostPath = getenv('PATH');
+        self::assertIsString($hostPath);
+        self::assertNotSame('', $hostPath);
 
-        $this->assertStringStartsWith('C-', $result->stdout);
-        $this->assertStringNotContainsString('C-' . PHP_EOL, $result->stdout); // PATH survived
+        $runner = new ShellCommandRunner(Os::Linux);
+        $result = $runner->run(new Command('sh', ['-c', 'printf \'%s\\n%s\' "$LANG" "$PATH"'], ['LANG' => 'C']));
+
+        // The child must see BOTH the injected variable and the host's own
+        // PATH, byte for byte: proc_open() replaces the environment when it is
+        // given an array, and a shell silently substitutes a default PATH when
+        // none is set, which would hide a missing merge.
+        $this->assertSame(['C', $hostPath], explode("\n", $result->stdout));
     }
 }
