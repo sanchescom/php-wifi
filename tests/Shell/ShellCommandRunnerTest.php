@@ -108,4 +108,62 @@ final class ShellCommandRunnerTest extends TestCase
         $after = glob(sys_get_temp_dir() . '/php-wifi-*') ?: [];
         $this->assertSame($before, $after);
     }
+
+    #[Test]
+    public function it_feeds_stdin_to_the_child(): void
+    {
+        $runner = new ShellCommandRunner(Os::Linux);
+        $result = $runner->run(new Command('cat', [], [], [], "hello\n"));
+
+        $this->assertSame(0, $result->exitCode);
+        $this->assertSame("hello\n", $result->stdout);
+    }
+
+    #[Test]
+    public function it_feeds_stdin_to_the_child_via_the_file_capture_strategy(): void
+    {
+        $runner = new ShellCommandRunner(Os::Linux, captureViaFiles: true);
+        $result = $runner->run(new Command('cat', [], [], [], "hello\n"));
+
+        $this->assertSame(0, $result->exitCode);
+        $this->assertSame("hello\n", $result->stdout);
+    }
+
+    /**
+     * The brief's original proof reads the parent process's name via
+     * `ps -o comm= -p $PPID` from a `sh -c` child, on the theory that a
+     * shell-string invocation leaves a "sh" between php and the program while
+     * an argv invocation does not. On this Mac (bash-as-/bin/sh) that is not
+     * deterministic: bash tail-call-optimises a `-c` script whose last
+     * command is a single simple external command by exec()-ing straight
+     * into it, replacing the shell process in place — verified by hand:
+     * `proc_open(["sh", "-c", "ps -o pid=,ppid=,comm= -p \$\$"], …)` reports
+     * comm=ps for the *same* pid proc_open returned for "sh", for both the
+     * old shell-string call and the new argv call. So the process-name probe
+     * cannot tell the two implementations apart here.
+     *
+     * The portable proof instead: feed a program an argument containing a
+     * shell metacharacter sequence and confirm it comes back byte-for-byte,
+     * never expanded. Only a shell would interpret `$(id)`; execvp() never
+     * does, whatever the argument contains.
+     */
+    #[Test]
+    public function it_does_not_spawn_a_shell(): void
+    {
+        $runner = new ShellCommandRunner(Os::Linux);
+        $result = $runner->run(new Command('printf', ['%s', '$(id)']));
+
+        $this->assertSame(0, $result->exitCode);
+        $this->assertSame('$(id)', $result->stdout);
+    }
+
+    #[Test]
+    public function the_environment_is_merged_not_replaced(): void
+    {
+        $runner = new ShellCommandRunner(Os::Linux);
+        $result = $runner->run(new Command('sh', ['-c', 'echo "$LANG-$PATH"'], ['LANG' => 'C']));
+
+        $this->assertStringStartsWith('C-', $result->stdout);
+        $this->assertStringNotContainsString('C-' . PHP_EOL, $result->stdout); // PATH survived
+    }
 }

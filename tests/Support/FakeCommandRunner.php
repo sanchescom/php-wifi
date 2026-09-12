@@ -45,6 +45,8 @@ final class FakeCommandRunner implements CommandRunner
                     'arguments' => $command->arguments,
                     'env' => $command->env,
                     'secretIndexes' => $command->secretIndexes,
+                    'stdin' => $command->stdin,
+                    'stdinIsSecret' => $command->stdinIsSecret,
                 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n",
                 FILE_APPEND,
             );
