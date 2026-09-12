@@ -11,17 +11,25 @@ use Sanchescom\WiFi\Shell\CommandResult;
 use Sanchescom\WiFi\Shell\CommandRunner;
 
 /**
- * Maps a substring of Command::describe() to a fixture. The LONGEST matching
- * needle wins ("connection show --active" beats "connection show" for a
- * command that contains both, regardless of which was declared first);
+ * Maps a substring of a match haystack to a fixture. The haystack is
+ * Command::describe() followed by, when the command carries stdin, a
+ * newline and the raw $stdin ("wpa_cli -i wlan0\nscan_results\nquit\n") —
+ * this is what lets two commands with identical program/arguments but
+ * different stdin (e.g. every wpa_cli call this library makes) resolve to
+ * different fixtures. The LONGEST matching needle wins ("connection show
+ * --active" beats "connection show" for a command that contains both, and
+ * "scan_results" beats "scan" for a command whose stdin is
+ * "scan_results\nquit\n", regardless of which was declared first);
  * declaration order is only a tie-break between equal-length needles. A
  * fixture is either a file path or an array {output: string|path, exit?:
  * int, stderr?: string}. Lines starting with "# SYNTHETIC:" are stripped
  * from file fixtures.
  *
- * Test-only: when $logPath is set, every received Command is appended to it
- * as one raw JSON line, unmasked — including secret arguments in clear
- * text. Never point this at a path outside a test's own temporary storage.
+ * Test-only: the match haystack is never masked, and when $logPath is set,
+ * every received Command is appended to it as one raw JSON line, also
+ * unmasked — both may contain secret arguments or a secret stdin script in
+ * clear text. Never point $logPath at a path outside a test's own temporary
+ * storage.
  */
 final class FakeCommandRunner implements CommandRunner
 {
@@ -52,7 +60,7 @@ final class FakeCommandRunner implements CommandRunner
             );
         }
 
-        $described = $command->describe();
+        $haystack = $command->describe() . ($command->stdin !== null ? "\n" . $command->stdin : '');
 
         /** @var list<int|string> $needles */
         $needles = array_keys($this->fixtures);
@@ -61,7 +69,7 @@ final class FakeCommandRunner implements CommandRunner
         foreach ($needles as $needle) {
             $needleString = (string) $needle;
 
-            if (!str_contains($described, $needleString)) {
+            if (!str_contains($haystack, $needleString)) {
                 continue;
             }
 
@@ -73,7 +81,7 @@ final class FakeCommandRunner implements CommandRunner
             return new CommandResult($spec['exit'] ?? 0, $output, $spec['stderr'] ?? '');
         }
 
-        throw new RuntimeException('No fixture for command: ' . $described);
+        throw new RuntimeException('No fixture for command: ' . $haystack);
     }
 
     public function last(): Command

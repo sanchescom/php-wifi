@@ -96,6 +96,21 @@ final class FakeCommandRunnerTest extends TestCase
     }
 
     #[Test]
+    public function two_commands_with_identical_program_and_arguments_but_different_stdin_get_different_fixtures(): void
+    {
+        $runner = new FakeCommandRunner([
+            'scan_results' => 'RESULTS',
+            'scan' => 'TRIGGERED',
+        ]);
+
+        $trigger = $runner->run(new Command('wpa_cli', ['-i', 'wlan0'], [], [], "scan\nquit\n"));
+        $results = $runner->run(new Command('wpa_cli', ['-i', 'wlan0'], [], [], "scan_results\nquit\n"));
+
+        $this->assertSame('TRIGGERED', $trigger->stdout);
+        $this->assertSame('RESULTS', $results->stdout);
+    }
+
+    #[Test]
     public function it_appends_one_raw_json_line_per_command(): void
     {
         $log = tempnam(sys_get_temp_dir(), 'php-wifi-log-');
