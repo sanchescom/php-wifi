@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\Backend;
 
 use Sanchescom\WiFi\Backend\Linux\HostapdConfig;
+use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
@@ -38,6 +39,17 @@ use Sanchescom\WiFi\Value\NetworkCollection;
  * CLI's `wifi hotspot status`, or the watchdog, running in a different
  * process from the one that called {@see self::startHotspot()} — discovers
  * a running hotspot through those same two files.
+ *
+ * Every tool this backend spawns from a system directory — `wpa_cli`, `iw`,
+ * `ip`, `hostapd`, `dnsmasq`, and the DHCP clients probed by
+ * {@see self::requestAddress()} — is resolved to its absolute path through
+ * {@see ToolPath} before it is run, because `proc_open()` resolves a bare
+ * program name using PHP's own PATH, not the `$env` array handed to a
+ * {@see Command}; on Debian/Raspberry Pi OS all five live in `/usr/sbin`,
+ * which is absent from an unprivileged user's PATH. `which`, `ps` and
+ * `kill` are the only programs this backend spawns as bare names: all three
+ * live in `/usr/bin` or `/bin`, which are always on PATH, so they need no
+ * resolving.
  */
 final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHotspot
 {
@@ -53,11 +65,14 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     private const DHCP_RANGE = '10.42.0.10,10.42.0.100,12h';
 
+    private readonly ToolPath $toolPath;
+
     public function __construct(
         private readonly CommandRunner $runner,
         private readonly ?string $interface = null,
         private readonly int $associationAttempts = 15,
     ) {
+        $this->toolPath = new ToolPath($runner);
     }
 
     /**
@@ -118,7 +133,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     public function detectDevice(): Device
     {
-        $result = $this->run(new Command('iw', ['dev']));
+        $result = $this->run(new Command($this->resolvedPath('iw'), ['dev']));
 
         return (new DevParser())->parse($result->stdout)
             ?? throw DeviceNotFound::onThisSystem('iw dev listed no wireless interface');
@@ -185,13 +200,17 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         try {
             $this->wpaCli($interface, ['disconnect']);
 
-            $this->run(new Command('ip', ['addr', 'flush', 'dev', $interface]));
-            $this->run(new Command('ip', ['addr', 'add', self::HOTSPOT_ADDRESS, 'dev', $interface]));
-            $this->run(new Command('ip', ['link', 'set', $interface, 'up']));
+            $ip = $this->resolvedPath('ip');
+            $this->run(new Command($ip, ['addr', 'flush', 'dev', $interface]));
+            $this->run(new Command($ip, ['addr', 'add', self::HOTSPOT_ADDRESS, 'dev', $interface]));
+            $this->run(new Command($ip, ['link', 'set', $interface, 'up']));
 
-            $this->run(new Command('hostapd', ['-B', '-P', $this->hostapdPidFile(), $confFile]));
+            $this->run(new Command(
+                $this->resolvedPath(self::HOSTAPD_BINARY),
+                ['-B', '-P', $this->hostapdPidFile(), $confFile],
+            ));
 
-            $this->run(new Command('dnsmasq', [
+            $this->run(new Command($this->resolvedPath(self::DNSMASQ_BINARY), [
                 '--interface=' . $interface,
                 '--bind-interfaces',
                 '--except-interface=lo',
@@ -221,7 +240,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         $this->killPidFile($this->hostapdPidFile(), self::HOSTAPD_BINARY);
         $this->killPidFile($this->dnsmasqPidFile(), self::DNSMASQ_BINARY);
 
-        $this->run(new Command('ip', ['addr', 'flush', 'dev', $interface]));
+        $this->run(new Command($this->resolvedPath('ip'), ['addr', 'flush', 'dev', $interface]));
 
         $this->wpaCli($interface, ['reconnect']);
     }
@@ -368,6 +387,28 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     }
 
     /**
+     * Resolves $name to its absolute path through {@see ToolPath}, for a
+     * tool that is required for the calling operation to proceed at all —
+     * unlike the DHCP clients probed by {@see self::requestAddress()},
+     * where an unresolved tool just means "try the next one".
+     *
+     * @throws CommandFailed when $name cannot be found in PATH or in any of
+     *         the usual system directories
+     */
+    private function resolvedPath(string $name): string
+    {
+        return $this->toolPath->resolve($name) ?? throw new CommandFailed(
+            new Command($name),
+            new CommandResult(127, '', ''),
+            sprintf(
+                '"%s" was not found in PATH or in the usual system directories '
+                . '(/usr/local/sbin, /usr/sbin, /sbin, /usr/local/bin, /usr/bin, /bin).',
+                $name,
+            ),
+        );
+    }
+
+    /**
      * `add_network` prints the new network id on its own line, possibly
      * preceded or followed by other banner/prompt text — the id is the last
      * line that is purely numeric. {@see self::run()} already rejects a
@@ -427,51 +468,50 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     /**
      * `wpa_supplicant` only associates; nothing else hands out an address on
      * a machine without NetworkManager. Probes `dhcpcd`, `udhcpc`, then
-     * `dhclient` (via `which`, never `is_executable()` — the runner is the
-     * only way a test can observe the probe) and runs the first one found.
-     * `which` — not `command -v` — because `command` is a shell builtin:
-     * Debian and Raspberry Pi OS ship no `/usr/bin/command`, and this
-     * library never runs anything through a shell, so a `command -v` probe
-     * execs nothing and always reports absent on the exact machines this
-     * backend targets. `/usr/bin/which` is a real binary on Debian,
-     * Raspberry Pi OS and macOS. `dhcpcd` is special: `dhcpcd -U <iface>`
-     * succeeding means a `dhcpcd` daemon already supervises this interface,
-     * so it is left alone — two DHCP clients fighting over one interface is
-     * worse than one running. No client present is not a failure:
+     * `dhclient` — via {@see ToolPath}, the same `which`-based resolver
+     * every other tool in this backend goes through, never
+     * `is_executable()` — and runs the first one found. Unlike every other
+     * call to {@see self::resolvedPath()} in this class, a DHCP client that
+     * cannot be resolved is not an error here: it just means "try the next
+     * one", and no client present at all is not a failure either —
      * association already succeeded, and something else
      * (systemd-networkd, a static address) may be responsible for
-     * addressing.
+     * addressing. `dhcpcd` is special: `dhcpcd -U <iface>` succeeding means
+     * a `dhcpcd` daemon already supervises this interface, so it is left
+     * alone — two DHCP clients fighting over one interface is worse than
+     * one running.
      */
     private function requestAddress(Device $device): void
     {
         $interface = $device->name;
 
-        if ($this->commandExists('dhcpcd')) {
-            $lease = $this->runner->run(new Command('dhcpcd', ['-U', $interface]));
+        $dhcpcd = $this->toolPath->resolve('dhcpcd');
+
+        if ($dhcpcd !== null) {
+            $lease = $this->runner->run(new Command($dhcpcd, ['-U', $interface]));
 
             if ($lease->isSuccessful()) {
                 return;
             }
 
-            $this->run(new Command('dhcpcd', ['-n', $interface]));
+            $this->run(new Command($dhcpcd, ['-n', $interface]));
 
             return;
         }
 
-        if ($this->commandExists('udhcpc')) {
-            $this->run(new Command('udhcpc', ['-i', $interface, '-n', '-q']));
+        $udhcpc = $this->toolPath->resolve('udhcpc');
+
+        if ($udhcpc !== null) {
+            $this->run(new Command($udhcpc, ['-i', $interface, '-n', '-q']));
 
             return;
         }
 
-        if ($this->commandExists('dhclient')) {
-            $this->run(new Command('dhclient', ['-1', $interface]));
-        }
-    }
+        $dhclient = $this->toolPath->resolve('dhclient');
 
-    private function commandExists(string $name): bool
-    {
-        return $this->runner->run(new Command('which', [$name]))->isSuccessful();
+        if ($dhclient !== null) {
+            $this->run(new Command($dhclient, ['-1', $interface]));
+        }
     }
 
     /**
@@ -496,7 +536,14 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     {
         $stdin = implode("\n", [...$lines, 'quit']) . "\n";
 
-        return $this->run(new Command('wpa_cli', ['-i', $interface], ['LANG' => 'C'], [], $stdin, $secret));
+        return $this->run(new Command(
+            $this->resolvedPath('wpa_cli'),
+            ['-i', $interface],
+            ['LANG' => 'C'],
+            [],
+            $stdin,
+            $secret,
+        ));
     }
 
     /**
