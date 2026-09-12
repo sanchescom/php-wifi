@@ -72,16 +72,18 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     private readonly Closure $sleep;
 
     /**
-     * $scanAttempts and $scanPollIntervalMicroseconds bound how long
-     * {@see self::scan()} waits for a cold `wpa_supplicant` to finish
-     * scanning (see that method's docblock for the reasoning behind the
-     * numbers). $sleep is the seam that makes the wait fake in tests: it
-     * defaults to a real, blocking `usleep()`, but any test can hand in a
-     * no-op (or recording) closure instead, so the suite never actually
-     * waits.
+     * $scanAttempts/$scanPollIntervalMicroseconds and
+     * $associationAttempts/$associationPollIntervalMicroseconds bound how
+     * long {@see self::scan()} and {@see self::awaitAssociation()} each
+     * wait (see their own docblocks for the reasoning behind the numbers).
+     * $sleep is the one seam both polls pause through, and the seam that
+     * makes the wait fake in tests: it defaults to a real, blocking
+     * `usleep()`, but any test can hand in a no-op (or recording) closure
+     * instead, so the suite never actually waits.
      *
      * @param Closure(int): void|null $sleep called with a microsecond count
-     *        between scan-result polls; defaults to a real `usleep()`
+     *        between polls (scan results or association status); defaults
+     *        to a real `usleep()`
      */
     public function __construct(
         private readonly CommandRunner $runner,
@@ -89,6 +91,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         private readonly int $associationAttempts = 15,
         private readonly int $scanAttempts = 11,
         private readonly int $scanPollIntervalMicroseconds = 500_000,
+        private readonly int $associationPollIntervalMicroseconds = 1_500_000,
         ?Closure $sleep = null,
     ) {
         $this->toolPath = new ToolPath($runner);
@@ -152,7 +155,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * known once its reply is read, and a batched script cannot be read
      * mid-script. Once the id is known, `set_network`/`enable_network`/
      * `save_config` run together as one script, then `status` is polled
-     * (up to `$associationAttempts` times) until `wpa_state=COMPLETED`.
+     * (up to `$associationAttempts` times, `$associationPollIntervalMicroseconds`
+     * apart — see {@see self::awaitAssociation()}) until `wpa_state=COMPLETED`.
      */
     public function connect(string $ssid, Credentials $credentials, Device $device): void
     {
@@ -492,6 +496,26 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         return $id;
     }
 
+    /**
+     * Polls `status` for `wpa_state=COMPLETED`, pausing
+     * {@see self::$associationPollIntervalMicroseconds} between attempts
+     * through the injectable {@see self::$sleep} — never after a
+     * successful read, and never after the last attempt.
+     *
+     * Reading `status` in a tight loop with no pause at all completed all
+     * `$associationAttempts` reads in milliseconds on real hardware, so
+     * every attempt saw the same still-associating state and the call
+     * always failed even though the network had, in fact, already been
+     * added and selected (`wifi known` showed it `Active`) — association
+     * was simply still running. `wpa_supplicant` association typically
+     * finishes in a few seconds, but a cold radio that must scan first (the
+     * same cold-start condition {@see self::scan()} works around) can take
+     * longer, so the defaults budget roughly 20 seconds: 15 attempts, 1.5s
+     * apart, is 14 pauses = 21.0 seconds of total wait before giving up.
+     *
+     * Exhausting the budget keeps its existing meaning: a {@see
+     * CommandFailed} naming the last observed `wpa_state`.
+     */
     private function awaitAssociation(string $interface): void
     {
         $lastState = 'UNKNOWN';
@@ -504,6 +528,10 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
             if ($lastState === 'COMPLETED') {
                 return;
+            }
+
+            if ($attempt < $this->associationAttempts - 1) {
+                ($this->sleep)($this->associationPollIntervalMicroseconds);
             }
         }
 

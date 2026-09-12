@@ -407,15 +407,33 @@ final class WpaCliBackendTest extends TestCase
         }
     }
 
+    /**
+     * `status` never reports `COMPLETED` here (the real-hardware shape of
+     * the association defect: a cold radio still associating when the
+     * budget runs out). Asserts the sleep seam fires between attempts —
+     * never after the last, already-final one — with the configured
+     * interval, and that the suite still never actually waits despite the
+     * production default of ~1.5s per pause.
+     */
     #[Test]
     public function connect_throws_command_failed_naming_the_last_state_when_association_never_completes(): void
     {
+        $sleeps = [];
         $runner = self::runner([
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => "wpa_state=SCANNING\n",
         ]);
-        $backend = new WpaCliBackend($runner, 'wlan0', 3);
+        $backend = new WpaCliBackend(
+            $runner,
+            'wlan0',
+            3,
+            sleep: function (int $microseconds) use (&$sleeps): void {
+                $sleeps[] = $microseconds;
+            },
+        );
+
+        $startedAt = microtime(true);
 
         try {
             $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
@@ -424,11 +442,48 @@ final class WpaCliBackendTest extends TestCase
             $this->assertStringContainsString('SCANNING', $exception->getMessage());
         }
 
+        $elapsed = microtime(true) - $startedAt;
+
         $statusCommands = array_filter(
             $runner->commands,
             static fn (Command $command): bool => $command->stdin === "status\nquit\n",
         );
         $this->assertCount(3, $statusCommands);
+
+        // Two pauses between three status reads — never a third, wasted one
+        // after the last (still-failing) attempt.
+        $this->assertSame([1_500_000, 1_500_000], $sleeps);
+
+        // The sleeper is a no-op closure: nothing here ever really waited,
+        // despite a production default of ~1.5s per pause.
+        $this->assertLessThan(1.0, $elapsed);
+    }
+
+    /**
+     * The happy path: `status` already reports `COMPLETED` on the very
+     * first read, so {@see WpaCliBackend::awaitAssociation()} never sleeps
+     * at all.
+     */
+    #[Test]
+    public function connect_sleeps_zero_times_when_status_reports_completed_immediately(): void
+    {
+        $sleeps = [];
+        $runner = self::runner([
+            'add_network' => "0\n",
+            'set_network' => "OK\n",
+            'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'which' => ['output' => '', 'exit' => 1],
+        ]);
+        $backend = new WpaCliBackend(
+            $runner,
+            sleep: function (int $microseconds) use (&$sleeps): void {
+                $sleeps[] = $microseconds;
+            },
+        );
+
+        $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
+
+        $this->assertSame([], $sleeps);
     }
 
     // --- connect() -> requestAddress() ---------------------------------------
