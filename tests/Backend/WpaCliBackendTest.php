@@ -1187,6 +1187,44 @@ final class WpaCliBackendTest extends TestCase
         $this->assertCount(2, $whichCalls);
     }
 
+    /**
+     * The hardware defect this fix addresses: with no interface configured
+     * (the real-world `BackendFactory` construction — see
+     * {@see self::the_configured_interface_short_circuits_detect_device()}),
+     * `stopHotspot()` must resolve the interface through `detectDevice()`,
+     * and `iw dev` reports `wlan0` as `type AP` while hostapd is running —
+     * there is no `managed` interface to find. Before this fix,
+     * `detectDevice()` returned nothing and `stopHotspot()` threw
+     * `DeviceNotFound`, leaving the hotspot permanently unstoppable.
+     */
+    #[Test]
+    public function stop_hotspot_resolves_the_interface_through_detect_device_while_the_radio_is_in_ap_mode(): void
+    {
+        file_put_contents(sys_get_temp_dir() . self::HOSTAPD_PID_FILE, "111\n");
+        file_put_contents(sys_get_temp_dir() . self::DNSMASQ_PID_FILE, "222\n");
+
+        $runner = self::runner([
+            self::IW . ' dev' => self::FIXTURES . '/iw/DevApOnly.txt',
+            'ps -p 111' => "hostapd\n",
+            'ps -p 222' => "dnsmasq\n",
+            'kill 111' => '',
+            'kill 222' => '',
+            self::IP . ' addr flush dev wlan0' => '',
+            'reconnect' => "OK\n",
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        $backend->stopHotspot();
+
+        $this->assertSame(self::IW, $runner->commands[1]->program);
+        $this->assertSame(['dev'], $runner->commands[1]->arguments);
+        $this->assertSame(['addr', 'flush', 'dev', 'wlan0'], $runner->commands[7]->arguments);
+        $this->assertSame("reconnect\nquit\n", $runner->commands[9]->stdin);
+
+        $this->assertFileDoesNotExist(sys_get_temp_dir() . self::HOSTAPD_PID_FILE);
+        $this->assertFileDoesNotExist(sys_get_temp_dir() . self::DNSMASQ_PID_FILE);
+    }
+
     #[Test]
     public function stop_hotspot_tolerates_missing_pid_files(): void
     {

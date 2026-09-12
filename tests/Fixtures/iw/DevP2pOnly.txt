@@ -1,0 +1,7 @@
+# SYNTHETIC: iw dev
+phy#0
+	Interface p2p-dev-wlan0
+		ifindex 4
+		wdev 0x2
+		addr dc:a6:32:9f:61:eb
+		type P2P-device
