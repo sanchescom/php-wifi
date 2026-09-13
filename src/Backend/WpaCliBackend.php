@@ -14,6 +14,7 @@ use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Parser\Iw\DevParser;
 use Sanchescom\WiFi\Parser\WpaCli\ListNetworksParser;
+use Sanchescom\WiFi\Parser\WpaCli\Printf;
 use Sanchescom\WiFi\Parser\WpaCli\ScanResultsParser;
 use Sanchescom\WiFi\Parser\WpaCli\StatusParser;
 use Sanchescom\WiFi\Shell\Command;
@@ -31,10 +32,13 @@ use Sanchescom\WiFi\Value\NetworkCollection;
 
 /**
  * Linux backend driving `wpa_supplicant` directly through `wpa_cli`, for
- * machines with no NetworkManager. `wpa_cli` takes commands as arguments,
- * which would put a PSK in `ps`; every call here instead runs
- * `wpa_cli -i <iface>` interactively and writes the command script to the
- * child's stdin, terminated by `quit` — a secret never appears in argv.
+ * machines with no NetworkManager. Commands go to `wpa_cli` as arguments —
+ * {@see self::wpaCli()} — except the one that carries a passphrase, which
+ * would put it in `ps`: that runs `wpa_cli -i <iface>` interactively with the
+ * script on stdin ({@see self::wpaCliScript()}), so a secret never appears
+ * in argv. Interactive mode is kept to that one call because, with no
+ * `wpa_supplicant` listening, it retries forever instead of failing
+ * (measured on the Pi); argument mode exits at once.
  *
  * The hotspot ({@see SupportsHotspot}) is raised through `hostapd` and
  * `dnsmasq` rather than `wpa_supplicant`, so its two pid files live at a
@@ -138,12 +142,12 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     {
         $interface = $this->resolveInterface();
 
-        $this->wpaCli($interface, ['scan']);
+        $this->wpaCli($interface, 'scan');
 
         $networks = [];
 
         for ($attempt = 0; $attempt < $this->scanAttempts; $attempt++) {
-            $result = $this->wpaCli($interface, ['scan_results']);
+            $result = $this->wpaCli($interface, 'scan_results');
             $networks = (new ScanResultsParser())->parse($result->stdout);
 
             if ($networks !== []) {
@@ -186,7 +190,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     private function markConnectedNetwork(array $networks, string $interface): array
     {
         try {
-            $result = $this->wpaCli($interface, ['status']);
+            $result = $this->wpaCli($interface, 'status');
         } catch (CommandFailed) {
             return $networks;
         }
@@ -217,85 +221,104 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     }
 
     /**
-     * `add_network` must run as its own call: the id it returns is only
-     * known once its reply is read, and a batched script cannot be read
-     * mid-script. Once the id is known, `set_network`/`enable_network`/
-     * `save_config` run together as one script, then `status` is polled
-     * (up to `$associationAttempts` times, `$associationPollIntervalMicroseconds`
-     * apart — see {@see self::awaitAssociation()}) until `wpa_state=COMPLETED`.
+     * `wpa_supplicant` has no notion of "the" block for an SSID, only however
+     * many `add_network` happened to create, so this starts from
+     * `list_networks`:
      *
-     * Two defects fixed here both come from the same root cause —
-     * `wpa_supplicant` has no notion of "the" block for an SSID, only
-     * however many `add_network` happened to create — and both are handled
-     * by consulting `list_networks` before touching anything:
+     * - No passphrase and a block for $ssid already exists (the watchdog's
+     *   rejoin path): that block is joined as it is. Adding an open-network
+     *   (`key_mgmt NONE`) block for a WPA2 SSID could never associate.
+     * - Otherwise a new block is added and joined, and only once it has
+     *   associated are the old blocks for $ssid removed and the config saved.
+     *   If it fails, the new block is removed instead and nothing is saved, so
+     *   a mistyped passphrase never costs the working one.
      *
-     * - No passphrase (the watchdog's rejoin path): unconditionally adding a
-     *   fresh open-network (`key_mgmt NONE`) block for an SSID that already
-     *   has one — almost always the WPA2 block a previous {@see
-     *   self::connect()} with a real passphrase created — can never
-     *   associate, and the junk block is persisted by `save_config` on every
-     *   retry. So an existing block for $ssid is `select_network`ed instead:
-     *   one command both disables every other block and selects this one,
-     *   which is exactly "rejoin the network already configured under this
-     *   id" — cheaper than `enable_network` (which would not depose an
-     *   already-selected different block) followed by a separate
-     *   `reconnect`. Only when no block exists at all does this fall back to
-     *   today's add-with-`key_mgmt NONE`, which is correct for a genuinely
-     *   open network.
-     * - A passphrase supplied: every existing block for $ssid is removed
-     *   (`remove_network`, in the order `list_networks` printed them) before
-     *   a new one is added, so a stale, wrong block from an earlier typo can
-     *   never coexist with the corrected one and win the race to associate.
-     *   These removals are not `save_config`d on their own — the
-     *   `save_config` already at the end of this method, after the new block
-     *   is added and enabled, persists the removals and the addition
-     *   together in one write.
+     * Joining ({@see self::joinBlock()}) is `select_network` plus waiting for
+     * `wpa_state=COMPLETED` on that block's id — `select_network`, because a
+     * merely enabled block could lose to a still-associated old one, which
+     * would also make COMPLETED meaningless.
      */
     public function connect(string $ssid, Credentials $credentials, Device $device): void
     {
         $interface = $device->name;
-        $secret = $credentials->password !== null;
-        $existingIds = $this->networkIdsBySsid($interface, $ssid);
+        $blocks = $this->networkBlocks($interface);
+        $matching = array_values(array_map(
+            static fn (array $block): string => $block['id'],
+            array_filter($blocks, static fn (array $block): bool => $block['ssid'] === $ssid),
+        ));
 
-        if (!$secret && $existingIds !== []) {
-            $this->wpaCli($interface, [sprintf('select_network %s', $existingIds[0])]);
-
-            $this->awaitAssociation($interface);
-
+        if ($credentials->password === null && $matching !== []) {
+            // ponytail: joins the first block only; duplicates come from hand-edited configs, since
+            // this method never leaves any behind. Try each in turn if that ever matters.
+            $this->joinBlock($interface, $matching[0], $blocks);
             $this->requestAddress($device);
 
             return;
         }
 
-        foreach ($existingIds as $existingId) {
-            $this->wpaCli($interface, [sprintf('remove_network %s', $existingId)]);
-        }
-
         $id = $this->addNetwork($interface);
 
-        $lines = [sprintf('set_network %d ssid %s', $id, self::quote($ssid))];
+        try {
+            if ($credentials->password !== null) {
+                $this->wpaCliScript($interface, [
+                    sprintf('set_network %d ssid %s', $id, self::quote($ssid)),
+                    sprintf('set_network %d psk %s', $id, self::quote($credentials->password)),
+                ]);
+            } else {
+                $this->wpaCli($interface, 'set_network', (string) $id, 'ssid', self::quote($ssid));
+                $this->wpaCli($interface, 'set_network', (string) $id, 'key_mgmt', 'NONE');
+            }
 
-        if ($secret) {
-            /** @var string $password */
-            $password = $credentials->password;
-            $lines[] = sprintf('set_network %d psk %s', $id, self::quote($password));
-        } else {
-            $lines[] = sprintf('set_network %d key_mgmt NONE', $id);
+            $this->joinBlock($interface, (string) $id, $blocks);
+        } catch (Throwable $exception) {
+            try {
+                $this->wpaCli($interface, 'remove_network', (string) $id);
+            } catch (Throwable) {
+                // The original failure is the one worth reporting.
+            }
+
+            throw $exception;
         }
 
-        $lines[] = sprintf('enable_network %d', $id);
-        $lines[] = 'save_config';
+        foreach ($matching as $oldId) {
+            $this->wpaCli($interface, 'remove_network', $oldId);
+        }
 
-        $this->wpaCli($interface, $lines, $secret);
-
-        $this->awaitAssociation($interface);
+        $this->wpaCli($interface, 'save_config');
 
         $this->requestAddress($device);
     }
 
+    /**
+     * `select_network` disables every other block in memory, and the next
+     * `save_config` — this call's or a later one's — would write that to disk,
+     * leaving only one network able to auto-join after a reboot. So the blocks
+     * that were enabled beforehand are re-enabled whatever the outcome.
+     * Enabling a block while associated elsewhere does not make the radio roam.
+     *
+     * @param list<array{id: string, ssid: string, flags: string}> $blocks as they were before joining
+     */
+    private function joinBlock(string $interface, string $id, array $blocks): void
+    {
+        $this->wpaCli($interface, 'select_network', $id);
+
+        try {
+            $this->awaitAssociation($interface, $id);
+        } finally {
+            foreach ($blocks as $block) {
+                // [P2P-PERSISTENT] blocks are left alone by select_network and refuse enable_network.
+                if ($block['id'] === $id || preg_match('/\[(DISABLED|P2P-PERSISTENT)\]/', $block['flags']) === 1) {
+                    continue;
+                }
+
+                $this->wpaCli($interface, 'enable_network', $block['id']);
+            }
+        }
+    }
+
     public function disconnect(Device $device): void
     {
-        $this->wpaCli($device->name, ['disconnect']);
+        $this->wpaCli($device->name, 'disconnect');
     }
 
     public function detectDevice(): Device
@@ -310,61 +333,55 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     public function knownNetworks(): array
     {
         $interface = $this->resolveInterface();
-        $result = $this->wpaCli($interface, ['list_networks']);
+        $result = $this->wpaCli($interface, 'list_networks');
 
         return (new ListNetworksParser())->parse($result->stdout);
     }
 
+    /** Removes every block for the SSID — a hand-edited config may hold several. */
     public function forget(string $ssidOrName): void
     {
         $interface = $this->resolveInterface();
-        $ids = $this->networkIdsBySsid($interface, $ssidOrName);
+        $blocks = array_filter(
+            $this->networkBlocks($interface),
+            static fn (array $block): bool => $block['ssid'] === $ssidOrName,
+        );
 
-        if ($ids === []) {
+        if ($blocks === []) {
             throw NetworkNotFound::bySsid($ssidOrName);
         }
 
-        // Every block, not just the first: installs from before connect()
-        // started removing duplicates may already carry several.
-        $lines = array_map(static fn (string $id): string => sprintf('remove_network %s', $id), $ids);
-        $lines[] = 'save_config';
+        foreach ($blocks as $block) {
+            $this->wpaCli($interface, 'remove_network', $block['id']);
+        }
 
-        $this->wpaCli($interface, $lines);
+        $this->wpaCli($interface, 'save_config');
     }
 
     /**
-     * Runs `list_networks` and picks out the id column ($fields[0]) of every
-     * row whose ssid column matches $ssid exactly as `list_networks` printed
-     * it (not decoded through {@see \Sanchescom\WiFi\Parser\WpaCli\Printf},
-     * unlike {@see ListNetworksParser}) — the one thing that parser, built
-     * for the public {@see self::knownNetworks()} shape, does not expose,
-     * and the one thing {@see self::forget()} and {@see self::connect()}
-     * both need in order to name a specific block rather than merely
-     * describe one.
+     * Every `list_networks` row with its id and flags, which the public
+     * {@see ListNetworksParser} shape does not carry. The ssid column is
+     * printf-escaped by `wpa_supplicant` (`Caf\xc3\xa9`), so it is decoded
+     * through {@see Printf} before anyone compares it with a real SSID.
      *
-     * @return list<string> network ids, in the order `list_networks` printed
-     *         them
+     * @return list<array{id: string, ssid: string, flags: string}>
      */
-    private function networkIdsBySsid(string $interface, string $ssid): array
+    private function networkBlocks(string $interface): array
     {
-        $result = $this->wpaCli($interface, ['list_networks']);
-        $ids = [];
+        $result = $this->wpaCli($interface, 'list_networks');
+        $blocks = [];
 
         foreach (preg_split('/\r?\n/', $result->stdout) ?: [] as $line) {
-            if ($line === '' || $line[0] === '#') {
-                continue;
-            }
-
             $fields = explode("\t", $line, 4);
 
-            if (count($fields) < 2 || $fields[1] !== $ssid) {
+            if (count($fields) < 2 || preg_match('/^\d+$/', $fields[0]) !== 1) {
                 continue;
             }
 
-            $ids[] = $fields[0];
+            $blocks[] = ['id' => $fields[0], 'ssid' => Printf::decode($fields[1]), 'flags' => $fields[3] ?? ''];
         }
 
-        return $ids;
+        return $blocks;
     }
 
     /**
@@ -387,11 +404,11 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * $hostapdStarted, set true only once the `hostapd` {@see Command} has
      * actually returned, guards a rollback in the `catch` below: anything
      * that fails afterwards (today, only `dnsmasq`) kills that `hostapd` by
-     * its pid file — {@see self::killPidFile()}, the same helper {@see
-     * self::stopHotspot()} uses, rather than the whole of `stopHotspot()`
-     * itself, which would also flush the address and re-resolve the
-     * interface (via `detectDevice()`, which can itself throw while the
-     * radio is mid-failure) — before the original exception propagates.
+     * its pid file, then hands the interface back ({@see
+     * self::releaseInterface()}) before the original exception propagates.
+     * `hostapd -B` writes that pid file from the daemonised child, which can
+     * lag behind the parent's exit, so the rollback waits briefly for it
+     * ({@see self::awaitPidFile()}) rather than finding nothing to kill.
      */
     public function startHotspot(HotspotConfig $config, Device $device): Hotspot
     {
@@ -403,7 +420,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         $hostapdStarted = false;
 
         try {
-            $this->wpaCli($interface, ['disconnect']);
+            $this->wpaCli($interface, 'disconnect');
 
             $ip = $this->resolvedPath('ip');
             $this->run(new Command($ip, ['addr', 'flush', 'dev', $interface]));
@@ -424,8 +441,15 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
                 '--pid-file=' . $this->dnsmasqPidFile(),
             ]));
         } catch (Throwable $exception) {
-            if ($hostapdStarted) {
-                $this->killPidFile($this->hostapdPidFile(), self::HOSTAPD_BINARY);
+            try {
+                if ($hostapdStarted) {
+                    $this->awaitPidFile($this->hostapdPidFile());
+                    $this->killPidFile($this->hostapdPidFile(), self::HOSTAPD_BINARY);
+                }
+
+                $this->releaseInterface($interface);
+            } catch (Throwable) {
+                // Best effort; the original failure is the one worth reporting.
             }
 
             throw $exception;
@@ -437,18 +461,13 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     }
 
     /**
-     * Terminates both daemons, flushes the address off the interface and
-     * hands the radio back to `wpa_supplicant` (stdin `reconnect`). Every
-     * step tolerates "already gone" — a missing pid file is skipped, a
-     * `kill` of an already-dead pid is not treated as failure, and the
-     * trailing `reconnect` swallows a {@see CommandFailed} the same way:
-     * "no `wpa_supplicant` is running" is the routine reply on a
-     * hostapd-only box that never had one, and by this point both daemons
-     * are already dead and the address already flushed, so a `wpa_cli`
-     * complaint at the very last step must not make this method itself
-     * throw. Calling this twice in a row is harmless. A pid file whose pid
-     * names a different process than expected is never signalled (see
-     * {@see self::killPidFile()}); its stale file is still removed.
+     * Terminates both daemons, then hands the interface back ({@see
+     * self::releaseInterface()}). Every step tolerates "already gone" — a
+     * missing pid file is skipped, a `kill` of an already-dead pid is not
+     * treated as failure — so calling this twice in a row is harmless. A pid
+     * file whose pid names a different process than expected is never
+     * signalled (see {@see self::killPidFile()}); its stale file is still
+     * removed.
      */
     public function stopHotspot(): void
     {
@@ -457,13 +476,30 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         $this->killPidFile($this->hostapdPidFile(), self::HOSTAPD_BINARY);
         $this->killPidFile($this->dnsmasqPidFile(), self::DNSMASQ_BINARY);
 
+        $this->releaseInterface($interface);
+    }
+
+    /**
+     * Flushes the hotspot address and gives the radio back to
+     * `wpa_supplicant` (`reconnect`). A failed `reconnect` is swallowed: "no
+     * `wpa_supplicant` is running" is the routine reply on a hostapd-only box,
+     * and by then the hotspot is already gone.
+     */
+    private function releaseInterface(string $interface): void
+    {
         $this->run(new Command($this->resolvedPath('ip'), ['addr', 'flush', 'dev', $interface]));
 
         try {
-            $this->wpaCli($interface, ['reconnect']);
+            $this->wpaCli($interface, 'reconnect');
         } catch (CommandFailed) {
-            // Routine when no wpa_supplicant is running; both daemons are
-            // already gone and the address already flushed.
+        }
+    }
+
+    /** Waits up to about a second for a daemon's pid file to appear. */
+    private function awaitPidFile(string $pidFile): void
+    {
+        for ($attempt = 0; $attempt < 10 && !file_exists($pidFile); $attempt++) {
+            ($this->sleep)(100_000);
         }
     }
 
@@ -639,7 +675,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      */
     private function addNetwork(string $interface): int
     {
-        $result = $this->wpaCli($interface, ['add_network']);
+        $result = $this->wpaCli($interface, 'add_network');
 
         $id = null;
 
@@ -679,18 +715,22 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      *
      * Exhausting the budget keeps its existing meaning: a {@see
      * CommandFailed} naming the last observed `wpa_state`.
+     *
+     * With $expectedId, COMPLETED only counts once `status` reports that
+     * block's `id=`: right after `select_network` the previous association
+     * can still read COMPLETED for a moment.
      */
-    private function awaitAssociation(string $interface): void
+    private function awaitAssociation(string $interface, ?string $expectedId = null): void
     {
         $lastState = 'UNKNOWN';
         $lastResult = new CommandResult(0, '', '');
 
         for ($attempt = 0; $attempt < $this->associationAttempts; $attempt++) {
-            $lastResult = $this->wpaCli($interface, ['status']);
+            $lastResult = $this->wpaCli($interface, 'status');
             $status = (new StatusParser())->parse($lastResult->stdout);
             $lastState = $status['wpa_state'] ?? $lastState;
 
-            if ($lastState === 'COMPLETED') {
+            if ($lastState === 'COMPLETED' && ($expectedId === null || ($status['id'] ?? null) === $expectedId)) {
                 return;
             }
 
@@ -703,8 +743,9 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
             new Command('wpa_cli', ['-i', $interface], ['LANG' => 'C']),
             $lastResult,
             sprintf(
-                'wpa_cli -i %s did not reach wpa_state=COMPLETED within %d attempt(s); last state: %s',
+                'wpa_cli -i %s did not reach wpa_state=COMPLETED%s within %d attempt(s); last state: %s',
                 $interface,
+                $expectedId === null ? '' : ' on network ' . $expectedId,
                 $this->associationAttempts,
                 $lastState,
             ),
@@ -774,21 +815,33 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         return '"' . $escaped . '"';
     }
 
-    /**
-     * @param list<string> $lines sent over stdin, each on its own line, the
-     *        script always terminated by `quit`
-     */
-    private function wpaCli(string $interface, array $lines, bool $secret = false): CommandResult
+    /** One command in argument mode (`wpa_cli -i <iface> <command> <args...>`), which fails at once when no `wpa_supplicant` listens. */
+    private function wpaCli(string $interface, string $command, string ...$arguments): CommandResult
     {
-        $stdin = implode("\n", [...$lines, 'quit']) . "\n";
+        return $this->run(new Command(
+            $this->resolvedPath('wpa_cli'),
+            ['-i', $interface, $command, ...array_values($arguments)],
+            ['LANG' => 'C'],
+        ));
+    }
 
+    /**
+     * A script on stdin, terminated by `quit` — only for lines that carry a
+     * secret. Interactive `wpa_cli` retries forever when no `wpa_supplicant`
+     * listens, so callers must have just run an argument-mode command against
+     * the same interface, which would already have failed in that case.
+     *
+     * @param list<string> $lines
+     */
+    private function wpaCliScript(string $interface, array $lines): CommandResult
+    {
         return $this->run(new Command(
             $this->resolvedPath('wpa_cli'),
             ['-i', $interface],
             ['LANG' => 'C'],
             [],
-            $stdin,
-            $secret,
+            implode("\n", [...$lines, 'quit']) . "\n",
+            true,
         ));
     }
 
