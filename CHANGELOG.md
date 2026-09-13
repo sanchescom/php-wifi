@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.1] - 2026-09-13
+
+### Fixed
+- `Parser\WpaCli\Printf::decode()` no longer passes a `\xNN` escape through
+  `chr()`, whose PHP 8.5 signature accepts only a byte, so static analysis
+  passes on PHP 8.5 again. Decoding is unchanged.
+
 ## [3.2.0] - 2026-09-13
 
 A second Linux backend, the supervisor that raises it automatically, and a
