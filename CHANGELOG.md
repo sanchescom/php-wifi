@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.2.0] - 2026-09-12
+## [3.2.0] - 2026-09-13
 
 A second Linux backend, the supervisor that raises it automatically, and a
 further step of the passphrase-off-argv work 3.1 started: on both Linux
@@ -87,7 +87,7 @@ the maintainer's Raspberry Pi — see
   `list_networks` — "selected", not necessarily "associated right now".
 
 ### Fixed
-Five defects `docs/verified-on.md`'s 3.2.0 run found on real hardware — none
+Seven defects `docs/verified-on.md`'s 3.2.0 runs found on real hardware — none
 reproducible from fixtures:
 1. **Every Linux tool was unreachable.** `wpa_cli`, `iw`, `dnsmasq` and DHCP
    clients live in `/usr/sbin`, absent from an unprivileged `PATH`, and 3.2
@@ -110,6 +110,13 @@ reproducible from fixtures:
    tightened to accept only `type managed`, so `hotspot stop` could not find
    the interface and the access point stayed up. `Parser\Iw\DevParser` now
    prefers a `managed` interface and falls back to any non-`P2P-device` one.
+6. **Interactive `wpa_cli` waited forever with no `wpa_supplicant` running**,
+   so `hotspot stop` on a hostapd-only box hung instead of failing.
+   `WpaCliBackend` now passes every command as arguments, which fails at once,
+   except the script that carries a passphrase.
+7. **`connect` failed while a scan was already running.** With a saved network
+   out of range, `wpa_supplicant` scans continuously and answers `scan` with
+   `FAIL-BUSY`. `scan()` now reads that scan's results instead of failing.
 
 Also fixed:
 - `WpaCliBackend::scan()` never marked which scanned network the interface

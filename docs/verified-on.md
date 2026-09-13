@@ -469,6 +469,79 @@ connected                     -> connected
    `iw dev listed no wireless interface` and the access point stayed up. The
    parser now prefers a managed interface and falls back to any non-P2P one.
 
+## After the final review — 2026-09-13
+
+The final review found that the watchdog had only ever been tested against
+`NmcliBackend`. The fixes it prompted change behaviour on this backend, so they
+were run again on the same Pi, at `a2b19db`, with the suite there at
+`OK (408 tests)`. A saved network that is never in range (`OtherNet`) sat in
+`wpa_supplicant` throughout, as it would on a real device.
+
+```
+=== no wpa_supplicant running: wifi list
+Command LANG='C' '/usr/sbin/wpa_cli' '-i' 'wlan0' 'scan' exited with 255: Failed to connect to non-global ctrl_ifname: wlan0  error: No such file or directory
+[exit 1] after 0s
+
+=== connect with the passphrase
+Connected to BELL340 via wlan0 (auto)
+list_networks: 0 OtherNet any ;1 BELL340 any [CURRENT];
+saved conf: network_blocks=2 disabled=1_lines=0
+
+=== connect with a WRONG passphrase
+wpa_cli -i wlan0 did not reach wpa_state=COMPLETED on network 2 within 15 attempt(s); last state: SCANNING
+[exit 1]
+list_networks: 0 OtherNet any ;1 BELL340 any ;
+saved conf: network_blocks=2 disabled=1_lines=0
+state=ssid=BELL340 id=1 wpa_state=COMPLETED        (ten seconds later)
+
+=== connect with the right passphrase again
+Connected to BELL340 via wlan0 (auto)
+list_networks: 0 OtherNet any ;2 BELL340 any [CURRENT];
+
+=== disconnect, then connect with no credentials / watch --once
+Connected to BELL340 via wlan0 (auto)
+recovered
+list_networks: 0 OtherNet any ;2 BELL340 any [CURRENT];
+saved conf: network_blocks=2 disabled=1_lines=0
+
+=== hotspot start with port 53 already taken
+dnsmasq: failed to create listening socket for 10.42.0.1: Address already in use
+[exit 1]
+hostapd=0 dnsmasq=0 hostapd.pid=gone iw=type managed addr=
+state=ssid=BELL340 id=2 wpa_state=COMPLETED
+
+=== hotspot up, wpa_supplicant killed, hotspot stop
+Hotspot stopped.
+[exit 0] after 0s
+hostapd=0 dnsmasq=0 hostapd.pid=gone iw=type managed addr=
+```
+
+What each line shows:
+- A mistyped passphrase no longer costs the working one. The new block is
+  removed, nothing is saved, and the device rejoins on its own.
+- A corrected passphrase leaves exactly one block for the SSID.
+- Rejoining without a passphrase — the watchdog's path — uses that block
+  rather than adding an open one.
+- No other network's block ends up `disabled=1` on disk.
+- A hotspot that fails half-way leaves no `hostapd`, no address and a
+  reassociated radio behind.
+
+`systemd-analyze verify examples/watch/wifi-watch.service` reported no
+start-limit or unknown-key warning.
+
+This run found two more defects that no fixture showed:
+
+6. **Interactive `wpa_cli` waits forever when no `wpa_supplicant` is
+   running.** `printf 'reconnect\nquit\n' | wpa_cli -i wlan0` was still
+   running when `timeout 5` killed it, while `wpa_cli -i wlan0 reconnect`
+   exited 255 at once. `hotspot stop` on a hostapd-only box hung the same way.
+   Every command now goes to `wpa_cli` as arguments, except the one script
+   that carries a passphrase.
+7. **`connect` failed whenever a scan was already running.** With a saved
+   network out of range, `wpa_supplicant` scans continuously and answers
+   `scan` with `FAIL-BUSY`, so `wifi connect` failed every time. `scan()` now
+   takes that as "results are on their way" and polls for them.
+
 ## Not verified
 
 - Someone actually attached to the hotspot: the watchdog's "a person is using
