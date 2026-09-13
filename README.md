@@ -531,7 +531,10 @@ attached stations (`iw dev <iface> station dump`) and leaves it alone as
 long as someone is attached — a person typing a passphrase must never be
 dropped mid-session, a lesson from 3.1's live run. Once nobody is attached
 and `--retry` seconds have passed since the hotspot went up, it tears the
-hotspot down and tries the real network again.
+hotspot down and tries the real network again. If the station count cannot
+be read at all (`iw` missing, or `station dump` failing), the hotspot is
+treated as occupied and left up — so install `iw`. A systemd unit is in
+[examples/watch/](examples/watch/README.md).
 
 | Option | Default | Meaning |
 | --- | --- | --- |

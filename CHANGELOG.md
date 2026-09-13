@@ -21,7 +21,11 @@ the maintainer's Raspberry Pi — see
   forget, and a hotspot through `hostapd` + `dnsmasq`. It drives
   `wpa_supplicant` by running `wpa_cli -i <iface>` interactively and writing
   the command sequence to the child's **stdin**, terminated by `quit`, so a
-  passphrase never reaches its own argv.
+  passphrase never reaches its own argv. `connect()` without a passphrase
+  selects the SSID's existing network block rather than adding an open one;
+  with a passphrase it removes every existing block for that SSID first, and
+  `forget()` removes all of them. A hotspot whose `dnsmasq` fails to start
+  kills the `hostapd` it had already started.
 - **`BackendFactory::forLinux(CommandRunner $runner): Backend`**: probes
   `nmcli -t -f RUNNING general` (`LANG=C`) and returns `NmcliBackend` when it
   exits `0` and prints `running`, `WpaCliBackend` otherwise — a missing
@@ -51,7 +55,11 @@ the maintainer's Raspberry Pi — see
   single check and prints the resulting state
   (`connected`/`recovered`/`hotspot_raised`/`hotspot_busy`/`failed`); the
   running loop logs a timestamped line to STDERR on every state change. The
-  hotspot-raised timestamp survives a process restart via a small state file.
+  hotspot-raised timestamp survives a process restart via a small state file,
+  and a clock that jumps behind it restarts the countdown instead of freezing
+  it. A station count that cannot be read counts as occupied. Any exception in
+  a tick is reported as `failed` without stopping the loop. A systemd unit
+  ships in `examples/watch/`.
 - **The provisioning demo remembers its last attempt.** `index.php` writes
   `{"at", "ssid", "ok", "error"}` to `PROVISION_STATE` (default
   `/run/php-wifi-provision/last-attempt.json`) after every submitted attempt
