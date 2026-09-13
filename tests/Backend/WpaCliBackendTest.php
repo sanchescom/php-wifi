@@ -148,6 +148,35 @@ final class WpaCliBackendTest extends TestCase
      * four ({@see \Sanchescom\WiFi\Value\Network::$connected}) — and leaves
      * the other three false.
      */
+    /** A scan already in progress answers FAIL-BUSY; its results still arrive, so scan() must read them. */
+    #[Test]
+    public function scan_reads_the_results_of_a_scan_already_in_progress(): void
+    {
+        $runner = self::runner([
+            'scan_results' => self::FIXTURES . '/wpacli/ScanResults.txt',
+            'scan' => "FAIL-BUSY\n",
+            'status' => self::FIXTURES . '/wpacli/StatusInactive.txt',
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $this->assertCount(4, $backend->scan());
+    }
+
+    #[Test]
+    public function scan_still_throws_on_any_other_scan_failure(): void
+    {
+        $runner = self::runner([
+            'scan_results' => self::FIXTURES . '/wpacli/ScanResults.txt',
+            'scan' => "FAIL\n",
+            'status' => self::FIXTURES . '/wpacli/StatusInactive.txt',
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $this->expectException(CommandFailed::class);
+
+        $backend->scan();
+    }
+
     #[Test]
     public function scan_triggers_a_scan_then_reads_scan_results(): void
     {

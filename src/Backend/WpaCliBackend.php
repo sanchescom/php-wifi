@@ -142,7 +142,15 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     {
         $interface = $this->resolveInterface();
 
-        $this->wpaCli($interface, 'scan');
+        try {
+            $this->wpaCli($interface, 'scan');
+        } catch (CommandFailed $exception) {
+            // FAIL-BUSY: a scan is already running — routine while wpa_supplicant looks for a saved
+            // network that is out of range (measured on the Pi). Its results are what the poll below waits for.
+            if (!str_contains($exception->result->stdout, 'FAIL-BUSY')) {
+                throw $exception;
+            }
+        }
 
         $networks = [];
 
