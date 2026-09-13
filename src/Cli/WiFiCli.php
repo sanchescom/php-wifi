@@ -487,8 +487,9 @@ final class WiFiCli extends CLI
      * busy, or a failure are all worth a line each time — and Connected is
      * logged only the first time it is reached after some other state, the
      * "we're back" line, not on every tick that follows while nothing
-     * changes. A Failed line also carries {@see Watchdog::lastError()}, so
-     * the journal says why, not just that something went wrong.
+     * changes. A line also carries {@see Watchdog::lastError()} when there
+     * is one — a failure, or a hotspot held up because its stations could not
+     * be counted — so the journal says why, not just what.
      */
     private function watchLogger(Watchdog $watchdog): callable
     {
@@ -502,7 +503,7 @@ final class WiFiCli extends CLI
                 return;
             }
 
-            $detail = $state === WatchdogState::Failed && $watchdog->lastError() !== null
+            $detail = $watchdog->lastError() !== null
                 ? ': ' . $watchdog->lastError()
                 : '';
 

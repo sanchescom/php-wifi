@@ -72,8 +72,6 @@ final class Watchdog
 {
     private readonly CommandRunner $commandRunner;
 
-    private readonly ToolPath $toolPath;
-
     private readonly string $stateFile;
 
     private ?int $hotspotRaisedAt = null;
@@ -88,7 +86,6 @@ final class Watchdog
         ?string $stateFile = null,
     ) {
         $this->commandRunner = $commandRunner ?? ShellCommandRunner::forCurrentOs();
-        $this->toolPath = new ToolPath($this->commandRunner);
         $this->stateFile = $stateFile ?? sys_get_temp_dir() . '/php-wifi-watchdog.json';
     }
 
@@ -121,8 +118,10 @@ final class Watchdog
     }
 
     /**
-     * The exception message behind the most recent {@see WatchdogState::Failed},
-     * or null when the last tick() did not fail. Lets a caller that only
+     * Why the most recent tick() ended as it did, when that needs saying: the
+     * exception message behind a {@see WatchdogState::Failed}, or why a
+     * {@see WatchdogState::HotspotBusy} hotspot's stations could not be
+     * counted. Null otherwise. Lets a caller that only
      * gets a state back (run()'s observer, --once's printed value) explain
      * why, without tick() itself doing any I/O.
      */
@@ -164,16 +163,12 @@ final class Watchdog
         $now = $this->clock->now();
 
         if ($now < $this->hotspotRaisedAt) {
-            // A Raspberry Pi with no RTC can read "now" as earlier than the
-            // persisted raise time — e.g. a reboot before NTP resyncs the
-            // clock, after the state file was written post-sync. Without
-            // this check $elapsed below goes deeply negative and never
-            // reaches retryAfter, freezing the hotspot up forever: the real
-            // network is never retried again. Treating the hotspot as
-            // raised "now" and re-persisting that against the clock as it
-            // currently stands (mirroring examples/provision/index.php's
-            // own `$age >= 0` guard) keeps retryAfter's countdown moving
-            // forward instead.
+            // The clock stepped back behind the raise time — a Pi with no RTC
+            // corrected by NTP while the hotspot is up. The elapsed time
+            // would never reach retryAfter and the real network would never
+            // be retried, so restart the countdown from the clock as it now
+            // stands (the same `$age >= 0` guard examples/provision/index.php
+            // has).
             $this->recordHotspotRaisedAt();
 
             return WatchdogState::HotspotBusy;
@@ -236,20 +231,33 @@ final class Watchdog
      * Null means "could not be determined" — `iw` could not be resolved
      * through {@see ToolPath}, or the `station dump` call itself failed —
      * kept distinct from `0`, a dump that genuinely lists nobody. See the
-     * class docblock for why callers must not treat the two the same.
+     * class docblock for why callers must not treat the two the same. The
+     * reason goes to {@see self::lastError()}, so a hotspot held up by it is
+     * distinguishable in the journal from one with a phone on it. `iw` is
+     * resolved afresh on every call (a fresh {@see ToolPath}, whose cache
+     * would otherwise remember "not found" for the life of the daemon), so
+     * installing it takes effect without a restart.
      */
     private function countHotspotStations(): ?int
     {
         $device = $this->config->device ?? $this->wifi->device();
-        $iw = $this->toolPath->resolve('iw');
+        $iw = (new ToolPath($this->commandRunner))->resolve('iw');
 
         if ($iw === null) {
+            $this->lastError = 'cannot count hotspot stations: iw was not found';
+
             return null;
         }
 
         $result = $this->commandRunner->run(new Command($iw, ['dev', $device->name, 'station', 'dump']));
 
         if (!$result->isSuccessful()) {
+            $this->lastError = sprintf(
+                'cannot count hotspot stations: iw station dump exited %d%s',
+                $result->exitCode,
+                trim($result->stderr) === '' ? '' : ': ' . trim($result->stderr),
+            );
+
             return null;
         }
 

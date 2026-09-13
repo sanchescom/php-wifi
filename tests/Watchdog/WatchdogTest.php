@@ -301,9 +301,30 @@ final class WatchdogTest extends TestCase
         $state = $watchdog->tick();
 
         $this->assertSame(WatchdogState::HotspotBusy, $state);
+        $this->assertStringStartsWith('cannot count hotspot stations', (string) $watchdog->lastError());
         foreach ($runner->commands as $command) {
             $this->assertStringNotContainsString('connection down', $command->describe());
         }
+    }
+
+    /** Installing iw while the daemon runs must take effect on the next tick, without a restart. */
+    #[Test]
+    public function an_iw_installed_after_a_failed_lookup_is_found_on_the_next_tick(): void
+    {
+        $runner = self::runner([
+            'which iw' => [['output' => '', 'exit' => 1], self::IW . "\n"],
+            'connection show --active' => "Hotspot\n",
+            '-f DEVICE,TYPE device' => self::DEVICES,
+            'station dump' => "Station 11:22:33:44:55:66 (on wlan0)\n",
+        ]);
+        $watchdog = $this->watchdog($runner, new TestClock());
+
+        $watchdog->tick();
+        $this->assertNotNull($watchdog->lastError());
+
+        $this->assertSame(WatchdogState::HotspotBusy, $watchdog->tick());
+        $this->assertNull($watchdog->lastError(), 'a counted, occupied hotspot has nothing to explain');
+        $this->assertStringEndsWith('station dump', $runner->last()->describe());
     }
 
     /** Opting out of the idle check ignores the count entirely, so an unknown one must not block teardown. */
@@ -395,6 +416,7 @@ final class WatchdogTest extends TestCase
             'status' => [self::WPACLI_FIXTURES . '/StatusInactive.txt', self::WPACLI_FIXTURES . '/Status.txt'],
             'list_networks' => self::WPACLI_FIXTURES . '/ListNetworks.txt',
             'select_network' => "OK\n",
+            'enable_network' => "OK\n",
         ]);
         $backend = new WpaCliBackend($runner, 'wlan0', sleep: static function (): void {
         });
@@ -403,10 +425,10 @@ final class WatchdogTest extends TestCase
 
         $this->assertSame(WatchdogState::Recovered, $watchdog->tick());
 
-        $stdin = implode("\n", array_map(static fn ($command): string => (string) $command->stdin, $runner->commands));
-        $this->assertStringContainsString('select_network 0', $stdin);
-        $this->assertStringNotContainsString('add_network', $stdin);
-        $this->assertStringNotContainsString('key_mgmt', $stdin);
+        $calls = implode("\n", array_map(static fn ($command): string => $command->describe(), $runner->commands));
+        $this->assertStringContainsString('wpa_cli -i wlan0 select_network 0', $calls);
+        $this->assertStringNotContainsString('add_network', $calls);
+        $this->assertStringNotContainsString('save_config', $calls);
     }
 
     #[Test]
