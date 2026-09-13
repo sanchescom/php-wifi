@@ -31,7 +31,7 @@ final class Printf
             $next = $escaped[$i + 1];
 
             if ($next === 'x' && $i + 3 < $length && ctype_xdigit($escaped[$i + 2]) && ctype_xdigit($escaped[$i + 3])) {
-                $result .= chr((int) hexdec($escaped[$i + 2] . $escaped[$i + 3]));
+                $result .= pack('H2', $escaped[$i + 2] . $escaped[$i + 3]);
                 $i += 3;
 
                 continue;
