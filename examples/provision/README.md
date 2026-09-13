@@ -39,13 +39,14 @@ Optional environment variables, all with sane defaults:
 |---------------------|-------------------------------------------|--------------------------------------------------------|
 | `PROVISION_CACHE`   | `/run/php-wifi-provision/networks.json`   | Where the pre-hotspot scan is cached as JSON.          |
 | `PROVISION_DONE`    | `/run/php-wifi-provision/done`            | Marker file created once a connection succeeds.        |
+| `PROVISION_STATE`   | `/run/php-wifi-provision/last-attempt.json` | Where the outcome of the last connection attempt is recorded as JSON. |
 | `PROVISION_TIMEOUT` | `900`                                      | Seconds `hotspot.sh` waits for `PROVISION_DONE` before giving up. |
 | `RESTART_BACKOFF`   | `5`                                         | Seconds to wait between hotspot restart attempts (see below). |
 | `MAX_RESTARTS`      | `5`                                         | Consecutive failed restart attempts before `hotspot.sh` gives up. |
 
 `RuntimeDirectory=php-wifi-provision` in `provision.service` makes systemd
-create and clean up `/run/php-wifi-provision` automatically, so these two
-files never need to be provisioned by hand.
+create and clean up `/run/php-wifi-provision` automatically, so these files
+never need to be provisioned by hand.
 
 ## Run
 
@@ -93,6 +94,14 @@ every iteration of its wait loop and, if it comes back `inactive` while
 so the phone can rejoin it and the person can retry. Restarts are throttled
 by `RESTART_BACKOFF` and capped at `MAX_RESTARTS` consecutive failures, so a
 genuinely broken radio still ends the run instead of spinning.
+
+The phone is gone from the page the instant the radio switches, so it never
+sees whether the attempt that just ran actually worked. `index.php` writes
+the outcome of every attempt to `PROVISION_STATE` and, once the hotspot is
+back and the phone reconnects, shows a "Last attempt: …" line on the next
+`GET` — as long as that file is under an hour old — so a wrong passphrase no
+longer looks identical to never having pressed Connect. `hotspot.sh` removes
+any stale `PROVISION_STATE` left over from a previous run at startup.
 
 ## Use it from a phone
 

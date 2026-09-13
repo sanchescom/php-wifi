@@ -1,0 +1,11 @@
+{
+    "connection show --active": "Empty.txt",
+    "device wifi list": "../../linux/NetworksPi.txt",
+    "-f DEVICE,TYPE device": "../../linux/Devices.txt",
+    "device wifi connect": {
+        "output": "",
+        "exit": 1,
+        "stderr": "Error: No network with SSID 'DoesNotExist' found."
+    },
+    "device wifi hotspot": "Empty.txt"
+}

@@ -25,4 +25,20 @@ final class PermissionDenied extends CommandFailed
 
         return new static($command, $result, $base->getMessage() . $pointer);
     }
+
+    /**
+     * `wpa_cli` denies access to wpa_supplicant's control socket with its own
+     * "Permission denied" wording, unrelated to the polkit prompt `nmcli`
+     * fails with — a distinct named constructor rather than bending
+     * {@see self::fromResult()}'s Linux/polkit-specific text to fit it.
+     */
+    public static function fromWpaCli(Command $command, CommandResult $result): static
+    {
+        $base = parent::fromResult($command, $result, Os::Linux);
+        $pointer = ' The user running this process is not a member of the "netdev" group'
+            . ' (or does not have access to the wpa_supplicant control socket)'
+            . ' — see README → Linux → Privileges (netdev group).';
+
+        return new static($command, $result, $base->getMessage() . $pointer);
+    }
 }

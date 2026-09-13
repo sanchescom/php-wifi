@@ -1,5 +1,35 @@
 # Upgrade Guide
 
+## 3.1 → 3.2
+
+Nothing breaking for calling code. Three things worth knowing:
+
+- **`WiFi::create()` may now return a different backend on a
+  NetworkManager-free Linux machine.** It (and `BackendFactory::forCurrentOs()`)
+  routes Linux through the new `BackendFactory::forLinux()`, which returns
+  `WpaCliBackend` instead of `NmcliBackend` when `nmcli -t -f RUNNING general`
+  does not report `running` — a missing `nmcli`, a stopped NetworkManager, or
+  any other probe failure. `WpaCliBackend` implements the same `Backend`,
+  `SupportsKnownNetworks` and `SupportsHotspot` interfaces as `NmcliBackend`,
+  so code that only goes through the `WiFi` facade needs no change. Code that
+  builds a backend directly with `BackendFactory::forOs(Os::Linux, …)` is
+  unaffected — that method still always returns `NmcliBackend`.
+- **`Command` gained two optional constructor parameters, `$stdin` and
+  `$stdinIsSecret`**, after the existing `$secretIndexes`. This only matters
+  to code that constructs `Command` by hand (a custom `CommandRunner`, a test
+  double) — both new parameters default to `null`/`false`, so a call that
+  already stops at `$secretIndexes`, whether positional or named, is
+  unaffected.
+- **`NmcliBackend::connect()` with a passphrase now deletes an existing
+  NetworkManager profile for that SSID before connecting**, so a freshly
+  supplied passphrase always wins over a stale saved one (measured on the
+  Pi: `nmcli --ask` silently ignored a fresh passphrase and reused the old
+  one otherwise). This also drops any other setting that profile held — a
+  static IP address, `autoconnect=no` — which previously survived a
+  reconnect. If a deployment relies on such settings persisting across
+  `connect()` calls, recreate them after connecting instead of relying on
+  the old profile surviving.
+
 ## 3.0 → 3.1
 
 Nothing to change in calling code — 3.1 is additive. Two things worth

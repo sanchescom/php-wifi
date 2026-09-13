@@ -12,6 +12,7 @@ use Sanchescom\WiFi\Backend\NetworksetupBackend;
 use Sanchescom\WiFi\Backend\NmcliBackend;
 use Sanchescom\WiFi\Backend\SupportsHotspot;
 use Sanchescom\WiFi\Backend\SupportsKnownNetworks;
+use Sanchescom\WiFi\Backend\WpaCliBackend;
 use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
@@ -64,6 +65,7 @@ final class WiFiTest extends TestCase
     {
         return new FakeCommandRunner([
             '-f DEVICE,TYPE device' => self::LINUX_FIXTURES . '/Devices.txt',
+            'connection delete' => '',
             'device wifi connect' => '',
         ]);
     }
@@ -94,18 +96,35 @@ final class WiFiTest extends TestCase
         );
     }
 
+    /**
+     * A passphrase adds a fifth-wheel step between device detection and the
+     * connect itself: any saved profile for the SSID is deleted first (see
+     * {@see NmcliBackend::connect()}), so a stale stored secret can never
+     * shadow a freshly supplied one. Asserted by identity, not just count,
+     * so the sequence — not merely its length — stays proven.
+     */
     #[Test]
     public function connect_with_a_string_scans_detects_the_device_then_connects_in_order(): void
     {
         $runner = $this->linuxRunner();
         $wifi = new WiFi(new NmcliBackend($runner));
 
-        $wifi->connect('AlphaNet-foiEmE', Credentials::password('p'));
+        $wifi->connect('AlphaNet-foiEmE', Credentials::password('hunter2'));
 
-        $this->assertCount(3, $runner->commands);
+        $this->assertCount(4, $runner->commands);
         $this->assertStringContainsString('device wifi list', $runner->commands[0]->describe());
         $this->assertStringContainsString('-f DEVICE,TYPE device', $runner->commands[1]->describe());
-        $this->assertStringContainsString('device wifi connect', $runner->commands[2]->describe());
+        $this->assertSame(['connection', 'delete', 'AlphaNet-foiEmE'], $runner->commands[2]->arguments);
+        $this->assertSame(
+            ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'AlphaNet-foiEmE', 'ifname', 'wlan0'],
+            $runner->commands[3]->arguments,
+        );
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('hunter2', $argument);
+            }
+        }
     }
 
     #[Test]
@@ -128,15 +147,23 @@ final class WiFiTest extends TestCase
     {
         $runner = new FakeCommandRunner([
             '-f DEVICE,TYPE device' => self::LINUX_FIXTURES . '/Devices.txt',
+            'connection delete' => '',
             'device wifi connect' => '',
         ]);
         $wifi = new WiFi(new NmcliBackend($runner));
 
-        $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('p'));
+        $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('hunter2'));
 
-        $this->assertCount(2, $runner->commands);
+        $this->assertCount(3, $runner->commands);
         $this->assertStringContainsString('-f DEVICE,TYPE device', $runner->commands[0]->describe());
-        $this->assertStringContainsString('device wifi connect', $runner->commands[1]->describe());
+        $this->assertSame(['connection', 'delete', 'AlphaNet-foiEmE'], $runner->commands[1]->arguments);
+        $this->assertStringContainsString('device wifi connect', $runner->commands[2]->describe());
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('hunter2', $argument);
+            }
+        }
     }
 
     #[Test]
@@ -185,14 +212,22 @@ final class WiFiTest extends TestCase
     public function connect_with_an_explicit_device_skips_device_detection(): void
     {
         $runner = new FakeCommandRunner([
+            'connection delete' => '',
             'device wifi connect' => '',
         ]);
         $wifi = new WiFi(new NmcliBackend($runner));
 
-        $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('p'), new Device('wlan0'));
+        $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('hunter2'), new Device('wlan0'));
 
-        $this->assertCount(1, $runner->commands);
-        $this->assertStringContainsString('device wifi connect', $runner->commands[0]->describe());
+        $this->assertCount(2, $runner->commands);
+        $this->assertSame(['connection', 'delete', 'AlphaNet-foiEmE'], $runner->commands[0]->arguments);
+        $this->assertStringContainsString('device wifi connect', $runner->commands[1]->describe());
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('hunter2', $argument);
+            }
+        }
     }
 
     #[Test]
@@ -203,11 +238,23 @@ final class WiFiTest extends TestCase
 
         $wifi->connectTo('BELL340', Credentials::password('p w'), new Device('wlan0'));
 
-        $this->assertCount(1, $runner->commands);
+        $this->assertCount(2, $runner->commands);
+        $this->assertSame(['connection', 'delete', 'BELL340'], $runner->commands[0]->arguments);
+
+        $command = $runner->commands[1];
+
         $this->assertSame(
-            ['-w', '10', 'device', 'wifi', 'connect', 'BELL340', 'password', 'p w', 'ifname', 'wlan0'],
-            $runner->commands[0]->arguments,
+            ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'BELL340', 'ifname', 'wlan0'],
+            $command->arguments,
         );
+        $this->assertSame('p w' . "\n", $command->stdin);
+        $this->assertTrue($command->stdinIsSecret);
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('p w', $argument);
+            }
+        }
     }
 
     #[Test]
@@ -456,24 +503,70 @@ final class WiFiTest extends TestCase
         $this->assertInstanceOf(NetshBackend::class, $backend);
     }
 
+    /**
+     * `BackendFactory::forOs(Os::Linux, ...)` always answers `NmcliBackend`
+     * without touching the runner (see backend_factory_returns_nmcli_backend_for_linux
+     * above), but `forCurrentOs()` on Linux instead routes through
+     * `forLinux()`, which probes the given runner for a running
+     * NetworkManager (see BackendFactoryTest for that probe's own
+     * exhaustive coverage) and answers `WpaCliBackend` when it is not
+     * running — which every CI container measured so far reports. Pinning
+     * the expected class to `NmcliBackend` unconditionally is therefore
+     * only true on a host where NetworkManager happens to be running, not
+     * a property of the code; on Linux under CI that expectation is simply
+     * false, not a bug in the code under test.
+     *
+     * What this test actually needs to prove is narrower and OS-agnostic:
+     * that `forCurrentOs()` hands the SAME runner instance to whichever
+     * path it takes, rather than silently defaulting to its own
+     * `ShellCommandRunner::forCurrentOs()`. On Linux that is provable
+     * directly — the probe command must have been recorded on this exact
+     * `$runner` — and the "not running" fixture below makes the resulting
+     * backend deterministic (WpaCliBackend) on every Linux host regardless
+     * of what NetworkManager is actually doing there. Off Linux, `forOs()`
+     * never touches the runner during construction (it's just handed to
+     * the backend's constructor for later use), so the pre-existing,
+     * already-deterministic mapping check is kept.
+     */
     #[Test]
     public function backend_factory_for_current_os_uses_the_given_runner(): void
     {
-        $runner = new FakeCommandRunner([]);
+        $runner = new FakeCommandRunner(['-t -f RUNNING general' => "not running\n"]);
 
         $backend = BackendFactory::forCurrentOs($runner);
-        $expected = BackendFactory::forOs(Os::current(), $runner);
 
+        if (Os::current() === Os::Linux) {
+            $this->assertCount(1, $runner->commands);
+            $this->assertSame('nmcli', $runner->commands[0]->program);
+            $this->assertInstanceOf(WpaCliBackend::class, $backend);
+
+            return;
+        }
+
+        $expected = BackendFactory::forOs(Os::current(), $runner);
         $this->assertSame($expected::class, $backend::class);
     }
 
+    /**
+     * The point of this test is that `WiFi::create()` delegates to
+     * `BackendFactory::forCurrentOs()` specifically — not `forOs()`, which
+     * behaves differently on Linux (see the comment above). Comparing
+     * against `forCurrentOs()` itself, fed the identical runner and the
+     * identical deterministic probe fixture, stays a real regression check
+     * on every platform: were `create()` to call `forOs(Os::current(), ...)`
+     * directly instead, on Linux it would produce `NmcliBackend`
+     * unconditionally while `$expected` here (going through the probe,
+     * which answers "not running") produces `WpaCliBackend` — a mismatch
+     * this assertion would catch — while staying deterministic because both
+     * sides consult the same fixture-backed runner.
+     */
     #[Test]
     public function create_uses_the_backend_factory_for_the_current_os(): void
     {
-        $runner = new FakeCommandRunner([]);
+        $runner = new FakeCommandRunner(['-t -f RUNNING general' => "not running\n"]);
 
         $wifi = WiFi::create($runner);
-        $expected = BackendFactory::forOs(Os::current(), $runner);
+        $expected = BackendFactory::forCurrentOs($runner);
 
         $this->assertInstanceOf(WiFi::class, $wifi);
         $this->assertSame($expected::class, $wifi->backend()::class);

@@ -98,4 +98,43 @@ final class CommandTest extends TestCase
 
         new Command("nm\0cli");
     }
+
+    #[Test]
+    public function secret_stdin_is_masked_in_the_display_form(): void
+    {
+        $command = new Command('wpa_cli', ['-i', 'wlan0'], [], [], "set_network 0 psk \"hunter2\"\n", true);
+
+        $this->assertStringNotContainsString('hunter2', $command->toDisplay(Os::Linux));
+        $this->assertStringContainsString('***', $command->toDisplay(Os::Linux));
+    }
+
+    #[Test]
+    public function non_secret_stdin_is_shown_as_a_marker_in_the_display_form(): void
+    {
+        $command = new Command('cat', [], [], [], "hello\n");
+
+        $this->assertStringContainsString(' <<< <stdin>', $command->toDisplay(Os::Linux));
+    }
+
+    #[Test]
+    public function absent_stdin_adds_nothing_to_the_display_form(): void
+    {
+        $command = new Command('nmcli', ['device']);
+
+        $this->assertStringNotContainsString('<<<', $command->toDisplay(Os::Linux));
+    }
+
+    #[Test]
+    public function a_secret_stdin_requires_a_non_null_stdin(): void
+    {
+        $this->expectException(InvalidArgument::class);
+
+        new Command('wpa_cli', [], [], [], null, true);
+    }
+
+    #[Test]
+    public function to_argv_is_the_program_followed_by_arguments(): void
+    {
+        $this->assertSame(['nmcli', 'device', 'wifi'], (new Command('nmcli', ['device', 'wifi']))->toArgv());
+    }
 }

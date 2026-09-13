@@ -12,6 +12,7 @@ use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
 use Sanchescom\WiFi\Shell\Command;
+use Sanchescom\WiFi\Shell\Os;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Value\Band;
 use Sanchescom\WiFi\Value\Credentials;
@@ -89,7 +90,7 @@ final class NmcliBackendTest extends TestCase
     }
 
     #[Test]
-    public function connect_passes_the_password_as_a_secret_argument(): void
+    public function connect_puts_the_passphrase_on_stdin_instead_of_argv(): void
     {
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
@@ -99,21 +100,105 @@ final class NmcliBackendTest extends TestCase
         $command = $runner->last();
 
         $this->assertSame(
-            ['-w', '10', 'device', 'wifi', 'connect', 'Home', 'password', 'p w', 'ifname', 'wlan0'],
+            ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'Home', 'ifname', 'wlan0'],
             $command->arguments,
         );
-        $this->assertSame([7], $command->secretIndexes);
+        $this->assertSame([], $command->secretIndexes);
+        $this->assertSame('p w' . "\n", $command->stdin);
+        $this->assertTrue($command->stdinIsSecret);
         $this->assertSame(['LANG' => 'C'], $command->env);
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('p w', $argument);
+                $this->assertStringNotContainsString('password', $argument);
+            }
+        }
+    }
+
+    /**
+     * `--ask` only prompts when nmcli holds no secret of its own for the
+     * SSID already; a saved profile with a stale passphrase would otherwise
+     * make nmcli silently reuse it and ignore a freshly typed, corrected
+     * one. So a passphrase-carrying connect() first deletes any existing
+     * profile for the SSID, then runs the `--ask` connect — in exactly that
+     * order, and the passphrase appears in no argument of either command.
+     */
+    #[Test]
+    public function connect_with_a_passphrase_deletes_any_saved_profile_first(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        $backend->connect('Home', Credentials::password('p w'), new Device('wlan0'));
+
+        $this->assertCount(2, $runner->commands);
+
+        $delete = $runner->commands[0];
+        $this->assertSame(['connection', 'delete', 'Home'], $delete->arguments);
+        $this->assertSame(['LANG' => 'C'], $delete->env);
+        $this->assertNull($delete->stdin);
+
+        $connect = $runner->commands[1];
+        $this->assertSame(
+            ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'Home', 'ifname', 'wlan0'],
+            $connect->arguments,
+        );
+
+        foreach ($runner->commands as $recorded) {
+            foreach ($recorded->arguments as $argument) {
+                $this->assertStringNotContainsString('p w', $argument);
+            }
+        }
+    }
+
+    /**
+     * The normal case — no profile exists yet for this SSID — makes
+     * `nmcli connection delete` exit non-zero. That must never fail
+     * connect(): the delete's result is deliberately never inspected.
+     */
+    #[Test]
+    public function connect_ignores_a_profile_delete_that_fails(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection delete' => [
+                'output' => '',
+                'exit' => 10,
+                'stderr' => 'Error: unknown connection.',
+            ],
+            'device wifi connect' => '',
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $backend->connect('Home', Credentials::password('p w'), new Device('wlan0'));
+
+        $this->assertCount(2, $runner->commands);
+        $this->assertSame(['-w', '10', '--ask', 'device', 'wifi', 'connect', 'Home', 'ifname', 'wlan0'], $runner->last()->arguments);
     }
 
     #[Test]
-    public function connect_without_credentials_omits_the_password_pair(): void
+    public function connect_with_a_passphrase_masks_it_in_the_displayed_command(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        $backend->connect('Home', Credentials::password('hunter2'), new Device('wlan0'));
+
+        $display = $runner->last()->toDisplay(Os::Linux);
+
+        $this->assertStringContainsString('***', $display);
+        $this->assertStringNotContainsString('hunter2', $display);
+    }
+
+    #[Test]
+    public function connect_without_credentials_omits_ask_and_stdin(): void
     {
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
 
         $backend->connect('Home', Credentials::none(), new Device('wlan0'));
 
+        $this->assertCount(1, $runner->commands);
         $command = $runner->last();
 
         $this->assertSame(
@@ -121,6 +206,8 @@ final class NmcliBackendTest extends TestCase
             $command->arguments,
         );
         $this->assertSame([], $command->secretIndexes);
+        $this->assertNull($command->stdin);
+        $this->assertFalse($command->stdinIsSecret);
     }
 
     #[Test]
@@ -364,7 +451,7 @@ final class NmcliBackendTest extends TestCase
     }
 
     #[Test]
-    public function connect_throws_command_failed_masking_the_password_on_other_failures(): void
+    public function connect_throws_command_failed_masking_the_passphrase_on_other_failures(): void
     {
         $runner = new FakeCommandRunner([
             'connect' => [

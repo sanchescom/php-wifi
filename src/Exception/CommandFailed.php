@@ -20,13 +20,11 @@ class CommandFailed extends WiFiException
 
     public static function fromResult(Command $command, CommandResult $result, Os $os): static
     {
-        $detail = trim($result->stderr) !== '' ? trim($result->stderr) : trim($result->stdout);
-
         return new static($command, $result, sprintf(
             'Command %s exited with %d%s',
             $command->toDisplay($os),
             $result->exitCode,
-            $detail === '' ? '.' : ': ' . $detail
+            self::detail($command, $result)
         ));
     }
 
@@ -39,12 +37,32 @@ class CommandFailed extends WiFiException
      */
     public static function despiteZeroExit(Command $command, CommandResult $result, Os $os): static
     {
-        $detail = trim($result->stderr) !== '' ? trim($result->stderr) : trim($result->stdout);
-
         return new static($command, $result, sprintf(
             'Command %s exited 0 but reported failure%s',
             $command->toDisplay($os),
-            $detail === '' ? '.' : ': ' . $detail
+            self::detail($command, $result)
         ));
+    }
+
+    /**
+     * The child's stdout/stderr is normally the most useful part of the
+     * message, but for the one command whose stdin carries a secret
+     * (`Command::$stdinIsSecret`, e.g. `wpa_cli`'s `set_network … psk …`
+     * script) some tools echo back a line derived from what they were just
+     * given. This message is written to the journal and, on the
+     * provisioning demo, persisted and rendered — so a secret command's
+     * captured output is left out entirely here, keeping only the masked
+     * command (`$command->toDisplay()` already stars the stdin and any
+     * secret argument) and the exit code.
+     */
+    private static function detail(Command $command, CommandResult $result): string
+    {
+        if ($command->stdinIsSecret) {
+            return '.';
+        }
+
+        $detail = trim($result->stderr) !== '' ? trim($result->stderr) : trim($result->stdout);
+
+        return $detail === '' ? '.' : ': ' . $detail;
     }
 }

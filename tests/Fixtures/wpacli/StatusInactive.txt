@@ -1,0 +1,4 @@
+# SYNTHETIC: wpa_cli -i wlan0 status
+wpa_state=INACTIVE
+address=
+uuid=

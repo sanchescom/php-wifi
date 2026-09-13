@@ -2,6 +2,136 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.0] - 2026-09-13
+
+A second Linux backend, the supervisor that raises it automatically, and a
+further step of the passphrase-off-argv work 3.1 started: on both Linux
+backends `connect()` now keeps it out of every process's arguments, while
+`NmcliBackend::startHotspot()` and the macOS backend still pass it as one —
+see the security notes in [README.md](README.md#security). Nothing in this
+release changes calling code — see [UPGRADE.md](UPGRADE.md#31--32). Verified live on
+the maintainer's Raspberry Pi — see
+[docs/verified-on.md](docs/verified-on.md).
+
+### Added
+- **`WpaCliBackend`**: a full-parity Linux backend for machines with no
+  NetworkManager (minimal Raspberry Pi OS Lite images, most embedded
+  distributions) — scan, connect (including asking a DHCP client for an
+  address once `wpa_supplicant` has associated), disconnect, known networks,
+  forget, and a hotspot through `hostapd` + `dnsmasq`. It drives
+  `wpa_supplicant` through `wpa_cli`. A passphrase is sent by running
+  `wpa_cli -i <iface>` interactively with the script on the child's
+  **stdin**, terminated by `quit`, so it never reaches argv; every other
+  command is passed as arguments, because interactive `wpa_cli` waits forever when no
+  `wpa_supplicant` is running. `connect()` without a passphrase joins the
+  SSID's existing network block rather than adding an open one. With a
+  passphrase it joins a new block first, and removes the SSID's older blocks
+  and saves the config only once that block has associated — a mistyped
+  passphrase leaves the working block in place. Other networks' blocks stay
+  enabled. `forget()` removes every block for the SSID. A hotspot whose
+  `dnsmasq` fails to start kills the `hostapd` it had already started and
+  hands the interface back.
+- **`BackendFactory::forLinux(CommandRunner $runner): Backend`**: probes
+  `nmcli -t -f RUNNING general` (`LANG=C`) and returns `NmcliBackend` when it
+  exits `0` and prints `running`, `WpaCliBackend` otherwise — a missing
+  binary, a stopped NetworkManager, or any other failure. The probe never
+  throws. `WiFi::create()` (via `forCurrentOs()`) now routes Linux through
+  this probe; `forOs(Os::Linux, …)` is unchanged and always returns
+  `NmcliBackend`.
+- **`Command::$stdin` / `Command::$stdinIsSecret`**: a command can carry
+  input written to the child's stdin (then the pipe is closed). `toDisplay()`
+  renders it as `<<< '***'` when `$stdinIsSecret`, `<<< <stdin>` otherwise.
+  `ShellCommandRunner` execs with an argv array
+  (`proc_open($command->toArgv(), …)`) instead of a rendered shell string, so
+  no `/bin/sh -c` (or, on Windows, a bare `cmd` wrapper) sits between this
+  library and the tool it runs — except the deliberate `cmd /c "chcp 65001
+  >nul & netsh …"` composite in `NetshBackend::scan()`, which keeps working
+  unchanged because `cmd` is the program there, not a shell around one.
+- **`Backend\Linux\ToolPath`**: resolves a tool's absolute path with `which`
+  against a fixed search path that includes `/usr/local/sbin`, `/usr/sbin`
+  and `/sbin` — directories absent from an unprivileged user's `PATH` on
+  Debian and Raspberry Pi OS, where `proc_open()` resolves a bare program
+  name using PHP's own `PATH`, never the `Command`'s own `$env`.
+- **`Watchdog` (`Sanchescom\WiFi\Watchdog\Watchdog`) and CLI `wifi watch`**:
+  keeps a headless device reachable. Raises a provisioning hotspot when the
+  network is lost, counts attached stations (`iw dev <iface> station dump`)
+  and leaves an occupied hotspot alone, and retries the real network once
+  nobody is attached and `--retry` seconds have passed. `--once` runs a
+  single check and prints the resulting state
+  (`connected`/`recovered`/`hotspot_raised`/`hotspot_busy`/`failed`); the
+  running loop logs a timestamped line to STDERR on every state change. The
+  hotspot-raised timestamp survives a process restart via a small state file,
+  and a clock that jumps behind it restarts the countdown instead of freezing
+  it. A station count that cannot be read counts as occupied. Any exception in
+  a tick is reported as `failed` without stopping the loop. A systemd unit
+  ships in `examples/watch/`.
+- **The provisioning demo remembers its last attempt.** `index.php` writes
+  `{"at", "ssid", "ok", "error"}` to `PROVISION_STATE` (default
+  `/run/php-wifi-provision/last-attempt.json`) after every submitted attempt
+  and shows "Last attempt: … failed — <reason>" on the next `GET`; a record
+  older than an hour, or timestamped in the future, is ignored. The
+  passphrase is never part of it.
+
+### Changed
+- **`NmcliBackend::connect()`** now sends a supplied passphrase to `nmcli
+  --ask` on its stdin instead of a plain argument, and deletes any existing
+  connection profile for that SSID first. Measured on the Pi: `--ask` only
+  prompts for a secret when `nmcli` has none of its own already, so a saved
+  profile holding a stale passphrase made it connect with that stored secret
+  and silently ignore a freshly typed, corrected one; deleting the profile
+  first makes the new passphrase win, at the cost of any other setting that
+  profile held (a static address, `autoconnect=no`).
+- **`KnownNetwork` on `WpaCliBackend`** has no separate connection name to
+  report: `$name` equals `$ssid`, and `$device` is always `null`.
+  `$active` reflects `wpa_supplicant`'s `[CURRENT]` flag from
+  `list_networks` — "selected", not necessarily "associated right now".
+
+### Fixed
+Seven defects `docs/verified-on.md`'s 3.2.0 runs found on real hardware — none
+reproducible from fixtures:
+1. **Every Linux tool was unreachable.** `wpa_cli`, `iw`, `dnsmasq` and DHCP
+   clients live in `/usr/sbin`, absent from an unprivileged `PATH`, and 3.2
+   had just removed the shell from the execution path — passing `PATH` in
+   the command's own env does not help, since `proc_open()` resolves a bare
+   name with PHP's own `PATH`. `WpaCliBackend` now resolves each tool's
+   absolute path with `which` first (`Backend\Linux\ToolPath`).
+2. **`nmcli --ask` ignored a freshly supplied passphrase** when a profile for
+   that SSID already existed — see "Changed" above.
+3. **A scan was read before it finished.** On a cold `wpa_supplicant`,
+   `scan_results` was empty for several seconds, so every SSID looked absent
+   and `connect()` failed with `NetworkNotFound`. `scan()` now polls up to 11
+   times, 500ms apart, instead of reading once.
+4. **Association was given microseconds.** The poll ran its fifteen attempts
+   back to back with no pause, so `connect()` could never observe
+   `wpa_state=COMPLETED` on real hardware. There is now a real interval
+   between attempts (15 attempts, 1.5s apart).
+5. **A hotspot could be raised but never stopped.** While the radio serves as
+   an access point `iw dev` reports `type AP`, but device detection had been
+   tightened to accept only `type managed`, so `hotspot stop` could not find
+   the interface and the access point stayed up. `Parser\Iw\DevParser` now
+   prefers a `managed` interface and falls back to any non-`P2P-device` one.
+6. **Interactive `wpa_cli` waited forever with no `wpa_supplicant` running**,
+   so `hotspot stop` on a hostapd-only box hung instead of failing.
+   `WpaCliBackend` now passes every command as arguments, which fails at once,
+   except the script that carries a passphrase.
+7. **`connect` failed while a scan was already running.** With a saved network
+   out of range, `wpa_supplicant` scans continuously and answers `scan` with
+   `FAIL-BUSY`. `scan()` now reads that scan's results instead of failing.
+
+Also fixed:
+- `WpaCliBackend::scan()` never marked which scanned network the interface
+  was actually joined to, so `list --connected` reported nothing even while
+  connected. A separate `status` call now marks the matching row (by BSSID,
+  falling back to SSID).
+- Three tests assumed platform-specific behaviour that only broke once
+  actually run on Linux, and would have failed CI on the first push: two
+  assumed `BackendFactory::forCurrentOs()`/`WiFi::create()` always resolve to
+  `NmcliBackend` on Linux, which is false wherever `forLinux()`'s probe finds
+  no running NetworkManager — every Linux CI container measured so far; one
+  assumed a probe of a nonexistent binary always leaves `stderr` empty,
+  which is false where a failed `exec` is detected synchronously and the
+  runner's own "Unable to start: …" message fills it instead.
+
 ## [3.1.0] - 2026-09-11
 
 A small, additive release on top of 3.0.0. Nothing in this release changes

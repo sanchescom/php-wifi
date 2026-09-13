@@ -1,0 +1,9 @@
+# SYNTHETIC: wpa_cli -i wlan0 status
+bssid=0e:ac:8a:99:58:5d
+freq=5785
+ssid=BELL340
+id=0
+mode=station
+wpa_state=COMPLETED
+ip_address=192.168.2.75
+address=b8:27:eb:11:22:33

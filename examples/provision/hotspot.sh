@@ -6,13 +6,14 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 CACHE="${PROVISION_CACHE:-/run/php-wifi-provision/networks.json}"
 DONE="${PROVISION_DONE:-/run/php-wifi-provision/done}"
+STATE="${PROVISION_STATE:-/run/php-wifi-provision/last-attempt.json}"
 TIMEOUT="${PROVISION_TIMEOUT:-900}"
 RESTART_BACKOFF="${RESTART_BACKOFF:-5}"
 MAX_RESTARTS="${MAX_RESTARTS:-5}"
 : "${PROVISION_PASSWORD:?set PROVISION_PASSWORD}"
 
-mkdir -p "$(dirname "$CACHE")" "$(dirname "$DONE")"
-rm -f "$DONE"
+mkdir -p "$(dirname "$CACHE")" "$(dirname "$DONE")" "$(dirname "$STATE")"
+rm -f "$DONE" "$STATE"
 
 # Scan before the radio becomes an access point: with one radio it can do
 # either, never both.

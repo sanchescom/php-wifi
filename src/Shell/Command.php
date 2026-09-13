@@ -18,16 +18,22 @@ final readonly class Command
      * @param array<string, string> $env never pass secrets through env — display
      *        forms (toDisplay(), describe()) print env values verbatim, unmasked
      * @param list<int> $secretIndexes indexes into $arguments that must never be displayed
+     * @param string|null $stdin written to the child's stdin, then the pipe is closed so
+     *        the child sees EOF
+     * @param bool $stdinIsSecret keeps $stdin out of toDisplay() when true
      *
      * @throws InvalidArgument when a secret index does not exist in $arguments, an
-     *         env name is not a valid POSIX identifier, or the program, an
-     *         argument or an env value contains a NUL byte
+     *         env name is not a valid POSIX identifier, the program, an
+     *         argument or an env value contains a NUL byte, or $stdinIsSecret
+     *         is true while $stdin is null
      */
     public function __construct(
         public string $program,
         public array $arguments = [],
         public array $env = [],
         public array $secretIndexes = [],
+        public ?string $stdin = null,
+        public bool $stdinIsSecret = false,
     ) {
         if (str_contains($program, "\0")) {
             throw new InvalidArgument('Command program must not contain a NUL byte.');
@@ -54,6 +60,10 @@ final readonly class Command
                 throw new InvalidArgument(sprintf('Secret index %d does not exist in the argument list.', $index));
             }
         }
+
+        if ($stdinIsSecret && $stdin === null) {
+            throw new InvalidArgument('stdinIsSecret cannot be true when stdin is null.');
+        }
     }
 
     public function toShell(Os $os): string
@@ -61,10 +71,16 @@ final readonly class Command
         return $this->render($os, false);
     }
 
-    /** The shell form with secret arguments replaced by ***. */
+    /** The shell form with secret arguments replaced by ***, plus a masked stdin marker. */
     public function toDisplay(Os $os): string
     {
-        return $this->render($os, true);
+        return $this->render($os, true) . $this->stdinMarker();
+    }
+
+    /** @return list<string> program followed by arguments, for execution without a shell */
+    public function toArgv(): array
+    {
+        return [$this->program, ...$this->arguments];
     }
 
     /** Program and arguments joined by spaces, unescaped, secrets masked. For logs and test matching. */
@@ -88,6 +104,19 @@ final readonly class Command
         }
 
         return $rendered;
+    }
+
+    private function stdinMarker(): string
+    {
+        if ($this->stdinIsSecret) {
+            return " <<< '***'";
+        }
+
+        if ($this->stdin !== null) {
+            return ' <<< <stdin>';
+        }
+
+        return '';
     }
 
     /** @return list<string> */

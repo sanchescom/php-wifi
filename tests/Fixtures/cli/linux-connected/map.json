@@ -1,3 +1,5 @@
 {
-    "device wifi list": "../../linux/Networks.txt"
+    "device wifi list": "../../linux/Networks.txt",
+    "connection show --active": "Empty.txt",
+    "-f DEVICE,TYPE device": "../../linux/Devices.txt"
 }

@@ -61,20 +61,34 @@ final class ShellCommandRunner implements CommandRunner
     private function runViaPipes(Command $command): CommandResult
     {
         $descriptors = [
-            0 => $this->os->isPosix() ? ['file', '/dev/null', 'r'] : ['pipe', 'r'],
+            0 => $this->stdinDescriptor($command),
             1 => ['pipe', 'w'],
             2 => ['pipe', 'w'],
         ];
 
-        $process = proc_open($command->toShell($this->os), $descriptors, $pipes);
+        // proc_open() with array-form arguments (no shell) execs directly, and
+        // when that exec fails — e.g. probing for a DHCP client binary that
+        // does not exist, which WpaCliBackend::connect() does on every call —
+        // some platforms report the failure back synchronously as a PHP
+        // E_WARNING ("proc_open(): Exec failed: ..."), even though the
+        // non-zero/127 exit code below already says the same thing. A plain
+        // `@` does not survive PHPUnit's error handler (see drain()), so the
+        // warning is suppressed the same way: a scoped handler that swallows
+        // it, restored immediately after. The exit code and exception
+        // behaviour of the caller are unchanged either way.
+        set_error_handler(static fn (): bool => true);
+
+        try {
+            $process = proc_open($command->toArgv(), $descriptors, $pipes, null, $this->environment($command));
+        } finally {
+            restore_error_handler();
+        }
 
         if (!is_resource($process)) {
             return new CommandResult(127, '', 'Unable to start: ' . $command->describe());
         }
 
-        if (!$this->os->isPosix()) {
-            fclose($pipes[0]);
-        }
+        $this->feedStdin($pipes, $command);
 
         // Drain both pipes to EOF (closing them) BEFORE proc_close(): proc_close()
         // blocks until the child exits, and a child blocked writing to a full,
@@ -91,20 +105,26 @@ final class ShellCommandRunner implements CommandRunner
 
         try {
             $descriptors = [
-                0 => $this->os->isPosix() ? ['file', '/dev/null', 'r'] : ['pipe', 'r'],
+                0 => $this->stdinDescriptor($command),
                 1 => ['file', $stdoutPath, 'w'],
                 2 => ['file', $stderrPath, 'w'],
             ];
 
-            $process = proc_open($command->toShell($this->os), $descriptors, $pipes);
+            // See the matching comment in runViaPipes(): suppress the same
+            // possible E_WARNING from a failed exec, the same way.
+            set_error_handler(static fn (): bool => true);
+
+            try {
+                $process = proc_open($command->toArgv(), $descriptors, $pipes, null, $this->environment($command));
+            } finally {
+                restore_error_handler();
+            }
 
             if (!is_resource($process)) {
                 return new CommandResult(127, '', 'Unable to start: ' . $command->describe());
             }
 
-            if (!$this->os->isPosix()) {
-                fclose($pipes[0]);
-            }
+            $this->feedStdin($pipes, $command);
 
             // proc_close() waits for the child to exit; only then are the files
             // complete and safe to read. Nothing is read while the child runs,
@@ -118,6 +138,66 @@ final class ShellCommandRunner implements CommandRunner
             @unlink($stdoutPath);
             @unlink($stderrPath);
         }
+    }
+
+    /**
+     * proc_open's descriptor spec for fd 0: a real pipe when the command has
+     * stdin to feed (fed and closed by feedStdin() right after the process
+     * starts); otherwise the pre-3.2 behaviour — /dev/null on POSIX (no pipe
+     * ever created), a pipe closed immediately on Windows (which has no
+     * /dev/null-equivalent descriptor type here).
+     *
+     * @return list<string>
+     */
+    private function stdinDescriptor(Command $command): array
+    {
+        if ($command->stdin !== null) {
+            return ['pipe', 'r'];
+        }
+
+        return $this->os->isPosix() ? ['file', '/dev/null', 'r'] : ['pipe', 'r'];
+    }
+
+    /**
+     * Writes the whole stdin string and closes the pipe so the child sees
+     * EOF. A few KB — the most this project ever sends (a handful of
+     * wpa_cli control lines) — fits well within the kernel pipe buffer, so a
+     * single blocking fwrite() before the read loop cannot block. A payload
+     * large enough to exceed that buffer *could* deadlock here if the child
+     * is not yet reading it (this write happens before drain() starts
+     * consuming stdout/stderr) — not a concern for this project's actual
+     * inputs, but not a general-purpose solution either.
+     *
+     * @param array<int, resource> $pipes
+     */
+    private function feedStdin(array $pipes, Command $command): void
+    {
+        if ($command->stdin !== null) {
+            fwrite($pipes[0], $command->stdin);
+            fclose($pipes[0]);
+
+            return;
+        }
+
+        if (!$this->os->isPosix()) {
+            fclose($pipes[0]);
+        }
+    }
+
+    /**
+     * proc_open()'s $env_vars array REPLACES the child's entire environment
+     * rather than adding to it, so PATH (and everything else PHP inherited)
+     * must be re-supplied explicitly — merged with, and overridable by, the
+     * command's own $env.
+     *
+     * @return array<string, string>
+     */
+    private function environment(Command $command): array
+    {
+        /** @var array<string, string> $current */
+        $current = getenv();
+
+        return array_merge($current, $command->env);
     }
 
     private function tempFile(): string

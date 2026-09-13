@@ -77,6 +77,45 @@ $readCache = static function (string $path) use ($bandLabel): ?array {
     return $networks;
 };
 
+// Null unless the file is readable, decodes to a well-formed record, and its age is 0-59:59 —
+// a future $at (a clock not yet NTP-corrected) is rejected too, not just a stale one.
+$readState = static function (string $path): ?array {
+    $raw = is_readable($path) ? file_get_contents($path) : false;
+    $decoded = $raw !== false && trim($raw) !== '' ? json_decode($raw, true) : null;
+
+    if (!is_array($decoded)) {
+        return null;
+    }
+
+    $at = $decoded['at'] ?? null;
+    $ssid = $decoded['ssid'] ?? null;
+    $ok = $decoded['ok'] ?? null;
+    $error = $decoded['error'] ?? null;
+
+    if (!is_int($at) || !is_string($ssid) || !is_bool($ok) || !($error === null || is_string($error))) {
+        return null;
+    }
+
+    $age = time() - $at;
+
+    return $age >= 0 && $age < 3600 ? ['ssid' => $ssid, 'ok' => $ok, 'error' => $error] : null;
+};
+
+// Survives the reload after the AP drops. Never the passphrase; a write failure is only logged.
+$writeState = static function (string $path, string $ssid, bool $ok, ?string $error): void {
+    $json = json_encode(['at' => time(), 'ssid' => $ssid, 'ok' => $ok, 'error' => $error]);
+
+    if ($json === false || @file_put_contents($path, $json) === false) {
+        error_log(sprintf('provision: cannot write the state file "%s"', $path));
+    }
+};
+
+$statePath = getenv('PROVISION_STATE') ?: '/run/php-wifi-provision/last-attempt.json';
+$lastAttempt = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' ? ($readState)($statePath) : null;
+$lastAttemptStatus = $lastAttempt !== null
+    ? ($lastAttempt['ok'] ? 'succeeded' : 'failed: ' . $lastAttempt['error'])
+    : null;
+
 $networks = [];
 $scanError = null;
 $connectError = null;
@@ -170,6 +209,8 @@ if ($wifi !== null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $connectError = $genericError;
         }
     }
+
+    ($writeState)($statePath, is_string($ssid) ? $ssid : '', $connectError === null, $connectError);
 }
 ?>
 <!DOCTYPE html>
@@ -191,6 +232,9 @@ button{width:100%;padding:.7rem;font-size:1rem;background:#2a7;color:#fff;border
 </head>
 <body>
 <h1>Wi-Fi setup</h1>
+<?php if ($lastAttempt !== null) : ?>
+<p>Last attempt: <?= ($h)($lastAttempt['ssid']) ?> — <?= ($h)($lastAttemptStatus) ?></p>
+<?php endif; ?>
 <?php if ($fromCache) : ?>
 <p>Scanned before the hotspot started.</p>
 <?php endif; ?>

@@ -1,0 +1,15 @@
+# SYNTHETIC: iw dev
+phy#1
+	Interface ap0
+		ifindex 5
+		type AP
+	Interface mon0
+		ifindex 6
+		type monitor
+phy#0
+	Interface wlan0
+		ifindex 3
+		type managed
+	Interface p2p-dev-wlan0
+		ifindex 4
+		type P2P-device

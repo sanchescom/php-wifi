@@ -1,0 +1,14 @@
+[Unit]
+Description=php-wifi watchdog: keep this device joined to Wi-Fi, raising a provisioning hotspot when it cannot
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/php-wifi-watch.env
+ExecStart=/opt/php-wifi/bin/wifi watch --hotspot-ssid=${WATCH_HOTSPOT_SSID} --hotspot-password-file=${WATCH_HOTSPOT_PASSWORD_FILE} --interval=${WATCH_INTERVAL} --retry=${WATCH_RETRY}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
