@@ -19,13 +19,18 @@ the maintainer's Raspberry Pi — see
   distributions) — scan, connect (including asking a DHCP client for an
   address once `wpa_supplicant` has associated), disconnect, known networks,
   forget, and a hotspot through `hostapd` + `dnsmasq`. It drives
-  `wpa_supplicant` by running `wpa_cli -i <iface>` interactively and writing
-  the command sequence to the child's **stdin**, terminated by `quit`, so a
-  passphrase never reaches its own argv. `connect()` without a passphrase
-  selects the SSID's existing network block rather than adding an open one;
-  with a passphrase it removes every existing block for that SSID first, and
-  `forget()` removes all of them. A hotspot whose `dnsmasq` fails to start
-  kills the `hostapd` it had already started.
+  `wpa_supplicant` through `wpa_cli`. A passphrase is sent by running
+  `wpa_cli -i <iface>` interactively with the script on the child's
+  **stdin**, terminated by `quit`, so it never reaches argv; every other
+  command is passed as arguments, because interactive `wpa_cli` waits forever when no
+  `wpa_supplicant` is running. `connect()` without a passphrase joins the
+  SSID's existing network block rather than adding an open one. With a
+  passphrase it joins a new block first, and removes the SSID's older blocks
+  and saves the config only once that block has associated — a mistyped
+  passphrase leaves the working block in place. Other networks' blocks stay
+  enabled. `forget()` removes every block for the SSID. A hotspot whose
+  `dnsmasq` fails to start kills the `hostapd` it had already started and
+  hands the interface back.
 - **`BackendFactory::forLinux(CommandRunner $runner): Backend`**: probes
   `nmcli -t -f RUNNING general` (`LANG=C`) and returns `NmcliBackend` when it
   exits `0` and prints `running`, `WpaCliBackend` otherwise — a missing

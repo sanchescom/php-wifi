@@ -72,9 +72,10 @@ whichever set applies:
 
 A missing or unresolvable `iw` does not make the watchdog tear a hotspot
 down early — see "What a missing `iw` means" below — but it does mean the
-"someone attached" check that `--retry` exists for effectively never
-clears, so a busy-looking hotspot may sit past `--retry` until `iw` is
-installed.
+"someone attached" check never clears: the hotspot stays up, past
+`--retry`, for as long as `iw` is missing. Each such tick is logged as
+`hotspot_busy: cannot count hotspot stations: …`, and `iw` is looked up
+again on every tick, so installing it takes effect without a restart.
 
 This unit is written for the Linux backends. It refuses to start on macOS
 or Windows (`wifi watch` requires `SupportsHotspot`, which
@@ -104,7 +105,8 @@ up, staying busy, or a failure — with its message).
 
 ## Restart=always, and what it is no longer needed for
 
-`Restart=always` with `RestartSec=10` and `StartLimitIntervalSec=0` (no cap
+`Restart=always` with `RestartSec=10`, and `StartLimitIntervalSec=0` in
+`[Unit]` — the only section systemd reads it from — (no cap
 on how many times systemd will restart it, ever — this device has no one
 around to run `systemctl reset-failed`) is the unit's own safety net for
 the process dying outright: an out-of-memory kill, a PHP fatal error, the
@@ -140,16 +142,16 @@ caller who constructs `Watchdog` with `requireIdleHotspot: false` directly
 (this unit does not); that path never looked at the station count in the
 first place.
 
-## Surviving a clock with no memory
+## Surviving a clock that steps backwards
 
-A Raspberry Pi with no RTC starts every boot at whatever time its clock
-last held, then jumps forward once NTP catches up — sometimes well after
-this unit has already started. If the hotspot's "raised at" timestamp
-(persisted so a restart, by this very unit, does not reset the busy/idle
-clock) was written after a sync and is then read back before the next
-one, "now" briefly reads earlier than "raised at" — an elapsed time that
-never crosses `--retry` on its own. `Watchdog` treats that as "the hotspot
-was raised just now" and re-records the timestamp against the clock as it
-currently stands, so `--retry`'s countdown still runs forward and
-completes, instead of a busy-forever hotspot that quietly outlives the
-clock skew that caused it.
+A Raspberry Pi has no RTC: its clock starts each boot wherever it last
+stood and is corrected by NTP later — sometimes backwards, while this unit
+is already running with a hotspot up. `--retry` counts from the moment the
+hotspot went up, so a clock stepped back behind that moment would leave an
+elapsed time that never reaches `--retry`. `Watchdog` treats that as "the
+hotspot went up just now" and restarts the countdown from the corrected
+clock, so the real network is still retried.
+
+The raise time is also persisted, but only matters when a restarted process
+finds the hotspot still up; after a reboot the hotspot is gone, and the
+countdown starts afresh when it is raised again.
