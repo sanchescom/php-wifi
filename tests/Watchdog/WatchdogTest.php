@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\Test\Watchdog;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Sanchescom\WiFi\Backend\NmcliBackend;
+use Sanchescom\WiFi\Backend\WpaCliBackend;
 use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Test\Support\TestClock;
@@ -22,6 +24,11 @@ use Sanchescom\WiFi\WiFi;
 final class WatchdogTest extends TestCase
 {
     private const DEVICES = "eth0:ethernet:connected\nwlan0:wifi:disconnected\n";
+
+    private const WPACLI_FIXTURES = __DIR__ . '/../Fixtures/wpacli';
+
+    /** Where `which iw` resolves to — /usr/sbin, off an unprivileged user's PATH. */
+    private const IW = '/usr/sbin/iw';
 
     private const CONNECT_FAILS = [
         'output' => '',
@@ -47,6 +54,12 @@ final class WatchdogTest extends TestCase
         }
 
         parent::tearDown();
+    }
+
+    /** @param array<string, mixed> $fixtures a `which iw` fixture here overrides the resolved default */
+    private static function runner(array $fixtures): FakeCommandRunner
+    {
+        return new FakeCommandRunner(array_merge(['which iw' => self::IW . "\n"], $fixtures));
     }
 
     private function hotspotConfig(): HotspotConfig
@@ -79,11 +92,13 @@ final class WatchdogTest extends TestCase
         bool $requireIdleHotspot = true,
         ?string $stateFile = null,
         ?Device $device = null,
+        int $interval = 30,
     ): Watchdog {
         $wifi = new WiFi(new NmcliBackend($runner));
         $config = new WatchdogConfig(
             ssid: $ssid,
             hotspot: $this->hotspotConfig(),
+            interval: $interval,
             retryAfter: $retryAfter,
             requireIdleHotspot: $requireIdleHotspot,
             device: $device,
@@ -95,7 +110,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function a_client_connection_is_reported_connected_without_touching_the_hotspot(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "\n",
             'device wifi list' => $this->networkList(connected: true),
         ]);
@@ -113,7 +128,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function a_dropped_connection_is_recovered_by_rejoining_the_target_ssid(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "\n",
             'device wifi list' => $this->networkList(connected: false),
             '-f DEVICE,TYPE device' => self::DEVICES,
@@ -130,7 +145,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function a_join_failure_raises_the_hotspot(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "\n",
             'device wifi list' => $this->networkList(connected: false),
             '-f DEVICE,TYPE device' => self::DEVICES,
@@ -148,7 +163,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function a_hotspot_with_attached_stations_is_left_alone(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "Hotspot\n",
             '-f DEVICE,TYPE device' => self::DEVICES,
             'station dump' => "Station 11:22:33:44:55:66 (on wlan0)\nStation aa:bb:cc:dd:ee:ff (on wlan0)\n",
@@ -167,7 +182,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function an_idle_hotspot_before_retry_after_elapses_is_left_alone(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "Hotspot\n",
             '-f DEVICE,TYPE device' => self::DEVICES,
             'station dump' => '',
@@ -188,7 +203,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function an_idle_hotspot_past_retry_after_is_stopped_and_a_successful_reconnect_recovers(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "Hotspot\n",
             '-f DEVICE,TYPE device' => self::DEVICES,
             'station dump' => '',
@@ -212,7 +227,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function an_idle_hotspot_past_retry_after_whose_reconnect_fails_is_raised_again(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "Hotspot\n",
             '-f DEVICE,TYPE device' => self::DEVICES,
             'station dump' => '',
@@ -239,7 +254,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function an_unexpected_failure_while_checking_the_hotspot_is_reported_as_failed(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => self::HOTSPOT_ACTIVE_FAILS,
         ]);
         $watchdog = $this->watchdog($runner, new TestClock());
@@ -250,22 +265,33 @@ final class WatchdogTest extends TestCase
     }
 
     /**
-     * A missing iw must be read as "idle", not "occupied forever": elapse
-     * retryAfter and confirm the watchdog actually proceeds to stop the
-     * hotspot and attempt a reconnect. Asserting HotspotBusy alone (the
-     * previous version of this test) cannot tell "treated as idle" apart
-     * from "treated as busy" — both produce HotspotBusy before retryAfter
-     * elapses regardless of how the missing binary is read.
+     * "Cannot count stations" must read as "someone may be attached", never
+     * as "nobody is": elapse retryAfter, so only the station count stands
+     * between the hotspot and teardown, and confirm it is still left up.
+     * Covers both ways the count can be unknown.
+     *
+     * @return array<string, array{array<string, mixed>}>
      */
-    #[Test]
-    public function a_missing_iw_binary_is_treated_as_no_stations_attached(): void
+    public static function unknownStationCounts(): array
     {
-        $runner = new FakeCommandRunner([
+        return [
+            'iw cannot be resolved' => [['which iw' => ['output' => '', 'exit' => 1]]],
+            'station dump fails' => [['station dump' => ['output' => '', 'exit' => 1, 'stderr' => 'command failed']]],
+        ];
+    }
+
+    /** @param array<string, mixed> $stationFixture */
+    #[Test]
+    #[DataProvider('unknownStationCounts')]
+    public function an_unknown_station_count_past_retry_after_leaves_the_hotspot_up(array $stationFixture): void
+    {
+        $runner = self::runner([
             'connection show --active' => "Hotspot\n",
             '-f DEVICE,TYPE device' => self::DEVICES,
-            'station dump' => ['output' => '', 'exit' => 127, 'stderr' => 'iw: command not found'],
+            'station dump' => '',
             'connection down' => '',
             'device wifi connect' => '',
+            ...$stationFixture,
         ]);
         $clock = new TestClock(1_000);
         $watchdog = $this->watchdog($runner, $clock, retryAfter: 300);
@@ -274,17 +300,119 @@ final class WatchdogTest extends TestCase
         $clock->sleep(300);
         $state = $watchdog->tick();
 
-        $this->assertSame(WatchdogState::Recovered, $state);
-        $this->assertStringContainsString('connection down', implode(' | ', array_map(
-            static fn ($command) => $command->describe(),
-            $runner->commands,
-        )));
+        $this->assertSame(WatchdogState::HotspotBusy, $state);
+        foreach ($runner->commands as $command) {
+            $this->assertStringNotContainsString('connection down', $command->describe());
+        }
+    }
+
+    /** Opting out of the idle check ignores the count entirely, so an unknown one must not block teardown. */
+    #[Test]
+    public function an_unresolvable_iw_does_not_block_teardown_when_the_idle_check_is_off(): void
+    {
+        $runner = self::runner([
+            'which iw' => ['output' => '', 'exit' => 1],
+            'connection show --active' => "Hotspot\n",
+            '-f DEVICE,TYPE device' => self::DEVICES,
+            'connection down' => '',
+            'device wifi connect' => '',
+        ]);
+        $clock = new TestClock(1_000);
+        $watchdog = $this->watchdog($runner, $clock, retryAfter: 300, requireIdleHotspot: false);
+
+        $watchdog->tick();
+        $clock->sleep(300);
+
+        $this->assertSame(WatchdogState::Recovered, $watchdog->tick());
+    }
+
+    /** A bare `iw` exits 127 on an unprivileged PATH; the dump must run the resolved absolute path. */
+    #[Test]
+    public function the_station_dump_runs_iw_by_its_resolved_absolute_path(): void
+    {
+        $runner = self::runner([
+            'connection show --active' => "Hotspot\n",
+            '-f DEVICE,TYPE device' => self::DEVICES,
+            'station dump' => "Station 11:22:33:44:55:66 (on wlan0)\n",
+        ]);
+        $watchdog = $this->watchdog($runner, new TestClock());
+
+        $this->assertSame(WatchdogState::HotspotBusy, $watchdog->tick());
+        $this->assertSame(self::IW, $runner->last()->program);
+        $this->assertSame(self::IW . ' dev wlan0 station dump', $runner->last()->describe());
+    }
+
+    /**
+     * A Pi with no RTC can boot with "now" earlier than the persisted raise
+     * time. The countdown must restart from the skewed clock and still
+     * complete — not sit at a negative age that never reaches retryAfter.
+     */
+    #[Test]
+    public function a_clock_that_jumps_behind_the_raise_time_still_lets_retry_after_elapse(): void
+    {
+        $runner = self::runner([
+            'connection show --active' => "Hotspot\n",
+            '-f DEVICE,TYPE device' => self::DEVICES,
+            'station dump' => '',
+            'connection down' => '',
+            'device wifi connect' => '',
+        ]);
+        $clock = new TestClock(100_000);
+        $watchdog = $this->watchdog($runner, $clock, retryAfter: 300);
+
+        $watchdog->tick();
+        $clock->set(1_000);
+        $this->assertSame(WatchdogState::HotspotBusy, $watchdog->tick());
+
+        $clock->sleep(300);
+
+        $this->assertSame(WatchdogState::Recovered, $watchdog->tick());
+    }
+
+    /** HostapdConfig and friends throw plain RuntimeException; a tick must still survive it. */
+    #[Test]
+    public function an_exception_outside_the_wifi_hierarchy_is_reported_as_failed(): void
+    {
+        $watchdog = $this->watchdog(self::runner([]), new TestClock());
+
+        $this->assertSame(WatchdogState::Failed, $watchdog->tick());
+        $this->assertStringContainsString('No fixture for command', (string) $watchdog->lastError());
+    }
+
+    /**
+     * The seam the final review found: the watchdog was only ever run
+     * against nmcli. On wpa_cli, rejoining with no credentials must select
+     * the SSID's existing (WPA2) block, never add an open-network one.
+     */
+    #[Test]
+    public function on_wpa_cli_a_dropped_connection_is_rejoined_through_the_existing_network_block(): void
+    {
+        $runner = self::runner([
+            'which wpa_cli' => "/usr/sbin/wpa_cli\n",
+            'which' => ['output' => '', 'exit' => 1],
+            'scan_results' => self::WPACLI_FIXTURES . '/ScanResults.txt',
+            'scan' => "OK\n",
+            'status' => [self::WPACLI_FIXTURES . '/StatusInactive.txt', self::WPACLI_FIXTURES . '/Status.txt'],
+            'list_networks' => self::WPACLI_FIXTURES . '/ListNetworks.txt',
+            'select_network' => "OK\n",
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0', sleep: static function (): void {
+        });
+        $config = new WatchdogConfig(ssid: 'BELL340', hotspot: $this->hotspotConfig(), device: new Device('wlan0'));
+        $watchdog = new Watchdog(new WiFi($backend), $config, new TestClock(), $runner, $this->freshStateFile());
+
+        $this->assertSame(WatchdogState::Recovered, $watchdog->tick());
+
+        $stdin = implode("\n", array_map(static fn ($command): string => (string) $command->stdin, $runner->commands));
+        $this->assertStringContainsString('select_network 0', $stdin);
+        $this->assertStringNotContainsString('add_network', $stdin);
+        $this->assertStringNotContainsString('key_mgmt', $stdin);
     }
 
     #[Test]
     public function a_null_ssid_tries_every_known_network_in_turn(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "\n",
             'device wifi list' => $this->networkList(connected: false),
             '-f DEVICE,TYPE device' => self::DEVICES,
@@ -325,7 +453,7 @@ final class WatchdogTest extends TestCase
     public function the_hotspots_age_survives_a_new_watchdog_instance_pointed_at_the_same_state_file(): void
     {
         $stateFile = $this->freshStateFile();
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "Hotspot\n",
             '-f DEVICE,TYPE device' => self::DEVICES,
             'station dump' => '',
@@ -350,7 +478,7 @@ final class WatchdogTest extends TestCase
         $stateFile = $this->freshStateFile();
         file_put_contents($stateFile, 'not valid json {{{');
 
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "Hotspot\n",
             '-f DEVICE,TYPE device' => self::DEVICES,
             'station dump' => '',
@@ -369,7 +497,7 @@ final class WatchdogTest extends TestCase
     public function the_state_file_is_removed_once_a_reconnect_succeeds(): void
     {
         $stateFile = $this->freshStateFile();
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "Hotspot\n",
             '-f DEVICE,TYPE device' => self::DEVICES,
             'station dump' => '',
@@ -398,7 +526,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function a_configured_device_is_used_to_reconnect_without_auto_detecting_one(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "\n",
             'device wifi list' => $this->networkList(connected: false),
             'device wifi connect' => '',
@@ -422,7 +550,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function a_configured_device_is_used_for_the_station_dump_without_auto_detecting_one(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "Hotspot\n",
             'station dump' => "Station 11:22:33:44:55:66 (on wlan1)\n",
         ]);
@@ -441,7 +569,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function without_a_configured_device_reconnect_falls_back_to_the_detected_one(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "\n",
             'device wifi list' => $this->networkList(connected: false),
             '-f DEVICE,TYPE device' => self::DEVICES,
@@ -458,7 +586,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function a_failed_tick_records_the_underlying_error_message(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => self::HOTSPOT_ACTIVE_FAILS,
         ]);
         $watchdog = $this->watchdog($runner, new TestClock());
@@ -472,7 +600,7 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function last_error_is_null_when_the_most_recent_tick_did_not_fail(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "\n",
             'device wifi list' => $this->networkList(connected: true),
         ]);
@@ -493,12 +621,13 @@ final class WatchdogTest extends TestCase
     #[Test]
     public function run_calls_the_observer_with_the_state_after_every_tick(): void
     {
-        $runner = new FakeCommandRunner([
+        $runner = self::runner([
             'connection show --active' => "\n",
             'device wifi list' => $this->networkList(connected: true),
         ]);
         $clock = new class implements Clock {
-            public int $sleeps = 0;
+            /** @var list<int> */
+            public array $slept = [];
 
             private int $now = 1_000;
 
@@ -509,16 +638,16 @@ final class WatchdogTest extends TestCase
 
             public function sleep(int $seconds): void
             {
-                $this->sleeps++;
+                $this->slept[] = $seconds;
 
-                if ($this->sleeps >= 2) {
+                if (count($this->slept) >= 2) {
                     throw new RuntimeException('stop the loop');
                 }
 
                 $this->now += $seconds;
             }
         };
-        $watchdog = $this->watchdog($runner, $clock);
+        $watchdog = $this->watchdog($runner, $clock, interval: 17);
         $states = [];
 
         try {
@@ -531,5 +660,6 @@ final class WatchdogTest extends TestCase
         }
 
         $this->assertSame([WatchdogState::Connected, WatchdogState::Connected], $states);
+        $this->assertSame([17, 17], $clock->slept, 'run() must sleep the configured interval between ticks');
     }
 }

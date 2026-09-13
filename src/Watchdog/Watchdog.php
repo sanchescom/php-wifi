@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\Watchdog;
 
+use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\WiFiException;
 use Sanchescom\WiFi\Parser\Iw\StationDumpParser;
 use Sanchescom\WiFi\Shell\Command;
@@ -12,6 +13,7 @@ use Sanchescom\WiFi\Shell\ShellCommandRunner;
 use Sanchescom\WiFi\Value\Credentials;
 use Sanchescom\WiFi\Value\KnownNetwork;
 use Sanchescom\WiFi\WiFi;
+use Throwable;
 
 /**
  * Keeps a headless device reachable.
@@ -29,12 +31,24 @@ use Sanchescom\WiFi\WiFi;
  * the Linux backends' Wi-Fi driver, not of the cross-platform facade). This
  * class therefore carries its own {@see CommandRunner} and runs `iw`
  * itself, rather than reaching into a Backend's internals or requiring the
- * backends to implement a new capability interface. The trade-off: on a
- * system without `iw` (e.g. running against NetworkManager without the
- * wireless-tools package, or on a platform other than Linux) station
- * counting always reports zero, which — per the decision table — is treated
- * the same as "iw absent", i.e. nobody attached; the hotspot is still
- * managed correctly, just without the busy/idle distinction.
+ * backends to implement a new capability interface. `iw` is resolved
+ * through {@see ToolPath}, exactly like every backend tool — a bare `iw`
+ * exits 127 on the unprivileged `PATH` this whole release exists to fix
+ * (`/usr/sbin` is absent from it on Debian/Raspberry Pi OS), which used to
+ * silently read as "nobody attached" and let this class tear down a hotspot
+ * with a phone on it, the one failure it exists to prevent.
+ *
+ * {@see self::countHotspotStations()} therefore returns `?int`: `null` means
+ * "the count could not be determined" (`iw` could not be resolved, or the
+ * `station dump` call itself failed) and is kept distinct from `0`, a
+ * genuinely empty dump. {@see self::manageActiveHotspot()} treats `null` the
+ * same as "someone is attached" whenever {@see WatchdogConfig::$requireIdleHotspot}
+ * is true (its default): a failed read must not be read as "the hotspot is
+ * idle" when the entire point of that flag is to protect whoever might be
+ * attached — the safe direction is to assume they are there, not to guess
+ * that they are not. A caller who has explicitly opted out of the idle
+ * check (`requireIdleHotspot: false`) already ignores the station count
+ * entirely, so a failed read changes nothing for them either way.
  *
  * "When did the hotspot go up" needs to survive this process dying and being
  * restarted — a headless watchdog that forgets its retry clock on every
@@ -58,6 +72,8 @@ final class Watchdog
 {
     private readonly CommandRunner $commandRunner;
 
+    private readonly ToolPath $toolPath;
+
     private readonly string $stateFile;
 
     private ?int $hotspotRaisedAt = null;
@@ -72,6 +88,7 @@ final class Watchdog
         ?string $stateFile = null,
     ) {
         $this->commandRunner = $commandRunner ?? ShellCommandRunner::forCurrentOs();
+        $this->toolPath = new ToolPath($this->commandRunner);
         $this->stateFile = $stateFile ?? sys_get_temp_dir() . '/php-wifi-watchdog.json';
     }
 
@@ -90,7 +107,13 @@ final class Watchdog
             }
 
             return $this->recover();
-        } catch (WiFiException $exception) {
+        } catch (Throwable $exception) {
+            // Not just WiFiException: HostapdConfig::create() (reached from
+            // recover() -> WiFi::startHotspot()) throws a plain
+            // RuntimeException on a write failure, and this class's own
+            // bookkeeping is the kind of thing that could throw too. Any of
+            // it must land here as Failed, not escape run()'s loop into the
+            // CLI's outer catch and kill an otherwise-recoverable daemon.
             $this->lastError = $exception->getMessage();
 
             return WatchdogState::Failed;
@@ -134,13 +157,29 @@ final class Watchdog
 
         $stations = $this->countHotspotStations();
 
-        if ($stations > 0 && $this->config->requireIdleHotspot) {
+        if ($this->config->requireIdleHotspot && ($stations === null || $stations > 0)) {
             return WatchdogState::HotspotBusy;
         }
 
-        $elapsed = $this->clock->now() - $this->hotspotRaisedAt;
+        $now = $this->clock->now();
 
-        if ($elapsed < $this->config->retryAfter) {
+        if ($now < $this->hotspotRaisedAt) {
+            // A Raspberry Pi with no RTC can read "now" as earlier than the
+            // persisted raise time — e.g. a reboot before NTP resyncs the
+            // clock, after the state file was written post-sync. Without
+            // this check $elapsed below goes deeply negative and never
+            // reaches retryAfter, freezing the hotspot up forever: the real
+            // network is never retried again. Treating the hotspot as
+            // raised "now" and re-persisting that against the clock as it
+            // currently stands (mirroring examples/provision/index.php's
+            // own `$age >= 0` guard) keeps retryAfter's countdown moving
+            // forward instead.
+            $this->recordHotspotRaisedAt();
+
+            return WatchdogState::HotspotBusy;
+        }
+
+        if ($now - $this->hotspotRaisedAt < $this->config->retryAfter) {
             return WatchdogState::HotspotBusy;
         }
 
@@ -193,14 +232,25 @@ final class Watchdog
         );
     }
 
-    /** iw absent, or the dump otherwise unreadable, counts as nobody attached. */
-    private function countHotspotStations(): int
+    /**
+     * Null means "could not be determined" — `iw` could not be resolved
+     * through {@see ToolPath}, or the `station dump` call itself failed —
+     * kept distinct from `0`, a dump that genuinely lists nobody. See the
+     * class docblock for why callers must not treat the two the same.
+     */
+    private function countHotspotStations(): ?int
     {
         $device = $this->config->device ?? $this->wifi->device();
-        $result = $this->commandRunner->run(new Command('iw', ['dev', $device->name, 'station', 'dump']));
+        $iw = $this->toolPath->resolve('iw');
+
+        if ($iw === null) {
+            return null;
+        }
+
+        $result = $this->commandRunner->run(new Command($iw, ['dev', $device->name, 'station', 'dump']));
 
         if (!$result->isSuccessful()) {
-            return 0;
+            return null;
         }
 
         return (new StationDumpParser())->count($result->stdout);
