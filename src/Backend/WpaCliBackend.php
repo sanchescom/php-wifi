@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Sanchescom\WiFi\Backend;
 
 use Closure;
+use Throwable;
 use Sanchescom\WiFi\Backend\Linux\HostapdConfig;
 use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\CommandFailed;
@@ -222,14 +223,57 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * `save_config` run together as one script, then `status` is polled
      * (up to `$associationAttempts` times, `$associationPollIntervalMicroseconds`
      * apart — see {@see self::awaitAssociation()}) until `wpa_state=COMPLETED`.
+     *
+     * Two defects fixed here both come from the same root cause —
+     * `wpa_supplicant` has no notion of "the" block for an SSID, only
+     * however many `add_network` happened to create — and both are handled
+     * by consulting `list_networks` before touching anything:
+     *
+     * - No passphrase (the watchdog's rejoin path): unconditionally adding a
+     *   fresh open-network (`key_mgmt NONE`) block for an SSID that already
+     *   has one — almost always the WPA2 block a previous {@see
+     *   self::connect()} with a real passphrase created — can never
+     *   associate, and the junk block is persisted by `save_config` on every
+     *   retry. So an existing block for $ssid is `select_network`ed instead:
+     *   one command both disables every other block and selects this one,
+     *   which is exactly "rejoin the network already configured under this
+     *   id" — cheaper than `enable_network` (which would not depose an
+     *   already-selected different block) followed by a separate
+     *   `reconnect`. Only when no block exists at all does this fall back to
+     *   today's add-with-`key_mgmt NONE`, which is correct for a genuinely
+     *   open network.
+     * - A passphrase supplied: every existing block for $ssid is removed
+     *   (`remove_network`, in the order `list_networks` printed them) before
+     *   a new one is added, so a stale, wrong block from an earlier typo can
+     *   never coexist with the corrected one and win the race to associate.
+     *   These removals are not `save_config`d on their own — the
+     *   `save_config` already at the end of this method, after the new block
+     *   is added and enabled, persists the removals and the addition
+     *   together in one write.
      */
     public function connect(string $ssid, Credentials $credentials, Device $device): void
     {
         $interface = $device->name;
+        $secret = $credentials->password !== null;
+        $existingIds = $this->networkIdsBySsid($interface, $ssid);
+
+        if (!$secret && $existingIds !== []) {
+            $this->wpaCli($interface, [sprintf('select_network %s', $existingIds[0])]);
+
+            $this->awaitAssociation($interface);
+
+            $this->requestAddress($device);
+
+            return;
+        }
+
+        foreach ($existingIds as $existingId) {
+            $this->wpaCli($interface, [sprintf('remove_network %s', $existingId)]);
+        }
+
         $id = $this->addNetwork($interface);
 
         $lines = [sprintf('set_network %d ssid %s', $id, self::quote($ssid))];
-        $secret = $credentials->password !== null;
 
         if ($secret) {
             /** @var string $password */
@@ -274,7 +318,37 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     public function forget(string $ssidOrName): void
     {
         $interface = $this->resolveInterface();
+        $ids = $this->networkIdsBySsid($interface, $ssidOrName);
+
+        if ($ids === []) {
+            throw NetworkNotFound::bySsid($ssidOrName);
+        }
+
+        // Every block, not just the first: installs from before connect()
+        // started removing duplicates may already carry several.
+        $lines = array_map(static fn (string $id): string => sprintf('remove_network %s', $id), $ids);
+        $lines[] = 'save_config';
+
+        $this->wpaCli($interface, $lines);
+    }
+
+    /**
+     * Runs `list_networks` and picks out the id column ($fields[0]) of every
+     * row whose ssid column matches $ssid exactly as `list_networks` printed
+     * it (not decoded through {@see \Sanchescom\WiFi\Parser\WpaCli\Printf},
+     * unlike {@see ListNetworksParser}) — the one thing that parser, built
+     * for the public {@see self::knownNetworks()} shape, does not expose,
+     * and the one thing {@see self::forget()} and {@see self::connect()}
+     * both need in order to name a specific block rather than merely
+     * describe one.
+     *
+     * @return list<string> network ids, in the order `list_networks` printed
+     *         them
+     */
+    private function networkIdsBySsid(string $interface, string $ssid): array
+    {
         $result = $this->wpaCli($interface, ['list_networks']);
+        $ids = [];
 
         foreach (preg_split('/\r?\n/', $result->stdout) ?: [] as $line) {
             if ($line === '' || $line[0] === '#') {
@@ -283,16 +357,14 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
             $fields = explode("\t", $line, 4);
 
-            if (count($fields) < 2 || $fields[1] !== $ssidOrName) {
+            if (count($fields) < 2 || $fields[1] !== $ssid) {
                 continue;
             }
 
-            $this->wpaCli($interface, [sprintf('remove_network %s', $fields[0]), 'save_config']);
-
-            return;
+            $ids[] = $fields[0];
         }
 
-        throw NetworkNotFound::bySsid($ssidOrName);
+        return $ids;
     }
 
     /**
@@ -304,13 +376,22 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * already read the file. If `hostapd` fails, `dnsmasq` is never
      * reached, and the config file is still deleted.
      *
-     * Refuses to run at all when a hotspot already looks active: two
-     * concurrent starts would both write the same fixed pid files, so the
-     * first daemon's pid would be overwritten and become unreachable by
-     * both {@see self::isHotspotActive()} and {@see self::stopHotspot()} —
-     * it would keep running with nothing able to stop it.
-     *
-     * @throws CommandFailed when a hotspot is already running
+     * `hostapd -B` has already daemonised — and written its pid file — by
+     * the time `dnsmasq` is started, so a `dnsmasq` that fails to start
+     * (port 53 already bound by a system `dnsmasq` or `systemd-resolved` is
+     * the ordinary case) would otherwise leave `hostapd` running with
+     * nothing able to stop it: `isHotspotActive()` only reports a hotspot
+     * once *both* pid files match a live process, so it would report false,
+     * and a watchdog polling it would re-enter recovery and start another
+     * `hostapd` every interval while the radio stayed an access point.
+     * $hostapdStarted, set true only once the `hostapd` {@see Command} has
+     * actually returned, guards a rollback in the `catch` below: anything
+     * that fails afterwards (today, only `dnsmasq`) kills that `hostapd` by
+     * its pid file — {@see self::killPidFile()}, the same helper {@see
+     * self::stopHotspot()} uses, rather than the whole of `stopHotspot()`
+     * itself, which would also flush the address and re-resolve the
+     * interface (via `detectDevice()`, which can itself throw while the
+     * radio is mid-failure) — before the original exception propagates.
      */
     public function startHotspot(HotspotConfig $config, Device $device): Hotspot
     {
@@ -319,6 +400,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         $interface = $device->name;
         $hostapdConfig = new HostapdConfig($interface, $config);
         $confFile = $hostapdConfig->create();
+        $hostapdStarted = false;
 
         try {
             $this->wpaCli($interface, ['disconnect']);
@@ -332,6 +414,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
                 $this->resolvedPath(self::HOSTAPD_BINARY),
                 ['-B', '-P', $this->hostapdPidFile(), $confFile],
             ));
+            $hostapdStarted = true;
 
             $this->run(new Command($this->resolvedPath(self::DNSMASQ_BINARY), [
                 '--interface=' . $interface,
@@ -340,6 +423,12 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
                 '--dhcp-range=' . self::DHCP_RANGE,
                 '--pid-file=' . $this->dnsmasqPidFile(),
             ]));
+        } catch (Throwable $exception) {
+            if ($hostapdStarted) {
+                $this->killPidFile($this->hostapdPidFile(), self::HOSTAPD_BINARY);
+            }
+
+            throw $exception;
         } finally {
             $hostapdConfig->delete();
         }
@@ -351,9 +440,14 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * Terminates both daemons, flushes the address off the interface and
      * hands the radio back to `wpa_supplicant` (stdin `reconnect`). Every
      * step tolerates "already gone" — a missing pid file is skipped, a
-     * `kill` of an already-dead pid is not treated as failure — so calling
-     * this twice in a row is harmless. A pid file whose pid names a
-     * different process than expected is never signalled (see
+     * `kill` of an already-dead pid is not treated as failure, and the
+     * trailing `reconnect` swallows a {@see CommandFailed} the same way:
+     * "no `wpa_supplicant` is running" is the routine reply on a
+     * hostapd-only box that never had one, and by this point both daemons
+     * are already dead and the address already flushed, so a `wpa_cli`
+     * complaint at the very last step must not make this method itself
+     * throw. Calling this twice in a row is harmless. A pid file whose pid
+     * names a different process than expected is never signalled (see
      * {@see self::killPidFile()}); its stale file is still removed.
      */
     public function stopHotspot(): void
@@ -365,7 +459,12 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
         $this->run(new Command($this->resolvedPath('ip'), ['addr', 'flush', 'dev', $interface]));
 
-        $this->wpaCli($interface, ['reconnect']);
+        try {
+            $this->wpaCli($interface, ['reconnect']);
+        } catch (CommandFailed) {
+            // Routine when no wpa_supplicant is running; both daemons are
+            // already gone and the address already flushed.
+        }
     }
 
     /**

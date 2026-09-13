@@ -391,6 +391,7 @@ final class WpaCliBackendTest extends TestCase
     public function connect_with_a_password_never_puts_it_in_argv(): void
     {
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
@@ -400,15 +401,20 @@ final class WpaCliBackendTest extends TestCase
 
         $backend->connect('BELL340', Credentials::password('p w'), new Device('wlan0'));
 
-        $this->assertCount(7, $runner->commands);
+        // which wpa_cli, list_networks (no match, so no removal), add_network,
+        // script, status, then dhcpcd/udhcpc/dhclient probing (3).
+        $this->assertCount(8, $runner->commands);
 
-        $addNetwork = $runner->commands[1];
+        $listNetworks = $runner->commands[1];
+        $this->assertSame("list_networks\nquit\n", $listNetworks->stdin);
+
+        $addNetwork = $runner->commands[2];
         $this->assertSame(self::WPA_CLI, $addNetwork->program);
         $this->assertSame(['-i', 'wlan0'], $addNetwork->arguments);
         $this->assertSame("add_network\nquit\n", $addNetwork->stdin);
         $this->assertFalse($addNetwork->stdinIsSecret);
 
-        $script = $runner->commands[2];
+        $script = $runner->commands[3];
         $this->assertSame(self::WPA_CLI, $script->program);
         $this->assertSame(['-i', 'wlan0'], $script->arguments);
         $this->assertSame(
@@ -417,8 +423,13 @@ final class WpaCliBackendTest extends TestCase
         );
         $this->assertTrue($script->stdinIsSecret);
 
-        $status = $runner->commands[3];
+        $status = $runner->commands[4];
         $this->assertSame("status\nquit\n", $status->stdin);
+
+        // No existing block matched, so nothing was removed.
+        foreach ($runner->commands as $command) {
+            $this->assertStringNotContainsString('remove_network', (string) $command->stdin);
+        }
 
         // The point of this whole task: the passphrase lives only in stdin.
         $this->assertStringContainsString('p w', $script->stdin ?? '');
@@ -429,10 +440,52 @@ final class WpaCliBackendTest extends TestCase
         }
     }
 
+    /**
+     * C3: a mistyped-then-corrected passphrase must not leave the older,
+     * wrong block behind to race the new one for association. Both existing
+     * `BELL340` blocks (ids 0 and 2, either side of an unrelated network) are
+     * removed, in the order `list_networks` printed them, before
+     * `add_network` ever runs — see {@see WpaCliBackend::connect()}.
+     */
+    #[Test]
+    public function connect_with_a_password_removes_every_existing_block_for_the_ssid_before_adding_a_new_one(): void
+    {
+        $listNetworks = "network id / ssid / bssid / flags\n"
+            . "0\tBELL340\tany\t[DISABLED]\n"
+            . "1\tOtherNet\tany\t[CURRENT]\n"
+            . "2\tBELL340\tany\t[DISABLED]\n";
+
+        $runner = self::runner([
+            'list_networks' => $listNetworks,
+            'remove_network' => "OK\n",
+            'add_network' => "3\n",
+            'set_network' => "OK\n",
+            'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'which' => ['output' => '', 'exit' => 1],
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        $backend->connect('BELL340', Credentials::password('secret'), new Device('wlan0'));
+
+        // which wpa_cli, list_networks, remove_network(0), remove_network(2),
+        // add_network, script, status, dhcpcd/udhcpc/dhclient probing (3).
+        $this->assertCount(10, $runner->commands);
+
+        $this->assertSame("remove_network 0\nquit\n", $runner->commands[2]->stdin);
+        $this->assertSame("remove_network 2\nquit\n", $runner->commands[3]->stdin);
+        $this->assertSame("add_network\nquit\n", $runner->commands[4]->stdin);
+
+        // Neither removal is itself saved — the later save_config in the new
+        // block's own script persists both removals and the addition together.
+        $this->assertStringNotContainsString('save_config', (string) $runner->commands[2]->stdin);
+        $this->assertStringNotContainsString('save_config', (string) $runner->commands[3]->stdin);
+    }
+
     #[Test]
     public function connect_without_credentials_uses_key_mgmt_none_and_is_not_secret(): void
     {
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
@@ -442,7 +495,7 @@ final class WpaCliBackendTest extends TestCase
 
         $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
 
-        $script = $runner->commands[2];
+        $script = $runner->commands[3];
         $this->assertSame(
             "set_network 0 ssid \"BELL340\"\nset_network 0 key_mgmt NONE\nenable_network 0\nsave_config\nquit\n",
             $script->stdin,
@@ -451,10 +504,48 @@ final class WpaCliBackendTest extends TestCase
         $this->assertStringNotContainsString('psk', $script->stdin);
     }
 
+    /**
+     * C1: the watchdog's rejoin path calls `connect()` with
+     * {@see Credentials::none()} for a network it already knows about. This
+     * must never add a second, open-network block for an SSID that already
+     * has a real (WPA2) one — it must instead `select_network` the existing
+     * block (id 0 for `BELL340` in the fixture) and never touch
+     * `add_network`, `key_mgmt` or `save_config` at all.
+     */
+    #[Test]
+    public function connect_without_credentials_selects_an_existing_block_instead_of_adding_a_new_one(): void
+    {
+        $runner = self::runner([
+            'list_networks' => self::FIXTURES . '/wpacli/ListNetworks.txt',
+            'select_network' => "OK\n",
+            'status' => self::FIXTURES . '/wpacli/Status.txt',
+            'which' => ['output' => '', 'exit' => 1],
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
+
+        // which wpa_cli, list_networks, select_network, status, then
+        // dhcpcd/udhcpc/dhclient probing (3).
+        $this->assertCount(7, $runner->commands);
+
+        $select = $runner->commands[2];
+        $this->assertSame(self::WPA_CLI, $select->program);
+        $this->assertSame("select_network 0\nquit\n", $select->stdin);
+        $this->assertFalse($select->stdinIsSecret);
+
+        foreach ($runner->commands as $command) {
+            $this->assertStringNotContainsString('add_network', (string) $command->stdin);
+            $this->assertStringNotContainsString('key_mgmt', (string) $command->stdin);
+            $this->assertStringNotContainsString('save_config', (string) $command->stdin);
+        }
+    }
+
     #[Test]
     public function connect_quotes_an_ssid_containing_quotes_and_a_backslash_so_it_round_trips(): void
     {
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "3\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
@@ -466,7 +557,7 @@ final class WpaCliBackendTest extends TestCase
 
         $backend->connect($ssid, Credentials::none(), new Device('wlan0'));
 
-        $script = $runner->commands[2];
+        $script = $runner->commands[3];
         $this->assertNotNull($script->stdin);
 
         $ssidLine = null;
@@ -487,15 +578,15 @@ final class WpaCliBackendTest extends TestCase
     #[Test]
     public function connect_throws_command_failed_when_add_network_replies_fail(): void
     {
-        $runner = self::runner(['add_network' => "FAIL\n"]);
+        $runner = self::runner(['list_networks' => '', 'add_network' => "FAIL\n"]);
         $backend = new WpaCliBackend($runner);
 
         try {
             $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
             $this->fail('Expected CommandFailed to be thrown.');
         } catch (CommandFailed) {
-            // which wpa_cli, then the failing add_network attempt.
-            $this->assertCount(2, $runner->commands);
+            // which wpa_cli, list_networks, then the failing add_network attempt.
+            $this->assertCount(3, $runner->commands);
         }
     }
 
@@ -512,6 +603,7 @@ final class WpaCliBackendTest extends TestCase
     {
         $sleeps = [];
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => "wpa_state=SCANNING\n",
@@ -561,6 +653,7 @@ final class WpaCliBackendTest extends TestCase
     {
         $sleeps = [];
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
@@ -584,6 +677,7 @@ final class WpaCliBackendTest extends TestCase
     public function connect_asks_dhcpcd_for_an_address_when_dhcpcd_is_present_and_not_already_supervising(): void
     {
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
@@ -595,7 +689,7 @@ final class WpaCliBackendTest extends TestCase
 
         $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
 
-        $this->assertCount(7, $runner->commands);
+        $this->assertCount(8, $runner->commands);
         $last = array_slice($runner->commands, -3);
         $this->assertEquals(new Command('which', ['dhcpcd'], ['PATH' => self::searchPath()]), $last[0]);
         $this->assertEquals(new Command('/sbin/dhcpcd', ['-U', 'wlan0']), $last[1]);
@@ -606,6 +700,7 @@ final class WpaCliBackendTest extends TestCase
     public function connect_leaves_an_already_supervising_dhcpcd_alone(): void
     {
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
@@ -616,9 +711,9 @@ final class WpaCliBackendTest extends TestCase
 
         $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
 
-        // which wpa_cli, add_network, set_network script, status, "which
-        // dhcpcd", "dhcpcd -U wlan0" — nothing beyond that.
-        $this->assertCount(6, $runner->commands);
+        // which wpa_cli, list_networks, add_network, set_network script,
+        // status, "which dhcpcd", "dhcpcd -U wlan0" — nothing beyond that.
+        $this->assertCount(7, $runner->commands);
         $last = array_slice($runner->commands, -2);
         $this->assertEquals(new Command('which', ['dhcpcd'], ['PATH' => self::searchPath()]), $last[0]);
         $this->assertEquals(new Command('/sbin/dhcpcd', ['-U', 'wlan0']), $last[1]);
@@ -632,6 +727,7 @@ final class WpaCliBackendTest extends TestCase
     public function connect_asks_udhcpc_for_an_address_when_only_udhcpc_is_present(): void
     {
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
@@ -650,6 +746,7 @@ final class WpaCliBackendTest extends TestCase
     public function connect_asks_dhclient_for_an_address_when_only_dhclient_is_present(): void
     {
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
@@ -669,6 +766,7 @@ final class WpaCliBackendTest extends TestCase
     public function connect_still_succeeds_and_records_no_dhcp_command_when_no_client_is_present(): void
     {
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
@@ -687,6 +785,7 @@ final class WpaCliBackendTest extends TestCase
     public function connect_throws_command_failed_when_the_dhcp_client_exits_non_zero(): void
     {
         $runner = self::runner([
+            'list_networks' => '',
             'add_network' => "0\n",
             'set_network' => "OK\n",
             'status' => self::FIXTURES . '/wpacli/Status.txt',
@@ -750,6 +849,21 @@ final class WpaCliBackendTest extends TestCase
         // which wpa_cli, list_networks, remove_network+save_config.
         $this->assertCount(3, $runner->commands);
         $this->assertSame("remove_network 2\nsave_config\nquit\n", $runner->last()->stdin);
+    }
+
+    #[Test]
+    public function forget_removes_every_block_for_a_duplicated_ssid_in_one_script(): void
+    {
+        $runner = self::runner([
+            'list_networks' => "network id / ssid / bssid / flags\n0\tHomeNet\tany\t\n1\tOther\tany\t\n4\tHomeNet\tany\t[CURRENT]\n",
+            'remove_network' => "OK\nOK\nOK\n",
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $backend->forget('HomeNet');
+
+        $this->assertCount(3, $runner->commands);
+        $this->assertSame("remove_network 0\nremove_network 4\nsave_config\nquit\n", $runner->last()->stdin);
     }
 
     #[Test]
@@ -820,6 +934,68 @@ final class WpaCliBackendTest extends TestCase
         } catch (PermissionDenied $exception) {
             $this->assertStringContainsString('netdev', $exception->getMessage());
             $this->assertStringNotContainsString('polkit', $exception->getMessage());
+        }
+    }
+
+    /**
+     * M10: the `set_network …/psk …` script is the one command in this
+     * backend whose stdin carries the secret ({@see Command::$stdinIsSecret}
+     * is true on it — see {@see WpaCliBackend::connect()}). If `wpa_cli`
+     * ever echoed something derived from it back, that text must never
+     * reach a {@see CommandFailed} message: the exit code and the (already
+     * masked) command are kept, the captured stdout/stderr is not — see
+     * {@see \Sanchescom\WiFi\Exception\CommandFailed::fromResult()}. Covers
+     * the non-zero-exit shape.
+     */
+    #[Test]
+    public function a_failing_secret_script_never_lets_the_childs_output_into_the_message_on_a_nonzero_exit(): void
+    {
+        $runner = self::runner([
+            'list_networks' => '',
+            'add_network' => "0\n",
+            'set_network' => [
+                'output' => "hunter2 leaked back\n",
+                'exit' => 1,
+                'stderr' => '',
+            ],
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        try {
+            $backend->connect('BELL340', Credentials::password('hunter2'), new Device('wlan0'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed $exception) {
+            $this->assertStringNotContainsString('hunter2', $exception->getMessage());
+            $this->assertStringNotContainsString('leaked back', $exception->getMessage());
+            $this->assertStringContainsString('exited with 1', $exception->getMessage());
+            $this->assertStringContainsString("<<< '***'", $exception->getMessage());
+        }
+    }
+
+    /**
+     * M10, the `despiteZeroExit()` shape: `wpa_cli` can reply `FAIL` (or
+     * similar) while itself exiting 0 — {@see
+     * WpaCliBackend::looksLikeWpaCliFailure()} — and the same rule applies:
+     * a secret script's captured output must not reach the message.
+     */
+    #[Test]
+    public function a_failing_secret_script_never_lets_the_childs_output_into_the_message_despite_zero_exit(): void
+    {
+        $runner = self::runner([
+            'list_networks' => '',
+            'add_network' => "0\n",
+            'set_network' => "FAIL\nhunter2 echoed back\n",
+        ]);
+        $backend = new WpaCliBackend($runner);
+
+        try {
+            $backend->connect('BELL340', Credentials::password('hunter2'), new Device('wlan0'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed $exception) {
+            $this->assertStringNotContainsString('hunter2', $exception->getMessage());
+            $this->assertStringNotContainsString('echoed back', $exception->getMessage());
+            $this->assertStringContainsString('exited 0 but reported failure', $exception->getMessage());
+            $this->assertStringContainsString("<<< '***'", $exception->getMessage());
         }
     }
 
@@ -930,6 +1106,63 @@ final class WpaCliBackendTest extends TestCase
         foreach ($runner->commands as $command) {
             $this->assertNotSame(self::DNSMASQ, $command->program);
         }
+    }
+
+    /**
+     * C2: `hostapd -B` has already daemonised and written its pid file by
+     * the time `dnsmasq` is asked to start; a `dnsmasq` that fails to start
+     * (here, port 53 already bound — the ordinary real-hardware cause) must
+     * not leave that `hostapd` running with nothing able to stop it. The pid
+     * file is pre-seeded here exactly as the real `hostapd -B -P` would have
+     * left it — the fake runner never writes one itself — with a `ps`
+     * fixture confirming it names `hostapd`, so the rollback's `kill` can be
+     * observed.
+     */
+    #[Test]
+    public function start_hotspot_kills_the_already_started_hostapd_and_still_deletes_the_config_when_dnsmasq_fails(): void
+    {
+        file_put_contents(sys_get_temp_dir() . self::HOSTAPD_PID_FILE, "111\n");
+
+        $runner = self::runner([
+            'disconnect' => "OK\n",
+            self::IP . ' addr flush dev wlan0' => '',
+            self::IP . ' addr add 10.42.0.1/24 dev wlan0' => '',
+            self::IP . ' link set wlan0 up' => '',
+            self::HOSTAPD . ' -B -P' => '',
+            self::DNSMASQ . ' --interface=wlan0' => [
+                'output' => '',
+                'exit' => 1,
+                'stderr' => "dnsmasq: failed to create listening socket for port 53: Address already in use\n",
+            ],
+            'ps -p 111' => "hostapd\n",
+            'kill 111' => '',
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        try {
+            $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed $exception) {
+            $this->assertStringContainsString('dnsmasq', $exception->getMessage());
+        }
+
+        $hostapdCommand = null;
+        foreach ($runner->commands as $command) {
+            if ($command->program === self::HOSTAPD) {
+                $hostapdCommand = $command;
+            }
+        }
+        $this->assertNotNull($hostapdCommand, 'hostapd was never started.');
+        $this->assertFileDoesNotExist($hostapdCommand->arguments[3]);
+
+        $killCommands = array_values(array_filter(
+            $runner->commands,
+            static fn (Command $command): bool => $command->program === 'kill',
+        ));
+        $this->assertCount(1, $killCommands);
+        $this->assertSame(['111'], $killCommands[0]->arguments);
+
+        $this->assertFileDoesNotExist(sys_get_temp_dir() . self::HOSTAPD_PID_FILE);
     }
 
     #[Test]
@@ -1239,6 +1472,30 @@ final class WpaCliBackendTest extends TestCase
         foreach ($runner->commands as $command) {
             $this->assertNotSame('kill', $command->program);
         }
+    }
+
+    /**
+     * I6: "no wpa_supplicant is running" is routine on a hostapd-only box —
+     * both daemons are already dead and the address already flushed by the
+     * time `reconnect` runs, so a failing final `reconnect` must not make
+     * `stopHotspot()` itself throw.
+     */
+    #[Test]
+    public function stop_hotspot_does_not_throw_when_the_final_reconnect_fails(): void
+    {
+        $runner = self::runner([
+            self::IP . ' addr flush dev wlan0' => '',
+            'reconnect' => [
+                'output' => '',
+                'exit' => 1,
+                'stderr' => "Failed to connect to non-global ctrl_ifname: wlan0  error: No such file or directory\n",
+            ],
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $backend->stopHotspot();
+
+        $this->assertSame("reconnect\nquit\n", $runner->last()->stdin);
     }
 
     private static function searchPath(): string
