@@ -428,7 +428,13 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         $hostapdStarted = false;
 
         try {
-            $this->wpaCli($interface, 'disconnect');
+            try {
+                $this->wpaCli($interface, 'disconnect');
+            } catch (PermissionDenied $exception) {
+                throw $exception;
+            } catch (CommandFailed) {
+                // No wpa_supplicant running (a hostapd-only box): nothing holds the radio.
+            }
 
             $ip = $this->resolvedPath('ip');
             $this->run(new Command($ip, ['addr', 'flush', 'dev', $interface]));

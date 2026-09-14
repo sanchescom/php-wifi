@@ -1064,6 +1064,51 @@ final class WpaCliBackendTest extends TestCase
 
     // --- startHotspot() -------------------------------------------------------
 
+    /** Measured on the Pi: with no wpa_supplicant, `disconnect` exits 255 — nothing holds the radio, so start anyway. */
+    #[Test]
+    public function start_hotspot_proceeds_when_no_wpa_supplicant_is_running(): void
+    {
+        $runner = self::runner([
+            'disconnect' => [
+                'output' => "Failed to connect to non-global ctrl_ifname: wlan0  error: No such file or directory\n",
+                'exit' => 255,
+            ],
+            self::IP . ' addr flush dev wlan0' => '',
+            self::IP . ' addr add 10.42.0.1/24 dev wlan0' => '',
+            self::IP . ' link set wlan0 up' => '',
+            self::HOSTAPD . ' -B -P' => '',
+            self::DNSMASQ . ' --interface=wlan0' => '',
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $hotspot = $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+
+        $this->assertEquals(new Hotspot('hostapd', 'femus-setup', new Device('wlan0')), $hotspot);
+        $this->assertSame(self::DNSMASQ, $runner->last()->program);
+    }
+
+    #[Test]
+    public function start_hotspot_still_stops_on_permission_denied_from_wpa_cli(): void
+    {
+        $runner = self::runner([
+            'disconnect' => [
+                'output' => "Failed to connect to non-global ctrl_ifname: wlan0  error: Permission denied\n",
+                'exit' => 255,
+            ],
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        try {
+            $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+            $this->fail('Expected PermissionDenied to be thrown.');
+        } catch (PermissionDenied) {
+        }
+
+        foreach ($runner->commands as $command) {
+            $this->assertNotSame(self::HOSTAPD, $command->program);
+        }
+    }
+
     #[Test]
     public function start_hotspot_records_the_full_sequence_and_deletes_the_config_file_afterwards(): void
     {
