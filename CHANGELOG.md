@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.3] - 2026-09-14
+
+No code changes.
+
+### Verified
+- The watchdog's hotspot on the Pi, end to end with a real phone: it stays up
+  past `--retry` while the phone is attached, and 24 seconds after the phone
+  leaves, the hotspot is down and the device is back on its network. See
+  [docs/verified-on.md](docs/verified-on.md).
+
 ## [3.2.2] - 2026-09-14
 
 ### Fixed

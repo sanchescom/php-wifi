@@ -5,3 +5,4 @@
 /.phpunit.result.cache
 /.superpowers
 .DS_Store
+/graphify-out
