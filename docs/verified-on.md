@@ -565,6 +565,22 @@ Before the phone joined, the idle hotspot was torn down and the rejoin retried
 every cycle. With the phone attached it stayed up for 3m23s past `--retry` and
 was never touched.
 
+The phone leaving, run separately with `--retry=60`. BELL340's block was added
+once the phone joined, so that there was a network to go back to:
+
+```
+03:45:49Z watch: hotspot_raised
+04:46:02  stations=1   PHONE ATTACHED
+DHCPACK(wlan0) 10.42.0.77 ce:39:4a:b7:a6:66 iPhone
+04:46:37  stations=0                     (the phone left the network)
+03:46:42Z watch: hotspot_busy            (--retry not due until 03:46:49Z)
+03:47:01Z watch: recovered
+state=ssid=BELL340 wpa_state=COMPLETED  addr=192.168.2.76/24
+```
+
+24 seconds after the phone left, the hotspot was down and the device was back
+on its network with an address.
+
 The same run checked one more defect, found while diagnosing why the phone
 could not see the hotspot at first:
 
@@ -581,11 +597,6 @@ up, on a channel that was otherwise empty.
 
 ## Not verified
 
-- The last step of the phone run below — the phone leaving and the watchdog
-  going back to the network — was not observed: the run's 20-minute window
-  ended while the phone was still attached. Each step on its own was seen:
-  an idle hotspot torn down once `--retry` passed (every cycle before the phone
-  joined), and a rejoin through the saved block (above).
 - The provisioning demo on the `wpa_cli` backend (it was verified on
   NetworkManager in 3.1.0).
 - `NmcliBackend::startHotspot()` still passes the hotspot passphrase as an
