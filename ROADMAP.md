@@ -72,6 +72,10 @@ feature.
 - A QR code (`WIFI:T:WPA;S:…;P:…;;`) for the setup hotspot, as terminal
   output.
 - `<name>.local` through avahi.
+- The setup page is built from reusable parts: framework-free request
+  handlers and JSON endpoints (scan, connect, status) that any PHP app can
+  mount behind its own authentication. `wifi provision` is one app built from
+  them, not the only one.
 - Foundation in the same release:
   - **`hostapd` channel and country code.** Today the channel is fixed (6 for
     2.4 GHz, 36 for 5 GHz) and no country code is set; the Pi runs in world
@@ -140,6 +144,13 @@ Not scheduled until someone asks for them.
   JSON; that is a different, platform-specific project. php-wifi ships the
   best `system_profiler` can do and says so. 3.5.0's `EspAtBackend` offers
   real SSIDs on macOS through hardware instead.
+- **A web dashboard.** A permanent web UI that can change Wi-Fi needs root
+  and becomes the device's biggest attack surface: authentication, CSRF,
+  HTTPS and rate limiting make it a product of its own. RaspAP and Cockpit
+  already do this. php-wifi's web surface is the setup page, which lives only
+  while the setup hotspot is up, plus the reusable handlers 3.3.0 ships. A
+  full device dashboard, with Wi-Fi as one panel among sensors and relays,
+  belongs in [femus](https://github.com/femus/femus).
 - **CLI split.** `bin/wifi` pulls `splitbrain/php-cli` and
   `phplucidframe/console-table` into every install of the library. Splitting
   it into its own package would remove that, but no user has asked, and it
