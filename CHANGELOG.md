@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.2] - 2026-09-14
+
+### Fixed
+- **`WpaCliBackend::startHotspot()` refused to run when no `wpa_supplicant`
+  was running.** Its first step, `wpa_cli disconnect`, fails at once in that
+  case, and the failure aborted the start. With nothing holding the radio
+  there is nothing to disconnect, so that failure is now ignored; a
+  permission error still stops the start. Verified on the Pi.
+
+### Verified
+- A real phone attached to the watchdog's hotspot keeps it up past `--retry`
+  — the one 3.2.0 scenario that had not been run on hardware. See
+  [docs/verified-on.md](docs/verified-on.md).
+
 ## [3.2.1] - 2026-09-13
 
 ### Fixed
