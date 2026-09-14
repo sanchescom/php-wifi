@@ -542,11 +542,50 @@ This run found two more defects that no fixture showed:
    `scan` with `FAIL-BUSY`, so `wifi connect` failed every time. `scan()` now
    takes that as "results are on their way" and polls for them.
 
+## A phone on the hotspot — 2026-09-14
+
+The one branch left unproven on 2026-09-12: someone is attached, so the
+watchdog must leave the access point alone even after `--retry` has passed.
+Run on the same Pi at `3f219ef` as
+`wifi watch --ssid=BELL340 --hotspot-ssid=femus-setup --interval=10 --retry=120`,
+with no saved block for BELL340, so every rejoin failed and the hotspot came
+back. The maintainer joined `femus-setup` from an iPhone.
+
+```
+03:25:10Z watch: hotspot_raised          (idle: torn down and raised again every ~2m20s until then)
+03:27:33Z watch: hotspot_raised
+04:28:31  stations=1   PHONE ATTACHED    (Pi clock, UTC+1)
+DHCPACK(wlan0) 10.42.0.77 ce:39:4a:b7:a6:66 iPhone
+03:29:34Z watch: hotspot_busy            (--retry due at 03:29:33Z)
+...                                      one hotspot_busy every 10s, nothing else
+03:32:56Z watch: hotspot_busy            (window ended, phone still attached)
+```
+
+Before the phone joined, the idle hotspot was torn down and the rejoin retried
+every cycle. With the phone attached it stayed up for 3m23s past `--retry` and
+was never touched.
+
+The same run checked one more defect, found while diagnosing why the phone
+could not see the hotspot at first:
+
+8. **`hotspot start` refused to run with no `wpa_supplicant`.** Its first step,
+   `wpa_cli disconnect`, now fails at once instead of hanging, and that failure
+   aborted the start. With nothing holding the radio there is nothing to
+   disconnect, so the failure is ignored (a permission error still stops it).
+   Measured after the fix: `Hotspot femus-setup started on wlan0 (auto)`,
+   `iw=type AP hostapd=1 dnsmasq=1`.
+
+The earlier "cannot see it" was timing, not radio: with the hotspot up, a Mac
+next to the Pi saw a new 2.4 GHz channel-6 network for exactly the time it was
+up, on a channel that was otherwise empty.
+
 ## Not verified
 
-- Someone actually attached to the hotspot: the watchdog's "a person is using
-  the page, leave the access point alone" branch is covered by unit tests but
-  has not been exercised with a real phone on this backend.
+- The last step of the phone run below — the phone leaving and the watchdog
+  going back to the network — was not observed: the run's 20-minute window
+  ended while the phone was still attached. Each step on its own was seen:
+  an idle hotspot torn down once `--retry` passed (every cycle before the phone
+  joined), and a rejoin through the saved block (above).
 - The provisioning demo on the `wpa_cli` backend (it was verified on
   NetworkManager in 3.1.0).
 - `NmcliBackend::startHotspot()` still passes the hotspot passphrase as an
