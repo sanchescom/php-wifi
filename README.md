@@ -533,6 +533,8 @@ the platform does not report them.
 
 ### `wifi watch`
 
+![wifi watch on a Raspberry Pi: hotspot_raised, hotspot_busy, then recovered once --retry passes; log recorded live](.github/wifi-watch.gif)
+
 Keeps a headless device reachable. On every tick it checks whether the
 device is already connected; if not, it tries to rejoin the target network
 (or every known network, in order, when `--ssid` is omitted); if that fails
