@@ -30,7 +30,7 @@ backends' argv, and `Watchdog`/`wifi watch` are the 3.2 release; nothing from
 the old "3.2 candidates" list on this page is left open except what moves to
 3.3.0 below.
 
-## 3.2.4 — hardening
+## 3.2.5 — hardening
 
 No API changes.
 

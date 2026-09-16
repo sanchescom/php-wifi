@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.4] - 2026-09-16
+
+No code changes.
+
+### Changed
+- Package description and keywords now name what the library does beyond
+  scanning and joining: hotspot, watchdog, headless provisioning, and the two
+  Linux backends. The README says it in its opening paragraph too.
+
 ## [3.2.3] - 2026-09-14
 
 No code changes.

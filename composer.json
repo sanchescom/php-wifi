@@ -1,8 +1,8 @@
 {
     "name": "sanchescom/php-wifi",
-    "description": "Cross-platform PHP library for scanning and joining Wi-Fi networks (Linux/nmcli, macOS/networksetup, Windows/netsh).",
+    "description": "Cross-platform PHP library for Wi-Fi: scan, join, known networks, and on Linux a hotspot and a watchdog that keeps a headless device (Raspberry Pi) online.",
     "type": "library",
-    "keywords": ["wifi", "wireless", "nmcli", "networksetup", "netsh", "raspberry-pi"],
+    "keywords": ["wifi", "wireless", "hotspot", "access-point", "hostapd", "wpa-supplicant", "wpa-cli", "nmcli", "networkmanager", "networksetup", "netsh", "raspberry-pi", "iot", "headless", "provisioning", "watchdog", "cli"],
     "homepage": "https://github.com/sanchescom/php-wifi",
     "license": "MIT",
     "authors": [

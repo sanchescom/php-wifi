@@ -12,6 +12,14 @@ immutable value objects instead of arrays, and ships a CLI (`bin/wifi`) on top
 of the same API. Linux has two backends, picked automatically — see "Linux —
 two backends" below.
 
+On Linux it also raises a hotspot (`hostapd`/`dnsmasq` or NetworkManager) and
+ships `wifi watch`, a watchdog that keeps a headless device — a Raspberry Pi
+with no keyboard or screen — reachable: it rejoins the network on its own, and
+raises a provisioning hotspot when it cannot, leaving it up while someone is
+attached to it. Every release is verified on real hardware before it is
+tagged — the transcripts, and the defects those runs found, are in
+[`docs/verified-on.md`](docs/verified-on.md).
+
 ## `wifi list` on a Raspberry Pi
 
 Run over SSH on the maintainer's Pi, unprivileged (`femus`, member of
