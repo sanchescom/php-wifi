@@ -22,6 +22,8 @@ tagged — the transcripts, and the defects those runs found, are in
 
 ## `wifi list` on a Raspberry Pi
 
+![wifi device and wifi list --unique on a Raspberry Pi, output captured live](.github/wifi-list.gif)
+
 Run over SSH on the maintainer's Pi, unprivileged (`femus`, member of
 `netdev`), NetworkManager 1.52.1 — full transcript in
 [`docs/verified-on.md`](docs/verified-on.md):
