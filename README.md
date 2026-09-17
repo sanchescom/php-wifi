@@ -328,6 +328,10 @@ behind every "verified live" cell above. `wifi watch` (Linux only, either
 backend) was verified live in three of its five states — see the CLI
 reference below.
 
+The Windows backend last ran on a real machine in 2019, against the 0.x
+series, where scan and connect worked. Nothing in the 3.x line has been run on
+Windows; `NetshBackend` and `ProfileFile` are covered by fixtures only.
+
 On Windows, a 6 GHz network is only reported as `Band::GHz6` when `netsh`
 prints a `Band :` field for it (Windows 11 22H2 and later); on older
 builds it falls back to a channel-derived guess.
