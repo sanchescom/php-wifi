@@ -642,6 +642,86 @@ final class NmcliBackendTest extends TestCase
         );
     }
 
+    /**
+     * NetworkManager runs the hotspot's dnsmasq itself; the portal is one
+     * line in a file that dnsmasq reads. It has to be there before the
+     * hotspot comes up and must not outlive it.
+     */
+    #[Test]
+    public function a_captive_portal_is_a_dnsmasq_file_that_lives_as_long_as_the_hotspot(): void
+    {
+        $directory = sys_get_temp_dir() . '/php-wifi-dnsmasq-test-' . bin2hex(random_bytes(8));
+        mkdir($directory);
+        $file = $directory . '/php-wifi-captive.conf';
+        $backend = new NmcliBackend($this->runner(), $directory);
+
+        try {
+            $backend->startHotspot(
+                new HotspotConfig('femus-setup', 'password1', captivePortal: true),
+                new Device('wlan0'),
+            );
+            $this->assertSame("address=/#/10.42.0.1\n", file_get_contents($file));
+
+            $backend->stopHotspot();
+            $this->assertFileDoesNotExist($file);
+
+            // A hotspot started without a portal must not inherit one left behind by a crash.
+            file_put_contents($file, "address=/#/10.42.0.1\n");
+            $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+            $this->assertFileDoesNotExist($file);
+        } finally {
+            @unlink($file);
+            rmdir($directory);
+        }
+    }
+
+    #[Test]
+    public function a_captive_portal_file_does_not_survive_a_hotspot_that_failed_to_start(): void
+    {
+        $directory = sys_get_temp_dir() . '/php-wifi-dnsmasq-test-' . bin2hex(random_bytes(8));
+        mkdir($directory);
+        $runner = new FakeCommandRunner([
+            'connection show' => '',
+            'connection delete' => '',
+            'connection add' => '',
+            'connection up' => ['output' => '', 'exit' => 4, 'stderr' => 'Error: Connection activation failed.'],
+        ]);
+        $backend = new NmcliBackend($runner, $directory);
+
+        try {
+            $backend->startHotspot(
+                new HotspotConfig('femus-setup', 'password1', captivePortal: true),
+                new Device('wlan0'),
+            );
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed) {
+            $this->assertFileDoesNotExist($directory . '/php-wifi-captive.conf');
+        } finally {
+            rmdir($directory);
+        }
+    }
+
+    #[Test]
+    public function a_captive_portal_that_cannot_be_configured_is_refused_before_any_profile_is_added(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner, '/nonexistent/php-wifi-test');
+
+        try {
+            $backend->startHotspot(
+                new HotspotConfig('femus-setup', 'password1', captivePortal: true),
+                new Device('wlan0'),
+            );
+            $this->fail('Expected UnsupportedOperation to be thrown.');
+        } catch (UnsupportedOperation $exception) {
+            $this->assertStringContainsString('takes root', $exception->getMessage());
+        }
+
+        foreach ($runner->commands as $command) {
+            $this->assertNotSame('add', $command->arguments[1] ?? null);
+        }
+    }
+
     /** NetworkManager has nowhere to put a country; ignoring it would leave the caller believing it was set. */
     #[Test]
     public function start_hotspot_with_a_country_is_refused_before_any_command(): void

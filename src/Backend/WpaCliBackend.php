@@ -72,7 +72,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     private const DNSMASQ_BINARY = 'dnsmasq';
 
-    private const HOTSPOT_ADDRESS = '10.42.0.1/24';
+    private const HOTSPOT_ADDRESS = HotspotConfig::ADDRESS . '/24';
 
     private const DHCP_RANGE = '10.42.0.10,10.42.0.100,12h';
 
@@ -459,6 +459,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
                 '--except-interface=lo',
                 '--dhcp-range=' . self::DHCP_RANGE,
                 '--pid-file=' . $this->dnsmasqPidFile(),
+                // Captive portal: every name resolves to this device.
+                ...($config->captivePortal ? ['--address=/#/' . HotspotConfig::ADDRESS] : []),
             ]));
         } catch (Throwable $exception) {
             try {

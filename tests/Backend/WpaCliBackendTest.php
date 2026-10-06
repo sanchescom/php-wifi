@@ -1410,6 +1410,28 @@ final class WpaCliBackendTest extends TestCase
         }
     }
 
+    /** The existing sequence test pins the arguments without a portal; this is the one that differs. */
+    #[Test]
+    public function start_hotspot_with_a_captive_portal_makes_dnsmasq_answer_every_name_with_the_device(): void
+    {
+        $runner = self::runner([
+            'disconnect' => "OK\n",
+            self::IP . ' addr flush dev wlan0' => '',
+            self::IP . ' addr add 10.42.0.1/24 dev wlan0' => '',
+            self::IP . ' link set wlan0 up' => '',
+            self::HOSTAPD . ' -B -P' => '',
+            self::DNSMASQ . ' --interface=wlan0' => '',
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $backend->startHotspot(
+            new HotspotConfig('femus-setup', 'password1', captivePortal: true),
+            new Device('wlan0'),
+        );
+
+        $this->assertSame('--address=/#/10.42.0.1', $runner->last()->arguments[5]);
+    }
+
     // --- startHotspot() refuses a concurrent second start ---------------------
 
     #[Test]

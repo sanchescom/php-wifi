@@ -12,9 +12,16 @@ use Sanchescom\WiFi\Exception\InvalidArgument;
  * channel has to exist on $band; given without a band, it has to exist on
  * 2.4 or 5 GHz, and {@see self::resolvedBand()} tells which. $country is an
  * ISO 3166-1 alpha-2 code in upper case ("DE", "US").
+ *
+ * With $captivePortal the hotspot's DNS answers every name with the device's
+ * own address ({@see self::ADDRESS}), which is what makes a phone that has
+ * just joined open the page served there by itself.
  */
 final readonly class HotspotConfig
 {
+    /** The device's address on its own hotspot, on both Linux backends. */
+    public const ADDRESS = '10.42.0.1';
+
     public function __construct(
         public string $ssid,
         public string $password,
@@ -22,6 +29,7 @@ final readonly class HotspotConfig
         public ?Device $device = null,
         public ?int $channel = null,
         public ?string $country = null,
+        public bool $captivePortal = false,
     ) {
         if ($ssid === '' || strlen($ssid) > 32) {
             throw new InvalidArgument('A hotspot SSID must be 1–32 bytes long.');

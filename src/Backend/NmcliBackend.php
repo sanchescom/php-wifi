@@ -36,8 +36,17 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
 {
     private const HOTSPOT_CONNECTION_NAME = 'Hotspot';
 
-    public function __construct(private readonly CommandRunner $runner)
-    {
+    private const CAPTIVE_PORTAL_FILE = 'php-wifi-captive.conf';
+
+    /**
+     * $dnsmasqSharedDirectory is where NetworkManager's own `dnsmasq` — the
+     * one it runs for a shared connection, a hotspot among them — reads
+     * extra configuration from.
+     */
+    public function __construct(
+        private readonly CommandRunner $runner,
+        private readonly string $dnsmasqSharedDirectory = '/etc/NetworkManager/dnsmasq-shared.d',
+    ) {
     }
 
     public function scan(): NetworkCollection
@@ -341,6 +350,7 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         ];
 
         $this->deleteWifiProfiles(self::HOTSPOT_CONNECTION_NAME);
+        $this->setCaptivePortal($config->captivePortal);
 
         // The profile gets a UUID chosen here and is activated by it: "Hotspot" may also be the name of a
         // profile of another type, and the passphrase must reach this one and no other.
@@ -367,6 +377,7 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
             ));
         } catch (CommandFailed $exception) {
             $this->runner->run($this->deleteCommand($uuid));
+            $this->setCaptivePortal(false);
 
             throw $exception;
         }
@@ -376,7 +387,42 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
 
     public function stopHotspot(): void
     {
-        $this->run(new Command('nmcli', ['connection', 'down', self::HOTSPOT_CONNECTION_NAME], ['LANG' => 'C']));
+        try {
+            $this->run(new Command('nmcli', ['connection', 'down', self::HOTSPOT_CONNECTION_NAME], ['LANG' => 'C']));
+        } finally {
+            $this->setCaptivePortal(false);
+        }
+    }
+
+    /**
+     * A captive portal needs every DNS name to resolve to this device.
+     * NetworkManager starts the `dnsmasq` that serves the hotspot itself, so
+     * the one line that does it goes into a file in the directory that
+     * `dnsmasq` reads, before the hotspot comes up. The file must not outlive
+     * the hotspot — it would apply to every later shared connection — so it
+     * is removed whenever a hotspot is started without a portal, stopped, or
+     * fails to start. Writing there takes root.
+     *
+     * @throws UnsupportedOperation when the file cannot be written
+     */
+    private function setCaptivePortal(bool $enabled): void
+    {
+        $file = $this->dnsmasqSharedDirectory . '/' . self::CAPTIVE_PORTAL_FILE;
+
+        if (!$enabled) {
+            if (is_file($file)) {
+                @unlink($file);
+            }
+
+            return;
+        }
+
+        if (@file_put_contents($file, 'address=/#/' . HotspotConfig::ADDRESS . "\n") === false) {
+            throw new UnsupportedOperation(sprintf(
+                'A captive portal on NmcliBackend needs to write "%s", which takes root.',
+                $file,
+            ));
+        }
     }
 
     public function isHotspotActive(): bool
