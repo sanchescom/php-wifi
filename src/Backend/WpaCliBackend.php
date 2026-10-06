@@ -7,6 +7,7 @@ namespace Sanchescom\WiFi\Backend;
 use Closure;
 use Throwable;
 use Sanchescom\WiFi\Backend\Linux\HostapdConfig;
+use Sanchescom\WiFi\Backend\Linux\RuntimeDirectory;
 use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
@@ -42,7 +43,7 @@ use Sanchescom\WiFi\Value\NetworkCollection;
  *
  * The hotspot ({@see SupportsHotspot}) is raised through `hostapd` and
  * `dnsmasq` rather than `wpa_supplicant`, so its two pid files live at a
- * fixed, derivable path (the system temp directory plus a fixed file name)
+ * fixed, derivable path (a fixed file name inside {@see RuntimeDirectory})
  * instead of an instance property: a second `WpaCliBackend` instance — the
  * CLI's `wifi hotspot status`, or the watchdog, running in a different
  * process from the one that called {@see self::startHotspot()} — discovers
@@ -61,9 +62,9 @@ use Sanchescom\WiFi\Value\NetworkCollection;
  */
 final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHotspot
 {
-    private const HOSTAPD_PID_FILE = 'php-wifi-hostapd.pid';
+    private const HOSTAPD_PID_FILE = 'hostapd.pid';
 
-    private const DNSMASQ_PID_FILE = 'php-wifi-dnsmasq.pid';
+    private const DNSMASQ_PID_FILE = 'dnsmasq.pid';
 
     private const HOSTAPD_BINARY = 'hostapd';
 
@@ -74,6 +75,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     private const DHCP_RANGE = '10.42.0.10,10.42.0.100,12h';
 
     private readonly ToolPath $toolPath;
+
+    private readonly RuntimeDirectory $runtimeDirectory;
 
     /** @var Closure(int): void */
     private readonly Closure $sleep;
@@ -102,6 +105,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         ?Closure $sleep = null,
     ) {
         $this->toolPath = new ToolPath($runner);
+        $this->runtimeDirectory = new RuntimeDirectory();
         $this->sleep = $sleep ?? static function (int $microseconds): void {
             usleep($microseconds);
         };
@@ -423,7 +427,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         $this->guardAgainstAlreadyRunningHotspot();
 
         $interface = $device->name;
-        $hostapdConfig = new HostapdConfig($interface, $config);
+        $hostapdConfig = new HostapdConfig($interface, $config, $this->runtimeDirectory->ensure());
         $confFile = $hostapdConfig->create();
         $hostapdStarted = false;
 
@@ -541,12 +545,12 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     private function hostapdPidFile(): string
     {
-        return sys_get_temp_dir() . '/' . self::HOSTAPD_PID_FILE;
+        return $this->runtimeDirectory->path() . '/' . self::HOSTAPD_PID_FILE;
     }
 
     private function dnsmasqPidFile(): string
     {
-        return sys_get_temp_dir() . '/' . self::DNSMASQ_PID_FILE;
+        return $this->runtimeDirectory->path() . '/' . self::DNSMASQ_PID_FILE;
     }
 
     /**

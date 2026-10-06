@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\Watchdog;
 
+use RuntimeException;
+use Sanchescom\WiFi\Backend\Linux\RuntimeDirectory;
 use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\WiFiException;
 use Sanchescom\WiFi\Parser\Iw\StationDumpParser;
@@ -60,6 +62,8 @@ use Throwable;
  * hotspot is stopped. Reading or writing it never throws — a missing,
  * unreadable or malformed file falls back to treating the hotspot as just
  * raised "now", because a watchdog must not die over its own bookkeeping.
+ * By default the file lives in {@see RuntimeDirectory}, never in the
+ * world-writable temp directory.
  *
  * {@see WatchdogConfig::$device}, when set, is the interface both
  * tryReconnect() and countHotspotStations() use, instead of each calling
@@ -74,6 +78,9 @@ final class Watchdog
 
     private readonly string $stateFile;
 
+    /** Set only for the default state file: a caller's own path is theirs to prepare. */
+    private readonly ?RuntimeDirectory $runtimeDirectory;
+
     private ?int $hotspotRaisedAt = null;
 
     private ?string $lastError = null;
@@ -86,7 +93,13 @@ final class Watchdog
         ?string $stateFile = null,
     ) {
         $this->commandRunner = $commandRunner ?? ShellCommandRunner::forCurrentOs();
-        $this->stateFile = $stateFile ?? sys_get_temp_dir() . '/php-wifi-watchdog.json';
+        $this->runtimeDirectory = $stateFile === null ? new RuntimeDirectory() : null;
+        $this->stateFile = $stateFile ?? self::defaultStateFile();
+    }
+
+    public static function defaultStateFile(): string
+    {
+        return (new RuntimeDirectory())->path() . '/watchdog.json';
     }
 
     /** One decision. Never sleeps. */
@@ -270,9 +283,17 @@ final class Watchdog
         $now = $this->clock->now();
         $this->hotspotRaisedAt = $now;
 
-        $this->suppressingWarnings(
-            fn (): int|false => file_put_contents($this->stateFile, (string) json_encode(['hotspotRaisedAt' => $now])),
-        );
+        try {
+            $this->runtimeDirectory?->ensure();
+            $this->suppressingWarnings(
+                fn (): int|false => file_put_contents(
+                    $this->stateFile,
+                    (string) json_encode(['hotspotRaisedAt' => $now]),
+                ),
+            );
+        } catch (RuntimeException) {
+            // No safe place to persist it: the in-memory value still serves this process.
+        }
 
         return $now;
     }
