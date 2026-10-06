@@ -19,7 +19,8 @@ use Sanchescom\WiFi\Value\HotspotConfig;
  *
  * `hostapd`'s config format is line-based `key=value`; a newline or carriage
  * return inside the SSID or passphrase would inject an arbitrary directive
- * into the file, so both are rejected up front.
+ * into the file, so both are rejected up front. The channel is an integer and
+ * the country two upper-case letters by {@see HotspotConfig}'s own checks.
  */
 final class HostapdConfig
 {
@@ -41,11 +42,12 @@ final class HostapdConfig
         self::guardAgainstInjection($config->ssid);
         self::guardAgainstInjection($config->password);
 
-        [$this->hwMode, $this->channel] = match ($config->band ?? Band::GHz2_4) {
+        [$this->hwMode, $defaultChannel] = match ($config->resolvedBand() ?? Band::GHz2_4) {
             Band::GHz2_4 => ['g', 6],
             Band::GHz5 => ['a', 36],
             Band::GHz6 => throw new UnsupportedOperation('HostapdConfig does not support a 6 GHz hotspot.'),
         };
+        $this->channel = $config->channel ?? $defaultChannel;
     }
 
     /**
@@ -103,6 +105,18 @@ final class HostapdConfig
             'wpa_key_mgmt=WPA-PSK',
             'rsn_pairwise=CCMP',
         ];
+
+        if ($this->config->country !== null) {
+            // Without a country the radio stays in the world regulatory domain
+            // (`country 00`). 802.11d announces it to clients; 802.11h is what
+            // hostapd requires before it will use a 5 GHz radar channel.
+            $lines[] = 'country_code=' . $this->config->country;
+            $lines[] = 'ieee80211d=1';
+
+            if ($this->hwMode === 'a') {
+                $lines[] = 'ieee80211h=1';
+            }
+        }
 
         return implode("\n", $lines) . "\n";
     }

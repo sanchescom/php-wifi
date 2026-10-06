@@ -131,6 +131,14 @@ $hotspot = $wifi->startHotspot(new HotspotConfig(ssid: 'femus-setup', password: 
 printf("%s on %s\n", $hotspot->ssid, $hotspot->device);
 ```
 
+`HotspotConfig` also takes a `channel` and a `country`:
+`new HotspotConfig(ssid: …, password: …, channel: 11, country: 'DE')`. Without
+a channel the hotspot is on 6 (2.4 GHz) or 36 (5 GHz). Without a country
+`hostapd` leaves the radio in the regulatory domain the system has — on a
+Raspberry Pi that was never told its country, the world domain. `NmcliBackend`
+passes the channel on and refuses a country with `UnsupportedOperation`:
+NetworkManager takes the regulatory domain from the system.
+
 Calling a capability the active backend does not implement (`known` or
 `hotspot` on macOS/Windows) throws `UnsupportedOperation`; check first
 with `$wifi->supports(SupportsHotspot::class)`.
@@ -474,7 +482,7 @@ of this repository it is `php bin/wifi`.
 | `device` | — | Show the detected Wi-Fi device |
 | `known` | — | List known (saved) networks |
 | `forget <ssid-or-name>` | — | Forget a known network; prints `Forgot <name>.` |
-| `hotspot start` | `--ssid=`, `--password=`, `--password-file=`, `--band=`, `--device=` | Start a hotspot (`--band` is `2.4` or `5`) |
+| `hotspot start` | `--ssid=`, `--password=`, `--password-file=`, `--band=`, `--channel=`, `--country=`, `--device=` | Start a hotspot (`--band` is `2.4` or `5`; `--country` is a two-letter code and works on `WpaCliBackend` only) |
 | `hotspot stop` | — | Stop the hotspot |
 | `hotspot status` | — | Print `active` or `inactive` |
 | `watch` | `--ssid=`, `--interval=`, `--retry=`, `--hotspot-ssid=`, `--hotspot-password-file=`, `--device=`, `--once` | Keep rejoining a network, raising a provisioning hotspot when it cannot (requires `SupportsHotspot`, i.e. either Linux backend) |

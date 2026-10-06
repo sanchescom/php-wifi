@@ -70,6 +70,65 @@ final class HostapdConfigTest extends TestCase
     }
 
     #[Test]
+    public function a_given_channel_replaces_the_default_and_picks_the_hardware_mode(): void
+    {
+        $config = new HostapdConfig('wlan0', new HotspotConfig('femus-setup', 'password1', channel: 44), $this->dir);
+
+        $contents = (string) file_get_contents($config->create());
+
+        $this->assertStringContainsString("hw_mode=a\n", $contents);
+        $this->assertStringContainsString("channel=44\n", $contents);
+
+        $config->delete();
+    }
+
+    #[Test]
+    public function without_a_country_no_regulatory_line_is_written(): void
+    {
+        $config = new HostapdConfig('wlan0', new HotspotConfig('femus-setup', 'password1'), $this->dir);
+
+        $contents = (string) file_get_contents($config->create());
+
+        $this->assertStringNotContainsString('country_code', $contents);
+        $this->assertStringNotContainsString('ieee80211', $contents);
+
+        $config->delete();
+    }
+
+    #[Test]
+    public function a_country_is_written_and_announced(): void
+    {
+        $config = new HostapdConfig(
+            'wlan0',
+            new HotspotConfig('femus-setup', 'password1', channel: 11, country: 'CA'),
+            $this->dir,
+        );
+
+        $contents = (string) file_get_contents($config->create());
+
+        $this->assertStringContainsString("country_code=CA\nieee80211d=1\n", $contents);
+        $this->assertStringNotContainsString('ieee80211h', $contents);
+
+        $config->delete();
+    }
+
+    #[Test]
+    public function a_country_on_5ghz_also_enables_radar_detection(): void
+    {
+        $config = new HostapdConfig(
+            'wlan0',
+            new HotspotConfig('femus-setup', 'password1', Band::GHz5, country: 'CA'),
+            $this->dir,
+        );
+
+        $contents = (string) file_get_contents($config->create());
+
+        $this->assertStringContainsString("country_code=CA\nieee80211d=1\nieee80211h=1\n", $contents);
+
+        $config->delete();
+    }
+
+    #[Test]
     public function a_6ghz_band_is_unsupported(): void
     {
         $this->expectException(UnsupportedOperation::class);

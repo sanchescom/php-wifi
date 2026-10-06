@@ -434,6 +434,43 @@ final class NmcliBackendTest extends TestCase
         );
     }
 
+    /** nmcli refuses a channel that comes without a band, so the band the channel belongs to goes with it. */
+    #[Test]
+    public function start_hotspot_with_a_channel_passes_it_together_with_its_band(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        $backend->startHotspot(
+            new HotspotConfig('femus-setup', 'password1', channel: 11),
+            new Device('wlan0'),
+        );
+
+        $this->assertSame(
+            ['device', 'wifi', 'hotspot', 'ifname', 'wlan0', 'ssid', 'femus-setup', 'password', 'password1', 'band', 'bg', 'channel', '11'],
+            $runner->last()->arguments,
+        );
+    }
+
+    /** NetworkManager has nowhere to put a country; ignoring it would leave the caller believing it was set. */
+    #[Test]
+    public function start_hotspot_with_a_country_is_refused_before_any_command(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        try {
+            $backend->startHotspot(
+                new HotspotConfig('femus-setup', 'password1', country: 'CA'),
+                new Device('wlan0'),
+            );
+            $this->fail('Expected UnsupportedOperation to be thrown.');
+        } catch (UnsupportedOperation $exception) {
+            $this->assertStringContainsString('iw reg set CA', $exception->getMessage());
+            $this->assertSame([], $runner->commands);
+        }
+    }
+
     #[Test]
     public function start_hotspot_on_6ghz_is_unsupported(): void
     {

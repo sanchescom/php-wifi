@@ -217,9 +217,25 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         return $uuids;
     }
 
+    /**
+     * `nmcli` accepts a channel only together with a band, so a channel
+     * given without one brings the band it belongs to
+     * ({@see HotspotConfig::resolvedBand()}). There is no country to pass:
+     * NetworkManager takes the regulatory domain from the system, so a
+     * config that asks for one is refused instead of being silently ignored.
+     *
+     * @throws UnsupportedOperation for a 6 GHz band, or when $config names a country
+     */
     public function startHotspot(HotspotConfig $config, Device $device): Hotspot
     {
-        $band = match ($config->band) {
+        if ($config->country !== null) {
+            throw new UnsupportedOperation(
+                'NmcliBackend cannot set a hotspot country: NetworkManager uses the system regulatory domain'
+                . ' (set it with "iw reg set ' . $config->country . '" or raspi-config).',
+            );
+        }
+
+        $band = match ($config->resolvedBand()) {
             null => null,
             Band::GHz5 => 'a',
             Band::GHz2_4 => 'bg',
@@ -242,6 +258,11 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         if ($band !== null) {
             $arguments[] = 'band';
             $arguments[] = $band;
+        }
+
+        if ($config->channel !== null) {
+            $arguments[] = 'channel';
+            $arguments[] = (string) $config->channel;
         }
 
         $this->run(new Command('nmcli', $arguments, ['LANG' => 'C'], $secretIndexes));

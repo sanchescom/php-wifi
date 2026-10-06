@@ -114,6 +114,14 @@ final class WiFiCli extends CLI
             'hotspot',
         );
         $options->registerOption('band', 'Radio band: 2.4 or 5', null, true, 'hotspot');
+        $options->registerOption('channel', 'Channel (default: 6 on 2.4 GHz, 36 on 5 GHz)', null, true, 'hotspot');
+        $options->registerOption(
+            'country',
+            'Two-letter country code for the regulatory domain, e.g. DE (wpa_cli backend only)',
+            null,
+            true,
+            'hotspot',
+        );
         $options->registerOption(
             'device',
             'Which device to use (auto-detected when omitted)',
@@ -397,6 +405,14 @@ final class WiFiCli extends CLI
 
         $passwordOpt = $this->resolvePassword($options);
 
+        $channelOpt = $this->optString($options, 'channel');
+
+        if ($channelOpt !== false && !ctype_digit($channelOpt)) {
+            throw new InvalidArgument('--channel must be a number.');
+        }
+
+        $countryOpt = $this->optString($options, 'country');
+
         [$device, $auto] = $this->resolveDevice($options);
 
         $config = new HotspotConfig(
@@ -404,6 +420,8 @@ final class WiFiCli extends CLI
             password: $passwordOpt !== false ? $passwordOpt : '',
             band: $band,
             device: $device,
+            channel: $channelOpt !== false ? (int) $channelOpt : null,
+            country: $countryOpt !== false ? strtoupper($countryOpt) : null,
         );
 
         $hotspot = $this->wifi->startHotspot($config);
