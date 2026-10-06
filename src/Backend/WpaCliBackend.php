@@ -480,7 +480,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     /**
      * Terminates both daemons, then hands the interface back ({@see
-     * self::releaseInterface()}). Every step tolerates "already gone" — a
+     * self::releaseInterface()}), leaving any address that is not the
+     * hotspot's own in place. Every step tolerates "already gone" — a
      * missing pid file is skipped, a `kill` of an already-dead pid is not
      * treated as failure — so calling this twice in a row is harmless. A pid
      * file whose pid names a different process than expected is never
@@ -498,14 +499,22 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     }
 
     /**
-     * Flushes the hotspot address and gives the radio back to
-     * `wpa_supplicant` (`reconnect`). A failed `reconnect` is swallowed: "no
+     * Removes the hotspot's address and gives the radio back to
+     * `wpa_supplicant` (`reconnect`). Only that one address goes, not every
+     * address on the interface: `stopHotspot()` is also called when no
+     * hotspot is up any more — the provisioning demo calls it on its way
+     * out, after the device has joined its network — and flushing the
+     * interface then threw away the lease the join had just obtained
+     * (measured on the Pi). Removing an address that is not there fails, and
+     * that failure is ignored. A failed `reconnect` is swallowed too: "no
      * `wpa_supplicant` is running" is the routine reply on a hostapd-only box,
      * and by then the hotspot is already gone.
      */
     private function releaseInterface(string $interface): void
     {
-        $this->run(new Command($this->resolvedPath('ip'), ['addr', 'flush', 'dev', $interface]));
+        $this->runner->run(
+            new Command($this->resolvedPath('ip'), ['addr', 'del', self::HOTSPOT_ADDRESS, 'dev', $interface]),
+        );
 
         try {
             $this->wpaCli($interface, 'reconnect');

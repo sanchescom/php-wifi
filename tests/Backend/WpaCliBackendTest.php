@@ -70,6 +70,7 @@ final class WpaCliBackendTest extends TestCase
             'which ip' => self::IP . "\n",
             'which hostapd' => self::HOSTAPD . "\n",
             'which dnsmasq' => self::DNSMASQ . "\n",
+            self::IP . ' addr del 10.42.0.1/24 dev wlan0' => '',
             'select_network' => "OK\n",
             'enable_network' => "OK\n",
             'save_config' => "OK\n",
@@ -1326,7 +1327,7 @@ final class WpaCliBackendTest extends TestCase
             array_slice($runner->commands, -5),
         );
         $this->assertSame(
-            ['ps -p 111 -o comm=', 'kill 111', 'ps -p 111 -o comm=', self::IP . ' addr flush dev wlan0', self::WPA_CLI . ' -i wlan0 reconnect'],
+            ['ps -p 111 -o comm=', 'kill 111', 'ps -p 111 -o comm=', self::IP . ' addr del 10.42.0.1/24 dev wlan0', self::WPA_CLI . ' -i wlan0 reconnect'],
             $tail,
         );
         $this->assertFileDoesNotExist($pidFile);
@@ -1492,7 +1493,7 @@ final class WpaCliBackendTest extends TestCase
     // --- stopHotspot() ----------------------------------------------------------
 
     #[Test]
-    public function stop_hotspot_terminates_both_pids_flushes_the_address_and_reconnects(): void
+    public function stop_hotspot_terminates_both_pids_removes_the_hotspot_address_and_reconnects(): void
     {
         file_put_contents($this->runtimeDir . self::HOSTAPD_PID_FILE, "111\n");
         file_put_contents($this->runtimeDir . self::DNSMASQ_PID_FILE, "222\n");
@@ -1518,7 +1519,7 @@ final class WpaCliBackendTest extends TestCase
 
         $this->assertSame(['111'], $runner->commands[1]->arguments);
         $this->assertSame(['222'], $runner->commands[4]->arguments);
-        $this->assertSame(['addr', 'flush', 'dev', 'wlan0'], $runner->commands[7]->arguments);
+        $this->assertSame(['addr', 'del', '10.42.0.1/24', 'dev', 'wlan0'], $runner->commands[7]->arguments);
         $this->assertSame(['-i', 'wlan0', 'reconnect'], $runner->commands[9]->arguments);
 
         $this->assertFileDoesNotExist($this->runtimeDir . self::HOSTAPD_PID_FILE);
@@ -1619,7 +1620,7 @@ final class WpaCliBackendTest extends TestCase
 
         $this->assertSame(self::IW, $runner->commands[1]->program);
         $this->assertSame(['dev'], $runner->commands[1]->arguments);
-        $this->assertSame(['addr', 'flush', 'dev', 'wlan0'], $runner->commands[9]->arguments);
+        $this->assertSame(['addr', 'del', '10.42.0.1/24', 'dev', 'wlan0'], $runner->commands[9]->arguments);
         $this->assertSame(['-i', 'wlan0', 'reconnect'], $runner->commands[11]->arguments);
 
         $this->assertFileDoesNotExist($this->runtimeDir . self::HOSTAPD_PID_FILE);
@@ -1677,6 +1678,33 @@ final class WpaCliBackendTest extends TestCase
 
         // Nor is anything deleted there: the name could lead anywhere.
         $this->assertFileExists($this->runtimeDir . self::HOSTAPD_PID_FILE);
+    }
+
+    /**
+     * The provisioning demo stops the hotspot on its way out, after the
+     * device has joined its network: by then the hotspot's address is gone
+     * and the interface holds a DHCP lease. Removing the missing address
+     * fails; that is not an error, and nothing else on the interface is
+     * touched.
+     */
+    #[Test]
+    public function stop_hotspot_with_no_hotspot_up_leaves_the_interfaces_other_addresses_alone(): void
+    {
+        $runner = self::runner([
+            self::IP . ' addr del 10.42.0.1/24 dev wlan0' => [
+                'output' => '',
+                'exit' => 2,
+                'stderr' => "Error: ipv4: Address not found.\n",
+            ],
+            'reconnect' => "OK\n",
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $backend->stopHotspot();
+
+        foreach ($runner->commands as $command) {
+            $this->assertNotContains('flush', $command->arguments);
+        }
     }
 
     #[Test]

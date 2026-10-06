@@ -9,6 +9,10 @@ EnvironmentFile=/etc/php-wifi-provision.env
 ExecStart=/usr/bin/env bash /opt/php-wifi/examples/provision/hotspot.sh
 Restart=on-failure
 RestartSec=30
+# On a machine without NetworkManager the page starts the DHCP client for the
+# join. It must outlive this unit, or the device loses its address the moment
+# the run ends.
+KillMode=process
 RuntimeDirectory=php-wifi-provision
 RuntimeDirectoryMode=0750
 
