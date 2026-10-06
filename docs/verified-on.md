@@ -1123,6 +1123,29 @@ code (19 lines of it in the journal) now that `qrencode` is installed.
    Not run: a network whose name or passphrase really contains a quote, a
    backslash or a non-ASCII character. None was at hand.
 
+## With no options, left to time out
+
+`wifi provision` as someone would first type it, on NetworkManager, with
+nobody joining:
+
+```
+$ php bin/wifi provision --timeout=20
+    [while it runs:  ssid femus-pi-setup channel 1 (2412 MHz), width: 20 MHz, center1: 2412 MHz  profile-psk-length=12]
+Setup network: femus-pi-setup
+Passphrase:    9pb6******** (12 characters)
+Setup page:    http://10.42.0.1/
+    … 19 lines of QR code
+2026-10-06T21:23:47+00:00 provision: serving
+provision: nobody finished the setup within 20 seconds.
+[exit 1]
+after: hotspot=inactive
+radio=disabled nm=active hostapd=masked profiles=0 captive-file=0 port80=0
+```
+
+The name is the hostname with `-setup`, the passphrase twelve random
+characters, and after the timeout nothing is left behind: no hotspot, no
+profile, no file for `dnsmasq`, nothing listening on port 80.
+
 ## Not verified
 
 - **Android.** No Android phone was at hand. iOS is above.
