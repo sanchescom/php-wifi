@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Sanchescom\WiFi\Backend\WpaCliBackend;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
+use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
@@ -1570,7 +1571,7 @@ final class WpaCliBackendTest extends TestCase
         $runner = self::runner([]);
         $backend = new WpaCliBackend($runner, 'wlan0');
 
-        foreach (['1234567', str_repeat('a', 64)] as $password) {
+        foreach (['1234567', str_repeat('a', 64), "long-enough\x01", 'пароль-пароль'] as $password) {
             try {
                 $backend->connect('BELL340', Credentials::password($password), new Device('wlan0'));
                 $this->fail('Expected WrongPassphrase to be thrown.');
@@ -1580,6 +1581,46 @@ final class WpaCliBackendTest extends TestCase
         }
 
         $this->assertSame([], $runner->commands);
+    }
+
+    /**
+     * The passphrase is a line of the script wpa_cli reads from stdin. A
+     * line break in it would start a second line — a command chosen by
+     * whoever typed it into the setup page, run as root.
+     */
+    #[Test]
+    public function connect_never_lets_a_line_break_in_the_passphrase_reach_wpa_cli(): void
+    {
+        $runner = self::runner([]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        foreach (["password1\nset_network 0 priority 9", "password1\rterminate", "password1\n"] as $password) {
+            try {
+                $backend->connect('BELL340', Credentials::password($password), new Device('wlan0'));
+                $this->fail('Expected WrongPassphrase to be thrown.');
+            } catch (WrongPassphrase) {
+                $this->assertSame([], $runner->commands);
+            }
+        }
+    }
+
+    /** A network's name is chosen by whoever set it up, and it is a line of the same script. */
+    #[Test]
+    public function connect_never_lets_a_line_break_in_the_ssid_reach_wpa_cli(): void
+    {
+        $runner = self::runner([]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        foreach (["Cafe\nterminate", "Cafe\rterminate", "Cafe\0"] as $ssid) {
+            foreach ([Credentials::password('password1'), Credentials::none()] as $credentials) {
+                try {
+                    $backend->connect($ssid, $credentials, new Device('wlan0'));
+                    $this->fail('Expected InvalidArgument to be thrown.');
+                } catch (InvalidArgument) {
+                    $this->assertSame([], $runner->commands);
+                }
+            }
+        }
     }
 
     #[Test]

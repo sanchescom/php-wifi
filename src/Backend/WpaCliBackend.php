@@ -11,6 +11,7 @@ use Sanchescom\WiFi\Backend\Linux\RuntimeDirectory;
 use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
+use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
@@ -252,23 +253,32 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * merely enabled block could lose to a still-associated old one, which
      * would also make COMPLETED meaningless.
      *
-     * @throws WrongPassphrase when the passphrase is refused, or cannot be one (not 8–63 characters)
+     * @throws InvalidArgument when the SSID contains a line break
+     * @throws WrongPassphrase when the passphrase is refused, or cannot be one (not 8–63 printable ASCII characters)
      * @throws NoAddress when the join worked and the DHCP client then failed
      */
     public function connect(string $ssid, Credentials $credentials, Device $device): void
     {
         $interface = $device->name;
 
-        // wpa_supplicant refuses to store a passphrase that is not 8–63 characters long (`set_network …
-        // psk` answers FAIL), so the join would end as an unexplained command failure. Such a passphrase
-        // cannot be the right one for any WPA network; say that instead (found with a phone on the Pi).
-        if ($credentials->password !== null && !in_array(strlen($credentials->password), range(8, 63), true)) {
+        // The SSID and the passphrase become lines of a script wpa_cli reads from stdin, so a line
+        // break in either would be the start of a command of the sender's choosing, run as root — and
+        // on the setup page the sender is whoever holds the phone, or whoever named a network in range.
+        if (preg_match('/[\r\n\0]/', $ssid) === 1) {
+            throw new InvalidArgument('WpaCliBackend cannot join a network whose name contains a line break.');
+        }
+
+        // A WPA passphrase is 8–63 printable ASCII characters. wpa_supplicant refuses to store anything
+        // else (`set_network … psk` answers FAIL), which used to end as an unexplained command failure;
+        // such a string cannot be the right passphrase for any network, so it is reported as a wrong one.
+        if ($credentials->password !== null && preg_match('/^[\x20-\x7e]{8,63}$/D', $credentials->password) !== 1) {
             throw WrongPassphrase::forNetwork(
                 $ssid,
                 new Command('wpa_cli', ['-i', $interface], ['LANG' => 'C']),
                 new CommandResult(0, '', ''),
             );
         }
+
         $blocks = $this->networkBlocks($interface);
         $matching = array_values(array_map(
             static fn (array $block): string => $block['id'],
