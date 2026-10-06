@@ -40,6 +40,7 @@ Optional environment variables, all with sane defaults:
 | `PROVISION_CACHE`   | `/run/php-wifi-provision/networks.json`   | Where the pre-hotspot scan is cached as JSON.          |
 | `PROVISION_DONE`    | `/run/php-wifi-provision/done`            | Marker file created once a connection succeeds.        |
 | `PROVISION_STATE`   | `/run/php-wifi-provision/last-attempt.json` | Where the outcome of the last connection attempt is recorded as JSON. |
+| `PROVISION_JOINING` | `/run/php-wifi-provision/joining`         | Marker `index.php` keeps while a join is running, so `hotspot.sh` leaves the radio alone. |
 | `PROVISION_TIMEOUT` | `900`                                      | Seconds `hotspot.sh` waits for `PROVISION_DONE` before giving up. |
 | `RESTART_BACKOFF`   | `5`                                         | Seconds to wait between hotspot restart attempts (see below). |
 | `MAX_RESTARTS`      | `5`                                         | Consecutive failed restart attempts before `hotspot.sh` gives up. |
@@ -90,8 +91,11 @@ pre-hotspot scan — leaves the radio disconnected with the access point down.
 Without help, that would strand the person mid-setup until
 `PROVISION_TIMEOUT` expires. `hotspot.sh` checks `wifi hotspot status` on
 every iteration of its wait loop and, if it comes back `inactive` while
-`PROVISION_DONE` is still absent, restarts the hotspot within a few seconds
-so the phone can rejoin it and the person can retry. Restarts are throttled
+`PROVISION_DONE` is still absent and no join is running, restarts the
+hotspot within a few seconds so the phone can rejoin it and the person can
+retry. A join takes the hotspot down too, so `index.php` keeps a marker at
+`PROVISION_JOINING` for as long as an attempt lasts: restarting the hotspot
+during the attempt would take the radio away from it. Restarts are throttled
 by `RESTART_BACKOFF` and capped at `MAX_RESTARTS` consecutive failures, so a
 genuinely broken radio still ends the run instead of spinning.
 
@@ -102,6 +106,20 @@ back and the phone reconnects, shows a "Last attempt: …" line on the next
 `GET` — as long as that file is under an hour old — so a wrong passphrase no
 longer looks identical to never having pressed Connect. `hotspot.sh` removes
 any stale `PROVISION_STATE` left over from a previous run at startup.
+
+## Without NetworkManager
+
+On a machine that runs `wpa_supplicant` on its own, `bin/wifi` uses the
+`wpa_cli` backend, which raises the hotspot through `hostapd` and `dnsmasq`.
+That needs root, so remove the `User=www-data` line from `provision.service`
+(the polkit rule is for NetworkManager and does nothing here). The hotspot is
+at the same address, `http://10.42.0.1:8080/`.
+
+With no NetworkManager, the DHCP client that gets the device its address is
+started by the page, inside the unit. `KillMode=process` in
+`provision.service` lets it outlive the unit; without it systemd stops the
+client when the run ends and the device loses the address it has just been
+given.
 
 ## Use it from a phone
 

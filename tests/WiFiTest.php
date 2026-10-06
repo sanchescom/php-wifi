@@ -38,6 +38,7 @@ final class WiFiTest extends TestCase
         return new FakeCommandRunner([
             'connection show --active' => "Hotspot\n",
             'connection show' => self::LINUX_FIXTURES . '/Connections.txt',
+            '-f NAME,UUID,TYPE connection show' => self::LINUX_FIXTURES . '/Profiles.txt',
             'connection show BELL340' => "BELL340\n",
             'connection show Cafe: Corner' => "Cafe Corner Wifi\n",
             'connection show Hotspot' => "femus-setup\n",
@@ -65,6 +66,7 @@ final class WiFiTest extends TestCase
     {
         return new FakeCommandRunner([
             '-f DEVICE,TYPE device' => self::LINUX_FIXTURES . '/Devices.txt',
+            'connection show' => self::LINUX_FIXTURES . '/Profiles.txt',
             'connection delete' => '',
             'device wifi connect' => '',
         ]);
@@ -111,13 +113,17 @@ final class WiFiTest extends TestCase
 
         $wifi->connect('AlphaNet-foiEmE', Credentials::password('hunter2'));
 
-        $this->assertCount(4, $runner->commands);
+        $this->assertCount(5, $runner->commands);
         $this->assertStringContainsString('device wifi list', $runner->commands[0]->describe());
         $this->assertStringContainsString('-f DEVICE,TYPE device', $runner->commands[1]->describe());
-        $this->assertSame(['connection', 'delete', 'AlphaNet-foiEmE'], $runner->commands[2]->arguments);
+        $this->assertStringContainsString('-f NAME,UUID,TYPE connection show', $runner->commands[2]->describe());
+        $this->assertSame(
+            ['connection', 'delete', 'uuid', '66666666-6666-6666-6666-666666666666'],
+            $runner->commands[3]->arguments,
+        );
         $this->assertSame(
             ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'AlphaNet-foiEmE', 'ifname', 'wlan0'],
-            $runner->commands[3]->arguments,
+            $runner->commands[4]->arguments,
         );
 
         foreach ($runner->commands as $recorded) {
@@ -147,6 +153,7 @@ final class WiFiTest extends TestCase
     {
         $runner = new FakeCommandRunner([
             '-f DEVICE,TYPE device' => self::LINUX_FIXTURES . '/Devices.txt',
+            'connection show' => self::LINUX_FIXTURES . '/Profiles.txt',
             'connection delete' => '',
             'device wifi connect' => '',
         ]);
@@ -154,10 +161,13 @@ final class WiFiTest extends TestCase
 
         $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('hunter2'));
 
-        $this->assertCount(3, $runner->commands);
+        $this->assertCount(4, $runner->commands);
         $this->assertStringContainsString('-f DEVICE,TYPE device', $runner->commands[0]->describe());
-        $this->assertSame(['connection', 'delete', 'AlphaNet-foiEmE'], $runner->commands[1]->arguments);
-        $this->assertStringContainsString('device wifi connect', $runner->commands[2]->describe());
+        $this->assertSame(
+            ['connection', 'delete', 'uuid', '66666666-6666-6666-6666-666666666666'],
+            $runner->commands[2]->arguments,
+        );
+        $this->assertStringContainsString('device wifi connect', $runner->commands[3]->describe());
 
         foreach ($runner->commands as $recorded) {
             foreach ($recorded->arguments as $argument) {
@@ -212,6 +222,7 @@ final class WiFiTest extends TestCase
     public function connect_with_an_explicit_device_skips_device_detection(): void
     {
         $runner = new FakeCommandRunner([
+            'connection show' => self::LINUX_FIXTURES . '/Profiles.txt',
             'connection delete' => '',
             'device wifi connect' => '',
         ]);
@@ -219,9 +230,13 @@ final class WiFiTest extends TestCase
 
         $wifi->connect($this->sampleNetwork('AlphaNet-foiEmE'), Credentials::password('hunter2'), new Device('wlan0'));
 
-        $this->assertCount(2, $runner->commands);
-        $this->assertSame(['connection', 'delete', 'AlphaNet-foiEmE'], $runner->commands[0]->arguments);
-        $this->assertStringContainsString('device wifi connect', $runner->commands[1]->describe());
+        $this->assertCount(3, $runner->commands);
+        $this->assertStringContainsString('connection show', $runner->commands[0]->describe());
+        $this->assertSame(
+            ['connection', 'delete', 'uuid', '66666666-6666-6666-6666-666666666666'],
+            $runner->commands[1]->arguments,
+        );
+        $this->assertStringContainsString('device wifi connect', $runner->commands[2]->describe());
 
         foreach ($runner->commands as $recorded) {
             foreach ($recorded->arguments as $argument) {
@@ -238,10 +253,14 @@ final class WiFiTest extends TestCase
 
         $wifi->connectTo('BELL340', Credentials::password('p w'), new Device('wlan0'));
 
-        $this->assertCount(2, $runner->commands);
-        $this->assertSame(['connection', 'delete', 'BELL340'], $runner->commands[0]->arguments);
+        $this->assertCount(3, $runner->commands);
+        $this->assertStringContainsString('connection show', $runner->commands[0]->describe());
+        $this->assertSame(
+            ['connection', 'delete', 'uuid', '55555555-5555-5555-5555-555555555555'],
+            $runner->commands[1]->arguments,
+        );
 
-        $command = $runner->commands[1];
+        $command = $runner->commands[2];
 
         $this->assertSame(
             ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'BELL340', 'ifname', 'wlan0'],
@@ -338,7 +357,10 @@ final class WiFiTest extends TestCase
 
         $wifi->forget(new KnownNetwork('Cafe: Corner', 'Cafe Corner Wifi', null, false));
 
-        $this->assertSame(['connection', 'delete', 'Cafe: Corner'], $runner->last()->arguments);
+        $this->assertSame(
+            ['connection', 'delete', 'uuid', '33333333-3333-3333-3333-333333333333'],
+            $runner->last()->arguments,
+        );
     }
 
     #[Test]
@@ -349,7 +371,10 @@ final class WiFiTest extends TestCase
 
         $wifi->forget('Cafe: Corner');
 
-        $this->assertSame(['connection', 'delete', 'Cafe: Corner'], $runner->last()->arguments);
+        $this->assertSame(
+            ['connection', 'delete', 'uuid', '33333333-3333-3333-3333-333333333333'],
+            $runner->last()->arguments,
+        );
     }
 
     #[Test]

@@ -7,6 +7,7 @@ namespace Sanchescom\WiFi\Backend;
 use Closure;
 use Throwable;
 use Sanchescom\WiFi\Backend\Linux\HostapdConfig;
+use Sanchescom\WiFi\Backend\Linux\RuntimeDirectory;
 use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
@@ -42,7 +43,7 @@ use Sanchescom\WiFi\Value\NetworkCollection;
  *
  * The hotspot ({@see SupportsHotspot}) is raised through `hostapd` and
  * `dnsmasq` rather than `wpa_supplicant`, so its two pid files live at a
- * fixed, derivable path (the system temp directory plus a fixed file name)
+ * fixed, derivable path (a fixed file name inside {@see RuntimeDirectory})
  * instead of an instance property: a second `WpaCliBackend` instance — the
  * CLI's `wifi hotspot status`, or the watchdog, running in a different
  * process from the one that called {@see self::startHotspot()} — discovers
@@ -61,9 +62,9 @@ use Sanchescom\WiFi\Value\NetworkCollection;
  */
 final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHotspot
 {
-    private const HOSTAPD_PID_FILE = 'php-wifi-hostapd.pid';
+    private const HOSTAPD_PID_FILE = 'hostapd.pid';
 
-    private const DNSMASQ_PID_FILE = 'php-wifi-dnsmasq.pid';
+    private const DNSMASQ_PID_FILE = 'dnsmasq.pid';
 
     private const HOSTAPD_BINARY = 'hostapd';
 
@@ -74,6 +75,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     private const DHCP_RANGE = '10.42.0.10,10.42.0.100,12h';
 
     private readonly ToolPath $toolPath;
+
+    private readonly RuntimeDirectory $runtimeDirectory;
 
     /** @var Closure(int): void */
     private readonly Closure $sleep;
@@ -102,6 +105,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         ?Closure $sleep = null,
     ) {
         $this->toolPath = new ToolPath($runner);
+        $this->runtimeDirectory = new RuntimeDirectory();
         $this->sleep = $sleep ?? static function (int $microseconds): void {
             usleep($microseconds);
         };
@@ -356,7 +360,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         );
 
         if ($blocks === []) {
-            throw NetworkNotFound::bySsid($ssidOrName);
+            throw NetworkNotFound::notSaved($ssidOrName);
         }
 
         foreach ($blocks as $block) {
@@ -423,7 +427,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         $this->guardAgainstAlreadyRunningHotspot();
 
         $interface = $device->name;
-        $hostapdConfig = new HostapdConfig($interface, $config);
+        $hostapdConfig = new HostapdConfig($interface, $config, $this->runtimeDirectory->ensure());
         $confFile = $hostapdConfig->create();
         $hostapdStarted = false;
 
@@ -476,7 +480,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     /**
      * Terminates both daemons, then hands the interface back ({@see
-     * self::releaseInterface()}). Every step tolerates "already gone" — a
+     * self::releaseInterface()}), leaving any address that is not the
+     * hotspot's own in place. Every step tolerates "already gone" — a
      * missing pid file is skipped, a `kill` of an already-dead pid is not
      * treated as failure — so calling this twice in a row is harmless. A pid
      * file whose pid names a different process than expected is never
@@ -494,14 +499,22 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     }
 
     /**
-     * Flushes the hotspot address and gives the radio back to
-     * `wpa_supplicant` (`reconnect`). A failed `reconnect` is swallowed: "no
+     * Removes the hotspot's address and gives the radio back to
+     * `wpa_supplicant` (`reconnect`). Only that one address goes, not every
+     * address on the interface: `stopHotspot()` is also called when no
+     * hotspot is up any more — the provisioning demo calls it on its way
+     * out, after the device has joined its network — and flushing the
+     * interface then threw away the lease the join had just obtained
+     * (measured on the Pi). Removing an address that is not there fails, and
+     * that failure is ignored. A failed `reconnect` is swallowed too: "no
      * `wpa_supplicant` is running" is the routine reply on a hostapd-only box,
      * and by then the hotspot is already gone.
      */
     private function releaseInterface(string $interface): void
     {
-        $this->run(new Command($this->resolvedPath('ip'), ['addr', 'flush', 'dev', $interface]));
+        $this->runner->run(
+            new Command($this->resolvedPath('ip'), ['addr', 'del', self::HOTSPOT_ADDRESS, 'dev', $interface]),
+        );
 
         try {
             $this->wpaCli($interface, 'reconnect');
@@ -541,12 +554,12 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     private function hostapdPidFile(): string
     {
-        return sys_get_temp_dir() . '/' . self::HOSTAPD_PID_FILE;
+        return $this->runtimeDirectory->path() . '/' . self::HOSTAPD_PID_FILE;
     }
 
     private function dnsmasqPidFile(): string
     {
-        return sys_get_temp_dir() . '/' . self::DNSMASQ_PID_FILE;
+        return $this->runtimeDirectory->path() . '/' . self::DNSMASQ_PID_FILE;
     }
 
     /**
@@ -616,6 +629,12 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * names $expectedBinary — a stale file whose pid was reused by an
      * unrelated process must never be signalled. The pid file is removed
      * unconditionally afterwards, matched, mismatched, or already gone.
+     *
+     * `kill` only sends the signal: `hostapd` deletes its own pid file on the
+     * way out, a moment later. Returning before it has gone would let a start
+     * that follows at once write a new pid file at the same path and have
+     * the dying daemon delete it. So this waits, up to about two seconds,
+     * for the process to exit.
      */
     private function killPidFile(string $pidFile, string $expectedBinary): void
     {
@@ -623,9 +642,13 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
         if ($pid !== null && $this->processName($pid) === $expectedBinary) {
             $this->runner->run(new Command('kill', [$pid]));
+
+            for ($attempt = 0; $attempt < 20 && $this->processName($pid) === $expectedBinary; $attempt++) {
+                ($this->sleep)(100_000);
+            }
         }
 
-        if (file_exists($pidFile)) {
+        if ($this->runtimeDirectory->isSafe() && file_exists($pidFile)) {
             unlink($pidFile);
         }
     }
@@ -642,9 +665,10 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         return basename(trim($result->stdout));
     }
 
+    /** Null too when the runtime directory is not one to trust a pid from. */
     private function readPid(string $pidFile): ?string
     {
-        if (!file_exists($pidFile)) {
+        if (!$this->runtimeDirectory->isSafe() || !file_exists($pidFile)) {
             return null;
         }
 

@@ -170,7 +170,14 @@ if ($wifi !== null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (!is_string($ssid) || $ssid === '' || !is_string($password)) {
         $connectError = 'Choose a network from the list.';
     } else {
+        // Tells hotspot.sh a join is running, so it does not restart the hotspot under it.
+        $joiningPath = getenv('PROVISION_JOINING') ?: '/run/php-wifi-provision/joining';
+
         try {
+            if (@file_put_contents($joiningPath, '') === false) {
+                error_log(sprintf('provision: cannot write the joining marker "%s"', $joiningPath));
+            }
+
             $credentials = $password === '' ? Credentials::none() : Credentials::password($password);
 
             // NetworkManager's scan list is empty while the radio runs the
@@ -207,6 +214,8 @@ if ($wifi !== null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         } catch (Throwable $exception) {
             error_log(sprintf('provision connect failed: %s: %s', $exception::class, $exception->getMessage()));
             $connectError = $genericError;
+        } finally {
+            @unlink($joiningPath);
         }
     }
 

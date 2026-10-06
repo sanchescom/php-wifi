@@ -292,7 +292,9 @@ the control socket without root. Raising the hotspot needs root regardless
 of that setting — `startHotspot()` flushes and assigns the interface's IP
 address (`ip addr`) and binds `hostapd` and `dnsmasq` to it, all privileged
 operations — and so do most DHCP clients when asked to configure an
-interface.
+interface. Since 3.2.5 `wifi hotspot status` needs root on this backend too:
+the pid files it reads are in `/run/php-wifi`, which only root can enter, and
+an unprivileged call answers `inactive`.
 
 ### Two behaviour changes worth knowing about
 
@@ -433,12 +435,23 @@ wrapper around one. A command can also carry input for the child's stdin
   equivalent problem for `netsh`); see ROADMAP.md.
 - **`WpaCliBackend::startHotspot()`'s passphrase never reaches any
   process's arguments.** It is written to a `hostapd` config file
-  (`Backend\Linux\HostapdConfig`, created via `tempnam()` at mode `0600`)
-  and deleted once `hostapd` has read it. Measured on the Pi during a live
+  (`Backend\Linux\HostapdConfig`, created via `tempnam()` at mode `0600`,
+  since 3.2.5 inside `/run/php-wifi`) and deleted once `hostapd` has read it. Measured on the Pi during a live
   hotspot: `0` matches in the same `ps` sample.
 - **macOS's `NetworksetupBackend::connect()` passes the passphrase as a
   plain `networksetup` argument**, unchanged and untouched by this
   release (`networksetup -setairportnetwork <device> <ssid> <password>`).
+
+**Runtime files, since 3.2.5.** `WpaCliBackend`'s `hostapd` and `dnsmasq` pid
+files and the watchdog's state file are written by root at fixed names. They
+used to be in the system temp directory, where any local user could plant a
+symlink under one of those names. They are now in `/run/php-wifi`
+(`Backend\Linux\RuntimeDirectory`), created at mode 0700; a directory that is
+a symlink, belongs to another user, or is writable by group or others is not
+written to, read from or deleted from. `WIFI_RUNTIME_DIR` names another
+directory, and must then be set for every process that has to find the same
+files. A process that is not root uses a directory of its own under the temp
+directory, with the same checks.
 
 ## Verified on
 

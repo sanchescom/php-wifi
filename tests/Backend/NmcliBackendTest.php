@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Sanchescom\WiFi\Backend\NmcliBackend;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
+use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
 use Sanchescom\WiFi\Shell\Command;
@@ -35,6 +36,7 @@ final class NmcliBackendTest extends TestCase
         return new FakeCommandRunner([
             'connection show --active' => "Hotspot\n",
             'connection show' => self::FIXTURES . '/Connections.txt',
+            '-f NAME,UUID,TYPE connection show' => self::FIXTURES . '/Profiles.txt',
             'connection show BELL340' => "BELL340\n",
             'connection show Cafe: Corner' => "Cafe Corner Wifi\n",
             'connection show Hotspot' => "femus-setup\n",
@@ -132,14 +134,20 @@ final class NmcliBackendTest extends TestCase
 
         $backend->connect('Home', Credentials::password('p w'), new Device('wlan0'));
 
-        $this->assertCount(2, $runner->commands);
+        $this->assertCount(3, $runner->commands);
 
-        $delete = $runner->commands[0];
-        $this->assertSame(['connection', 'delete', 'Home'], $delete->arguments);
+        $this->assertSame(['-t', '-f', 'NAME,UUID,TYPE', 'connection', 'show'], $runner->commands[0]->arguments);
+
+        // The VPN that is also called "Home" is not a Wi-Fi profile and stays.
+        $delete = $runner->commands[1];
+        $this->assertSame(
+            ['connection', 'delete', 'uuid', '11111111-1111-1111-1111-111111111111'],
+            $delete->arguments,
+        );
         $this->assertSame(['LANG' => 'C'], $delete->env);
         $this->assertNull($delete->stdin);
 
-        $connect = $runner->commands[1];
+        $connect = $runner->commands[2];
         $this->assertSame(
             ['-w', '10', '--ask', 'device', 'wifi', 'connect', 'Home', 'ifname', 'wlan0'],
             $connect->arguments,
@@ -153,14 +161,14 @@ final class NmcliBackendTest extends TestCase
     }
 
     /**
-     * The normal case — no profile exists yet for this SSID — makes
-     * `nmcli connection delete` exit non-zero. That must never fail
-     * connect(): the delete's result is deliberately never inspected.
+     * Neither the profile listing nor the delete may fail connect(): their
+     * results are never turned into an exception.
      */
     #[Test]
     public function connect_ignores_a_profile_delete_that_fails(): void
     {
         $runner = new FakeCommandRunner([
+            'connection show' => self::FIXTURES . '/Profiles.txt',
             'connection delete' => [
                 'output' => '',
                 'exit' => 10,
@@ -172,8 +180,23 @@ final class NmcliBackendTest extends TestCase
 
         $backend->connect('Home', Credentials::password('p w'), new Device('wlan0'));
 
-        $this->assertCount(2, $runner->commands);
+        $this->assertCount(3, $runner->commands);
         $this->assertSame(['-w', '10', '--ask', 'device', 'wifi', 'connect', 'Home', 'ifname', 'wlan0'], $runner->last()->arguments);
+    }
+
+    #[Test]
+    public function connect_ignores_a_profile_listing_that_fails(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show' => ['output' => '', 'exit' => 8, 'stderr' => 'Error: NetworkManager is not running.'],
+            'device wifi connect' => '',
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $backend->connect('Home', Credentials::password('p w'), new Device('wlan0'));
+
+        $this->assertCount(2, $runner->commands);
+        $this->assertSame('connect', $runner->last()->arguments[5]);
     }
 
     #[Test]
@@ -309,14 +332,51 @@ final class NmcliBackendTest extends TestCase
     }
 
     #[Test]
-    public function forget_deletes_the_connection_by_name(): void
+    public function forget_deletes_the_wifi_profile_by_its_uuid(): void
     {
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
 
         $backend->forget('Cafe: Corner');
 
-        $this->assertSame(['connection', 'delete', 'Cafe: Corner'], $runner->last()->arguments);
+        $this->assertSame(
+            ['connection', 'delete', 'uuid', '33333333-3333-3333-3333-333333333333'],
+            $runner->last()->arguments,
+        );
+    }
+
+    /** Deleting by name would take the VPN called "Home" along with the Wi-Fi profile. */
+    #[Test]
+    public function forget_leaves_a_profile_of_another_type_with_the_same_name_alone(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        $backend->forget('Home');
+
+        $deletes = array_values(array_filter(
+            $runner->commands,
+            static fn (Command $command): bool => ($command->arguments[1] ?? null) === 'delete',
+        ));
+        $this->assertCount(1, $deletes);
+        $this->assertSame(
+            ['connection', 'delete', 'uuid', '11111111-1111-1111-1111-111111111111'],
+            $deletes[0]->arguments,
+        );
+    }
+
+    /** Saved networks are not scanned for, so the message must not mention a scan. */
+    #[Test]
+    public function forget_of_a_network_that_is_not_saved_says_so(): void
+    {
+        $backend = $this->backend();
+
+        try {
+            $backend->forget('Wired connection 1');
+            $this->fail('Expected NetworkNotFound to be thrown.');
+        } catch (NetworkNotFound $exception) {
+            $this->assertSame('No saved network named "Wired connection 1".', $exception->getMessage());
+        }
     }
 
     #[Test]

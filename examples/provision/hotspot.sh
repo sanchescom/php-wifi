@@ -7,13 +7,14 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CACHE="${PROVISION_CACHE:-/run/php-wifi-provision/networks.json}"
 DONE="${PROVISION_DONE:-/run/php-wifi-provision/done}"
 STATE="${PROVISION_STATE:-/run/php-wifi-provision/last-attempt.json}"
+JOINING="${PROVISION_JOINING:-/run/php-wifi-provision/joining}"
 TIMEOUT="${PROVISION_TIMEOUT:-900}"
 RESTART_BACKOFF="${RESTART_BACKOFF:-5}"
 MAX_RESTARTS="${MAX_RESTARTS:-5}"
 : "${PROVISION_PASSWORD:?set PROVISION_PASSWORD}"
 
-mkdir -p "$(dirname "$CACHE")" "$(dirname "$DONE")" "$(dirname "$STATE")"
-rm -f "$DONE" "$STATE"
+mkdir -p "$(dirname "$CACHE")" "$(dirname "$DONE")" "$(dirname "$STATE")" "$(dirname "$JOINING")"
+rm -f "$DONE" "$STATE" "$JOINING"
 
 # Scan before the radio becomes an access point: with one radio it can do
 # either, never both.
@@ -44,6 +45,14 @@ hotspot_active() {
     [ "$("$ROOT/bin/wifi" hotspot status)" = 'active' ]
 }
 
+# The page takes the hotspot down itself to attempt a join, and says so with
+# this marker for as long as the attempt runs. Restarting the hotspot then
+# would take the radio away from the join. A marker older than two minutes
+# belongs to an attempt that died, not to one still running.
+join_in_progress() {
+    [ -n "$(find "$JOINING" -mmin -2 2>/dev/null)" ]
+}
+
 if ! start_hotspot; then
     echo 'provision: could not start the hotspot (is the polkit rule installed?)' >&2
     exit 0
@@ -62,7 +71,7 @@ while [ ! -e "$DONE" ] && [ "$waited" -lt "$TIMEOUT" ]; do
 
     # The marker wins over the hotspot status: a successful join tears the
     # AP down too, and that must end the loop, never trigger a restart.
-    if [ ! -e "$DONE" ] && ! hotspot_active; then
+    if [ ! -e "$DONE" ] && ! join_in_progress && ! hotspot_active; then
         if [ "$restarts" -ge "$MAX_RESTARTS" ]; then
             echo "provision: hotspot would not stay up after $MAX_RESTARTS restart(s), giving up" >&2
             break

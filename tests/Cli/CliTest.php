@@ -27,6 +27,7 @@ final class CliTest extends TestCase
     private const LINUX_HOTSPOT_STOP_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-hotspot-stop';
 
     private const LINUX_WATCH_DISCONNECTED_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-watch-disconnected';
+    private const LINUX_WATCH_HOTSPOT_BUSY_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-watch-hotspot-busy';
 
     #[Test]
     public function list_unique_shows_four_rows_with_the_strongest_bell340_first(): void
@@ -224,6 +225,16 @@ final class CliTest extends TestCase
         $this->assertSame('Forgot BELL340.', trim($result['stdout']));
     }
 
+    /** Saved networks are not scanned for; the old message blamed the scan. */
+    #[Test]
+    public function forget_of_an_unknown_network_names_the_saved_networks_not_the_scan(): void
+    {
+        $result = $this->runCli(['forget', 'NoSuchNetwork'], self::LINUX_FIXTURES, 'Linux');
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertSame('No saved network named "NoSuchNetwork".', trim($result['stderr']));
+    }
+
     #[Test]
     public function disconnect_reports_permission_denied_as_exit_three(): void
     {
@@ -272,6 +283,19 @@ final class CliTest extends TestCase
 
         $this->assertSame(0, $result['exit'], $result['stderr']);
         $this->assertSame('Hotspot stopped.', trim($result['stdout']));
+    }
+
+    /** The watchdog's raise time belongs to the hotspot just stopped; left behind, it would age the next one. */
+    #[Test]
+    public function hotspot_stop_removes_the_watchdogs_state_file(): void
+    {
+        $stateFile = $this->runtimeDir . '/watchdog.json';
+        file_put_contents($stateFile, '{"hotspotRaisedAt":1}');
+
+        $result = $this->runCli(['hotspot', 'stop'], self::LINUX_HOTSPOT_STOP_FIXTURES, 'Linux');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+        $this->assertFileDoesNotExist($stateFile);
     }
 
     #[Test]
@@ -481,6 +505,55 @@ final class CliTest extends TestCase
         }
     }
 
+    /**
+     * The one line an operator has for telling a hotspot held up by a
+     * missing `iw` from one with a phone on it. It is written by the loop
+     * that never returns, so the loop is started for real, read from until
+     * its first line arrives, and then stopped.
+     */
+    #[Test]
+    public function watch_logs_why_a_hotspot_whose_stations_cannot_be_counted_is_left_up(): void
+    {
+        $passwordFile = $this->writeTempFile('hotspot-pass');
+        $process = proc_open(
+            [
+                PHP_BINARY,
+                self::REPO_ROOT . '/bin/wifi',
+                'watch',
+                '--hotspot-ssid=femus-setup',
+                '--hotspot-password-file=' . $passwordFile,
+                '--interval=60',
+            ],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            self::REPO_ROOT,
+            [
+                'PATH' => (string) getenv('PATH'),
+                'WIFI_FAKE_RUNNER' => self::LINUX_WATCH_HOTSPOT_BUSY_FIXTURES,
+                'WIFI_FAKE_OS' => 'Linux',
+                'WIFI_RUNTIME_DIR' => $this->runtimeDir,
+            ],
+        );
+        self::assertIsResource($process);
+
+        try {
+            $read = [$pipes[2]];
+            $write = $except = null;
+            $ready = stream_select($read, $write, $except, 20);
+            $line = $ready === 1 ? (string) fgets($pipes[2]) : '';
+        } finally {
+            proc_terminate($process);
+            array_map(fclose(...), $pipes);
+            proc_close($process);
+            unlink($passwordFile);
+        }
+
+        $this->assertMatchesRegularExpression(
+            '/^\S+ watch: hotspot_busy: cannot count hotspot stations: iw was not found$/',
+            trim($line),
+        );
+    }
+
     #[Test]
     public function watch_rejects_a_non_positive_interval(): void
     {
@@ -543,6 +616,23 @@ final class CliTest extends TestCase
         }
     }
 
+    /** Every run gets a runtime directory of this test's own, so nothing lands in the machine's real one. */
+    private string $runtimeDir;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->runtimeDir = sys_get_temp_dir() . '/php-wifi-cli-test-' . bin2hex(random_bytes(8));
+        mkdir($this->runtimeDir, 0700);
+    }
+
+    protected function tearDown(): void
+    {
+        array_map(unlink(...), glob($this->runtimeDir . '/*') ?: []);
+        rmdir($this->runtimeDir);
+        parent::tearDown();
+    }
+
     /** Writes $contents to a fresh temp file and returns its path. */
     private function writeTempFile(string $contents): string
     {
@@ -567,6 +657,7 @@ final class CliTest extends TestCase
                 'PATH' => (string) getenv('PATH'),
                 'WIFI_FAKE_RUNNER' => $fixturesDir,
                 'WIFI_FAKE_OS' => $os,
+                'WIFI_RUNTIME_DIR' => $this->runtimeDir,
             ],
             $env,
         );

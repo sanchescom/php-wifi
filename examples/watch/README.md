@@ -155,3 +155,14 @@ clock, so the real network is still retried.
 The raise time is also persisted, but only matters when a restarted process
 finds the hotspot still up; after a reboot the hotspot is gone, and the
 countdown starts afresh when it is raised again.
+
+## Where the runtime files live
+
+The raise time, the `hostapd`/`dnsmasq` pid files and the short-lived
+`hostapd` config sit in `/run/php-wifi/`, which only root can write to — not
+in `/tmp`, where any local user could plant a symlink under a name root is
+about to write. The unit declares it (`RuntimeDirectory=php-wifi`, mode 0700)
+and keeps it across restarts (`RuntimeDirectoryPreserve=yes`), so a restarted
+watchdog still knows when its hotspot went up. `wifi hotspot status` and
+`wifi hotspot stop` from a root shell look in the same place. Set
+`WIFI_RUNTIME_DIR` for every process involved to use another directory.

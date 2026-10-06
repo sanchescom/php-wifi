@@ -603,3 +603,209 @@ up, on a channel that was otherwise empty.
   argument — nmcli has no stdin mode for that command, and the argv-free route
   is a keyfile. Listed in ROADMAP for 3.3.
 - Windows and macOS are untouched by this release.
+
+---
+
+# Verified on real hardware — 3.2.5
+
+Same Raspberry Pi, **2026-10-06**, against the `release-3.2.5` branch: the
+first run at `5f74f03`, the second at `58e64c1`, after the fixes the first one
+prompted. Board, OS, NetworkManager 1.52.1 and PHP 8.4.24 as before; the suite
+on the Pi: `OK (426 tests, 1360 assertions)`. Each run was a transient systemd
+unit, as root. The outputs are pasted as printed, minus `dnsmasq`'s start-up
+banner. The radio was `disabled` before and after, NetworkManager was given
+`wlan0` back, and no profile was left behind.
+
+The Pi has no RTC and its clock was ten days behind until it came online
+during the run; the timestamps below are the Pi's own.
+
+## `forget` deletes the Wi-Fi profile, not its namesake (`NmcliBackend`)
+
+Two profiles called `LiveDup`, one Wi-Fi and one of type `dummy`:
+
+```
+LiveDup:802-11-wireless
+LiveDup:dummy
+$ php bin/wifi forget LiveDup
+Forgot LiveDup.
+[exit 0]
+LiveDup:dummy
+$ php bin/wifi forget NoSuchNetwork
+No saved network named "NoSuchNetwork".
+[exit 1]
+```
+
+## Runtime files (`WpaCliBackend`)
+
+With `wlan0` handed to `wpa_supplicant` as in the 3.2.0 run. Before the first
+start `/run/php-wifi` did not exist:
+
+```
+$ printf '***' | php bin/wifi hotspot start --ssid=femus-setup --password-file=-
+Hotspot femus-setup started on wlan0 (auto)
+[exit 0]
+$ stat -c %a %U:%G %n /run/php-wifi
+700 root:root /run/php-wifi
+[exit 0]
+$ ls -la /run/php-wifi
+total 8
+drwx------  2 root   root     80 Sep 26 08:19 .
+drwxr-xr-x 25 root   root    640 Sep 26 08:19 ..
+-rw-r--r--  1 nobody nogroup   5 Sep 26 08:19 dnsmasq.pid
+-rw-r--r--  1 root   root      5 Sep 26 08:19 hostapd.pid
+[exit 0]
+in /tmp: 0
+hostapd=1 dnsmasq=1 iw=	type AP
+$ php bin/wifi hotspot status
+active
+[exit 0]
+$ sudo -u femus php bin/wifi hotspot status
+inactive
+[exit 0]
+```
+
+`in /tmp: 0` counts files named `php-wifi-hostapd*`, `php-wifi-dnsmasq*` or
+`php-wifi-watchdog*` there. The last command is the cost of a directory only
+root can enter: an unprivileged `hotspot status` on this backend cannot see the
+pid files and answers `inactive`. It is in the CHANGELOG and UPGRADE.md.
+
+A stop followed at once by a start, the pid-file race:
+
+```
+$ php bin/wifi hotspot stop && printf '***' | php bin/wifi hotspot start ...
+Hotspot stopped.
+Hotspot femus-setup started on wlan0 (auto)
+[exit 0]
+$ ls /run/php-wifi
+dnsmasq.pid
+hostapd.pid
+[exit 0]
+hostapd=1 dnsmasq=1
+$ php bin/wifi hotspot status
+active
+[exit 0]
+$ php bin/wifi hotspot stop
+Hotspot stopped.
+[exit 0]
+hostapd=0 dnsmasq=0
+```
+
+The watchdog's state file, and `hotspot stop` removing it:
+
+```
+$ php bin/wifi watch --once --ssid=NoSuchNet-stage17 --hotspot-ssid=femus-setup --hotspot-password-file=/tmp/hs.pass
+hotspot_raised
+[exit 0]
+$ cat /run/php-wifi/watchdog.json
+{"hotspotRaisedAt":1790407189}
+[exit 0]
+$ php bin/wifi hotspot stop
+Hotspot stopped.
+[exit 0]
+$ ls -la /run/php-wifi
+total 0
+drwx------  2 root root  40 Sep 26 08:19 .
+drwxr-xr-x 25 root root 640 Sep 26 08:19 ..
+[exit 0]
+```
+
+A runtime directory someone else can write to (`chmod 777 /run/php-wifi`):
+
+```
+The runtime directory "/run/php-wifi" is not safe to use: it must belong to the current user and be writable by nobody else.
+[exit 1]
+hostapd=0
+```
+
+## The provisioning demo on `WpaCliBackend`
+
+The last Linux item under "Not verified" for 3.2.0. `examples/provision/hotspot.sh`
+ran as a transient unit, as root; the page was driven with `curl` from the Pi
+itself instead of a phone.
+
+### What the first run found
+
+The device joined BELL340 and was given `192.168.2.76`, and one second later
+had no address:
+
+```
+08:19:54 10.42.0.1:47628 Accepted                    (the POST)
+08:19:55 provision: the hotspot went down (a failed join?), restarting it
+08:19:56 Hotspot femus-setup started on wlan0 (auto)
+08:20:10 dhcpcd: wlan0: leased 192.168.2.76 for 259200 seconds
+08:20:10 [200]: POST /
+08:20:11 dhcpcd: wlan0: pid 2926 deleted IP address 192.168.2.76/24
+08:20:11 Hotspot stopped.
+08:20:12 dhcpcd: received SIGTERM, stopping
+08:20:12 prov17.service: Deactivated successfully.
+```
+
+Three defects, none reproducible from fixtures:
+
+1. **`hotspot.sh` restarted the hotspot under the join.** The page stops the
+   hotspot to join; the supervisor saw it down one second later and raised it
+   again while `wpa_supplicant` was associating. The page now keeps a marker
+   for as long as an attempt runs, and the supervisor waits for it.
+2. **`hotspot stop` removed the lease.** `WpaCliBackend::stopHotspot()` flushed
+   every address on the interface, and the demo calls it on its way out, after
+   the join. It now removes only the hotspot's own address.
+3. **The DHCP client died with the unit.** The page starts `dhcpcd` for the
+   join, inside the unit, and systemd stopped it when the run ended.
+   `provision.service` now sets `KillMode=process`.
+
+### The second run, with the fixes
+
+A wrong passphrase first. The hotspot came back, and only once the attempt was
+over:
+
+```
+t0 unit=active hotspot=active marker=no hostapd=1 dhcpcd=0 wpa_state=DISCONNECTED  addr=10.42.0.1/24
+        BELL340 · 2.4 GHz · 100%
+Scanned before the hotspot started.
+POST http=200 time=26.559549s
+08:29:34.045 [200]: POST /
+08:29:34.713 provision: the hotspot went down (a failed join?), restarting it
+08:29:35.138 Hotspot femus-setup started on wlan0 (auto)
+Last attempt: BELL340 — failed: wpa_cli -i wlan0 did not reach wpa_state=COMPLETED on network 0 within 15 attempt(s); last state: SCANNING
+```
+
+Then the right one:
+
+```
+08:29:37.712 dnsmasq: exiting on receipt of SIGTERM       (the page stops the hotspot)
+08:29:50.840 dhcpcd: wlan0: leased 192.168.2.76 for 258620 seconds
+08:29:50.921 [200]: POST /
+08:29:51.526 Hotspot stopped.
+08:29:51.544 prov18.service: Deactivated successfully.
+08:29:51.545 prov18.service: Unit process 4709 (dhcpcd) remains running after unit stopped.
+```
+
+`curl` never received that reply: the address it was talking to went away with
+the hotspot, as it does for a phone. Two minutes later:
+
+```
+unit=inactive hotspot=inactive marker=yes hostapd=0 dhcpcd=8 ssid=BELL340 wpa_state=COMPLETED  addr=192.168.2.76/24
+$ php bin/wifi list --connected
+ SSID     BSSID              Channel  Band  Quality  dBm  Frequency  Connected  Security
+-----------------------------------------------------------------------------------------
+ BELL340  0e:ac:8a:99:58:5d  157      5     98%      -51  5785       true       WPA2
+[exit 0]
+$ ip -4 -o addr show wlan0
+3: wlan0    inet 192.168.2.76/24 brd 192.168.2.255 scope global dynamic noprefixroute wlan0\       valid_lft 258477sec preferred_lft 226149sec
+[exit 0]
+$ ping -c 2 -W 3 -I wlan0 192.168.2.1
+2 packets transmitted, 2 received, 0% packet loss, time 1001ms
+[exit 0]
+```
+
+## Not verified
+
+- The provisioning demo on `WpaCliBackend` with a phone: both runs drove the
+  page with `curl` from the Pi. A phone on this backend's hotspot was verified
+  for the watchdog in 3.2.2 and 3.2.3.
+- `wifi-watch.service` has no `KillMode=process`. On `WpaCliBackend` the
+  watchdog starts `hostapd`, `dnsmasq` and the DHCP client inside its unit, so
+  a restart of the unit stops them. Not run.
+- The symlink attack itself was not staged; what was checked is that nothing
+  is written to `/tmp` and that an unsafe directory is refused.
+- Windows and macOS are untouched by this release.

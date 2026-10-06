@@ -1,5 +1,28 @@
 # Upgrade Guide
 
+## 3.2 → 3.2.5
+
+Nothing changes for calling code. Three things behave differently:
+
+- **Stop a running hotspot before upgrading on a `WpaCliBackend` machine.**
+  The pid files moved from the temp directory to `/run/php-wifi`, so the new
+  code does not see a hotspot the old code raised: `wifi hotspot status`
+  answers `inactive` and `wifi hotspot stop` leaves its `hostapd` and
+  `dnsmasq` running. The watchdog's state file moved too; a watchdog restarted
+  across the upgrade counts its hotspot's age from the restart.
+- **`wifi hotspot status` on `WpaCliBackend` needs root.** `/run/php-wifi` is
+  mode 0700, so an unprivileged user cannot read the pid files and gets
+  `inactive` whatever the hotspot's state. Starting and stopping it needed
+  root already. `NmcliBackend` is unaffected.
+- **`NmcliBackend::forget()` throws `NetworkNotFound` for a network that is
+  not saved**, as `WpaCliBackend::forget()` always has. It used to throw
+  `CommandFailed` with `nmcli`'s own message. Both extend `WiFiException`. It
+  also no longer deletes a profile of another type that shares the name.
+
+`WpaCliBackend::stopHotspot()` now leaves addresses other than the hotspot's
+own on the interface. If you relied on it to clear the interface, run
+`ip addr flush dev <iface>` yourself.
+
 ## 3.1 → 3.2
 
 Nothing breaking for calling code. Three things worth knowing:
