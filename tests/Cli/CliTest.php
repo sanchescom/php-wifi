@@ -368,8 +368,9 @@ final class CliTest extends TestCase
             );
 
             $this->assertSame(0, $result['exit'], $result['stderr']);
-            $hotspot = $this->lastLoggedCommand($log, 'device wifi hotspot');
-            $this->assertSame(['band', 'bg', 'channel', '11'], array_slice($hotspot['arguments'], -4));
+            $add = $this->lastLoggedCommand($log, 'connection add');
+            $this->assertContains('wifi.channel', $add['arguments']);
+            $this->assertSame('11', $add['arguments'][array_search('wifi.channel', $add['arguments'], true) + 1]);
         } finally {
             unlink($log);
         }

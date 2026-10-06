@@ -44,7 +44,8 @@ final class WiFiTest extends TestCase
             'connection show Hotspot' => "femus-setup\n",
             'connection delete' => '',
             'connection down' => '',
-            'device wifi hotspot' => '',
+            'connection add' => '',
+            'connection up' => '',
             'device wifi connect' => '',
             'device disconnect' => '',
             'device wifi list' => self::LINUX_FIXTURES . '/Networks.txt',
@@ -385,22 +386,25 @@ final class WiFiTest extends TestCase
 
         $hotspot = $wifi->startHotspot(new HotspotConfig('femus-setup', 'password1'));
 
-        $this->assertCount(2, $runner->commands);
+        $this->assertCount(4, $runner->commands);
         $this->assertStringContainsString('-f DEVICE,TYPE device', $runner->commands[0]->describe());
-        $this->assertStringContainsString('device wifi hotspot', $runner->commands[1]->describe());
+        $this->assertStringContainsString('connection add type wifi ifname wlan0', $runner->commands[2]->describe());
+        $this->assertStringContainsString('connection up Hotspot', $runner->commands[3]->describe());
         $this->assertSame('femus-setup', $hotspot->ssid);
     }
 
     #[Test]
     public function start_hotspot_with_a_device_on_the_config_skips_detection(): void
     {
-        $runner = new FakeCommandRunner(['device wifi hotspot' => '']);
+        $runner = new FakeCommandRunner(['connection show' => '', 'connection add' => '', 'connection up' => '']);
         $wifi = new WiFi(new NmcliBackend($runner));
 
         $wifi->startHotspot(new HotspotConfig('femus-setup', 'password1', device: new Device('wlan0')));
 
-        $this->assertCount(1, $runner->commands);
-        $this->assertStringContainsString('device wifi hotspot', $runner->commands[0]->describe());
+        foreach ($runner->commands as $command) {
+            $this->assertStringNotContainsString('DEVICE,TYPE device', $command->describe());
+        }
+        $this->assertStringContainsString('connection up Hotspot', $runner->last()->describe());
     }
 
     #[Test]

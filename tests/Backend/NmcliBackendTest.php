@@ -42,7 +42,8 @@ final class NmcliBackendTest extends TestCase
             'connection show Hotspot' => "femus-setup\n",
             'connection delete' => '',
             'connection down' => '',
-            'device wifi hotspot' => '',
+            'connection add' => '',
+            'connection up' => '',
             'device wifi connect' => '',
             'device disconnect' => '',
             'device wifi list' => self::FIXTURES . '/Networks.txt',
@@ -379,25 +380,69 @@ final class NmcliBackendTest extends TestCase
         }
     }
 
+    /**
+     * @param list<Command> $commands
+     * @return list<string> the arguments of the one `connection add` among $commands
+     */
+    private function addArguments(array $commands): array
+    {
+        $adds = array_values(array_filter(
+            $commands,
+            static fn (Command $command): bool => ($command->arguments[1] ?? null) === 'add',
+        ));
+        $this->assertCount(1, $adds);
+
+        return $adds[0]->arguments;
+    }
+
+    /**
+     * `nmcli device wifi hotspot` takes the passphrase as an argument. The
+     * hotspot is raised without it instead: a profile with no passphrase,
+     * then an activation that is handed the passphrase on stdin.
+     */
+    #[Test]
+    public function start_hotspot_adds_a_profile_without_the_passphrase_and_activates_it_with_the_passphrase_on_stdin(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        $hotspot = $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+
+        $this->assertSame(
+            [
+                'connection', 'add', 'type', 'wifi', 'ifname', 'wlan0', 'con-name', 'Hotspot', 'autoconnect', 'no',
+                'ssid', 'femus-setup', '--', 'wifi.mode', 'ap', 'ipv4.method', 'shared', 'ipv6.method', 'ignore',
+                'wifi-sec.key-mgmt', 'wpa-psk',
+            ],
+            $this->addArguments($runner->commands),
+        );
+
+        $up = $runner->last();
+        $this->assertSame(['-w', '20', '--ask', 'connection', 'up', 'Hotspot'], $up->arguments);
+        $this->assertSame("password1\n", $up->stdin);
+        $this->assertTrue($up->stdinIsSecret);
+
+        foreach ($runner->commands as $command) {
+            foreach ($command->arguments as $argument) {
+                $this->assertStringNotContainsString('password1', $argument);
+            }
+        }
+
+        $this->assertEquals(new Hotspot('Hotspot', 'femus-setup', new Device('wlan0')), $hotspot);
+    }
+
     #[Test]
     public function start_hotspot_with_5ghz_band(): void
     {
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
 
-        $hotspot = $backend->startHotspot(
-            new HotspotConfig('femus-setup', 'password1', Band::GHz5),
-            new Device('wlan0'),
-        );
-
-        $command = $runner->last();
+        $backend->startHotspot(new HotspotConfig('femus-setup', 'password1', Band::GHz5), new Device('wlan0'));
 
         $this->assertSame(
-            ['device', 'wifi', 'hotspot', 'ifname', 'wlan0', 'ssid', 'femus-setup', 'password', 'password1', 'band', 'a'],
-            $command->arguments,
+            ['wifi.mode', 'ap', 'wifi.band', 'a', 'ipv4.method'],
+            array_slice($this->addArguments($runner->commands), 13, 5),
         );
-        $this->assertSame([8], $command->secretIndexes);
-        $this->assertEquals(new Hotspot('Hotspot', 'femus-setup', new Device('wlan0')), $hotspot);
     }
 
     #[Test]
@@ -406,31 +451,11 @@ final class NmcliBackendTest extends TestCase
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
 
-        $backend->startHotspot(
-            new HotspotConfig('femus-setup', 'password1', Band::GHz2_4),
-            new Device('wlan0'),
-        );
+        $backend->startHotspot(new HotspotConfig('femus-setup', 'password1', Band::GHz2_4), new Device('wlan0'));
 
         $this->assertSame(
-            ['device', 'wifi', 'hotspot', 'ifname', 'wlan0', 'ssid', 'femus-setup', 'password', 'password1', 'band', 'bg'],
-            $runner->last()->arguments,
-        );
-    }
-
-    #[Test]
-    public function start_hotspot_without_a_band_omits_the_band_pair(): void
-    {
-        $runner = $this->runner();
-        $backend = new NmcliBackend($runner);
-
-        $backend->startHotspot(
-            new HotspotConfig('femus-setup', 'password1'),
-            new Device('wlan0'),
-        );
-
-        $this->assertSame(
-            ['device', 'wifi', 'hotspot', 'ifname', 'wlan0', 'ssid', 'femus-setup', 'password', 'password1'],
-            $runner->last()->arguments,
+            ['wifi.mode', 'ap', 'wifi.band', 'bg', 'ipv4.method'],
+            array_slice($this->addArguments($runner->commands), 13, 5),
         );
     }
 
@@ -441,14 +466,61 @@ final class NmcliBackendTest extends TestCase
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
 
-        $backend->startHotspot(
-            new HotspotConfig('femus-setup', 'password1', channel: 11),
-            new Device('wlan0'),
-        );
+        $backend->startHotspot(new HotspotConfig('femus-setup', 'password1', channel: 11), new Device('wlan0'));
 
         $this->assertSame(
-            ['device', 'wifi', 'hotspot', 'ifname', 'wlan0', 'ssid', 'femus-setup', 'password', 'password1', 'band', 'bg', 'channel', '11'],
-            $runner->last()->arguments,
+            ['wifi.mode', 'ap', 'wifi.band', 'bg', 'wifi.channel', '11', 'ipv4.method'],
+            array_slice($this->addArguments($runner->commands), 13, 7),
+        );
+    }
+
+    /** One "Hotspot" profile however often a hotspot is started — and never somebody's VPN of that name. */
+    #[Test]
+    public function start_hotspot_first_deletes_an_earlier_hotspot_profile_by_its_uuid(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show' => "Hotspot:aaaaaaaa-0000-0000-0000-000000000001:802-11-wireless\n"
+                . "Hotspot:aaaaaaaa-0000-0000-0000-000000000002:vpn\n",
+            'connection delete' => '',
+            'connection add' => '',
+            'connection up' => '',
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+
+        $this->assertSame(
+            [
+                'nmcli -t -f NAME,UUID,TYPE connection show',
+                'nmcli connection delete uuid aaaaaaaa-0000-0000-0000-000000000001',
+            ],
+            array_map(static fn (Command $command): string => $command->describe(), array_slice($runner->commands, 0, 2)),
+        );
+        $this->assertSame('add', $runner->commands[2]->arguments[1]);
+    }
+
+    /** A profile that could not be activated is of no use and used to pile up, one per refused call. */
+    #[Test]
+    public function start_hotspot_removes_the_profile_it_added_when_the_activation_fails(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show' => ['', "Hotspot:aaaaaaaa-0000-0000-0000-000000000003:802-11-wireless\n"],
+            'connection delete' => '',
+            'connection add' => '',
+            'connection up' => ['output' => '', 'exit' => 4, 'stderr' => 'Error: Connection activation failed.'],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        try {
+            $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed $exception) {
+            $this->assertStringNotContainsString('password1', $exception->getMessage());
+        }
+
+        $this->assertSame(
+            'nmcli connection delete uuid aaaaaaaa-0000-0000-0000-000000000003',
+            $runner->last()->describe(),
         );
     }
 

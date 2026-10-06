@@ -13,7 +13,8 @@
         "output": "femus-setup\n"
     },
     "connection delete": "Empty.txt",
-    "device wifi hotspot": "Empty.txt",
+    "connection add": "Empty.txt",
+    "connection up": "Empty.txt",
     "device wifi connect": "Empty.txt",
     "device disconnect": {
         "output": "",

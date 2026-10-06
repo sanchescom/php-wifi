@@ -423,8 +423,7 @@ wrapper around one. A command can also carry input for the child's stdin
 (`Command::$stdin`, masked in `toDisplay()` as `<<< '***'` when
 `$stdinIsSecret` is set) — the mechanism both Linux backends use below.
 
-**Where a passphrase reaches a process's own arguments, precisely, as of
-3.2.0:**
+**Where a passphrase reaches a process's own arguments, precisely:**
 
 - **Neither Linux backend puts a `connect()` passphrase in any process's
   arguments.** `NmcliBackend::connect()` passes it to `nmcli --ask` on
@@ -436,11 +435,13 @@ wrapper around one. A command can also carry input for the child's stdin
   claim for the `wifi` process's own argv; `nmcli` itself still carried the
   secret for the duration of that call. 3.2 closes that window on both
   Linux backends.
-- **`NmcliBackend::startHotspot()` still passes the hotspot passphrase as a
-  plain argument** (`nmcli device wifi hotspot … password <secret>`) —
-  `nmcli` has no stdin mode for that subcommand. Closing this is a 3.3
-  candidate (a keyfile, the way the Windows backend already avoids the
-  equivalent problem for `netsh`); see ROADMAP.md.
+- **`NmcliBackend::startHotspot()` no longer passes the hotspot passphrase
+  as an argument, since 3.3.0.** `nmcli device wifi hotspot … password
+  <secret>` has no stdin mode, so the hotspot is raised in two steps: `nmcli
+  connection add` creates the access-point profile without a passphrase, and
+  `nmcli --ask connection up` activates it and reads the passphrase from
+  stdin. No file is written and no root is needed beyond what the old command
+  needed; NetworkManager stores the passphrase in the profile, as before.
 - **`WpaCliBackend::startHotspot()`'s passphrase never reaches any
   process's arguments.** It is written to a `hostapd` config file
   (`Backend\Linux\HostapdConfig`, created via `tempnam()` at mode `0600`,

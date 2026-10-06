@@ -84,13 +84,7 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         $stdinIsSecret = false;
 
         if ($credentials->password !== null) {
-            $listing = $this->runner->run($this->profileListCommand());
-
-            if ($listing->isSuccessful()) {
-                foreach ($this->wifiProfileUuids($listing->stdout, $ssid) as $uuid) {
-                    $this->runner->run($this->deleteCommand($uuid));
-                }
-            }
+            $this->deleteWifiProfiles($ssid);
 
             $arguments[] = '--ask';
             $stdin = $credentials->password . "\n";
@@ -182,6 +176,20 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         }
     }
 
+    /** Deletes every Wi-Fi profile named $name, by UUID. Never throws: there usually is none. */
+    private function deleteWifiProfiles(string $name): void
+    {
+        $listing = $this->runner->run($this->profileListCommand());
+
+        if (!$listing->isSuccessful()) {
+            return;
+        }
+
+        foreach ($this->wifiProfileUuids($listing->stdout, $name) as $uuid) {
+            $this->runner->run($this->deleteCommand($uuid));
+        }
+    }
+
     private function profileListCommand(): Command
     {
         return new Command('nmcli', ['-t', '-f', 'NAME,UUID,TYPE', 'connection', 'show'], ['LANG' => 'C']);
@@ -218,6 +226,20 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
     }
 
     /**
+     * The passphrase goes to `nmcli` on stdin, never in argv. `nmcli device
+     * wifi hotspot` has no way to do that — its `password` is an argument —
+     * so the hotspot is raised in two steps instead: `connection add`
+     * creates the access-point profile with no passphrase in it, and
+     * `--ask connection up` activates it, at which point NetworkManager asks
+     * for the missing secret and `--ask` reads it from standard input, the
+     * same mechanism {@see self::connect()} uses. Measured on the Pi: the
+     * access point comes up and NetworkManager stores the passphrase in the
+     * profile, as `device wifi hotspot` did.
+     *
+     * Any Wi-Fi profile already called "Hotspot" is deleted first, so there
+     * is one such profile however often this is called, and a profile whose
+     * activation fails is deleted again instead of being left behind.
+     *
      * `nmcli` accepts a channel only together with a band, so a channel
      * given without one brings the band it belongs to
      * ({@see HotspotConfig::resolvedBand()}). There is no country to pass:
@@ -242,30 +264,44 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
             Band::GHz6 => throw new UnsupportedOperation('NmcliBackend does not support a 6 GHz hotspot.'),
         };
 
-        $arguments = [
-            'device',
-            'wifi',
-            'hotspot',
-            'ifname',
-            $device->name,
-            'ssid',
-            $config->ssid,
-            'password',
-            $config->password,
-        ];
-        $secretIndexes = [count($arguments) - 1];
+        $settings = ['wifi.mode', 'ap'];
 
         if ($band !== null) {
-            $arguments[] = 'band';
-            $arguments[] = $band;
+            $settings = [...$settings, 'wifi.band', $band];
         }
 
         if ($config->channel !== null) {
-            $arguments[] = 'channel';
-            $arguments[] = (string) $config->channel;
+            $settings = [...$settings, 'wifi.channel', (string) $config->channel];
         }
 
-        $this->run(new Command('nmcli', $arguments, ['LANG' => 'C'], $secretIndexes));
+        $settings = [...$settings, 'ipv4.method', 'shared', 'ipv6.method', 'ignore', 'wifi-sec.key-mgmt', 'wpa-psk'];
+
+        $this->deleteWifiProfiles(self::HOTSPOT_CONNECTION_NAME);
+
+        $this->run(new Command(
+            'nmcli',
+            [
+                'connection', 'add', 'type', 'wifi', 'ifname', $device->name,
+                'con-name', self::HOTSPOT_CONNECTION_NAME, 'autoconnect', 'no', 'ssid', $config->ssid,
+                '--', ...$settings,
+            ],
+            ['LANG' => 'C'],
+        ));
+
+        try {
+            $this->run(new Command(
+                'nmcli',
+                ['-w', '20', '--ask', 'connection', 'up', self::HOTSPOT_CONNECTION_NAME],
+                ['LANG' => 'C'],
+                [],
+                $config->password . "\n",
+                true,
+            ));
+        } catch (CommandFailed $exception) {
+            $this->deleteWifiProfiles(self::HOTSPOT_CONNECTION_NAME);
+
+            throw $exception;
+        }
 
         return new Hotspot(self::HOTSPOT_CONNECTION_NAME, $config->ssid, $device);
     }
