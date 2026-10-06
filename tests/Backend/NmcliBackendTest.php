@@ -6,6 +6,7 @@ namespace Sanchescom\WiFi\Test\Backend;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Sanchescom\WiFi\Backend\NmcliBackend;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
@@ -15,6 +16,8 @@ use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
 use Sanchescom\WiFi\Exception\WrongPassphrase;
 use Sanchescom\WiFi\Shell\Command;
+use Sanchescom\WiFi\Shell\CommandResult;
+use Sanchescom\WiFi\Shell\CommandRunner;
 use Sanchescom\WiFi\Shell\Os;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Value\Band;
@@ -644,33 +647,85 @@ final class NmcliBackendTest extends TestCase
 
     /**
      * NetworkManager runs the hotspot's dnsmasq itself; the portal is one
-     * line in a file that dnsmasq reads. It has to be there before the
-     * hotspot comes up and must not outlive it.
+     * line in a file that dnsmasq reads when it starts. Every other shared
+     * connection's dnsmasq reads that directory too, so the file is there
+     * while the hotspot is being activated and gone the moment it is up.
      */
     #[Test]
-    public function a_captive_portal_is_a_dnsmasq_file_that_lives_as_long_as_the_hotspot(): void
+    public function a_captive_portal_is_a_dnsmasq_file_that_exists_only_while_the_hotspot_is_activated(): void
     {
         $directory = sys_get_temp_dir() . '/php-wifi-dnsmasq-test-' . bin2hex(random_bytes(8));
         mkdir($directory);
         $file = $directory . '/php-wifi-captive.conf';
-        $backend = new NmcliBackend($this->runner(), $directory);
+
+        $runner = new class ($this->runner(), $file) implements CommandRunner {
+            /** @var array<string, string|false> what the file held as each nmcli subcommand ran */
+            public array $seen = [];
+
+            public function __construct(private readonly CommandRunner $inner, private readonly string $file)
+            {
+            }
+
+            public function run(Command $command): CommandResult
+            {
+                foreach (['connection add', 'connection up', 'connection down'] as $step) {
+                    if (str_contains($command->describe(), $step)) {
+                        $this->seen[$step] = is_file($this->file) ? file_get_contents($this->file) : false;
+                    }
+                }
+
+                return $this->inner->run($command);
+            }
+        };
+        $backend = new NmcliBackend($runner, $directory);
 
         try {
             $backend->startHotspot(
                 new HotspotConfig('femus-setup', 'password1', captivePortal: true),
                 new Device('wlan0'),
             );
-            $this->assertSame("address=/#/10.42.0.1\n", file_get_contents($file));
 
+            $this->assertSame("address=/#/10.42.0.1\n", $runner->seen['connection up']);
+            $this->assertFileDoesNotExist($file, 'the file must not outlive the activation');
+
+            // A file a killed process left behind goes when the hotspot is stopped…
+            file_put_contents($file, "address=/#/10.42.0.1\n");
             $backend->stopHotspot();
             $this->assertFileDoesNotExist($file);
 
-            // A hotspot started without a portal must not inherit one left behind by a crash.
+            // …and a hotspot started without a portal must not inherit one.
             file_put_contents($file, "address=/#/10.42.0.1\n");
             $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
-            $this->assertFileDoesNotExist($file);
+            $this->assertFalse($runner->seen['connection up']);
         } finally {
             @unlink($file);
+            rmdir($directory);
+        }
+    }
+
+    /** A file that cannot be removed keeps hijacking DNS; that is reported, never swallowed. */
+    #[Test]
+    public function a_captive_portal_file_that_cannot_be_removed_is_an_error(): void
+    {
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            $this->markTestSkipped('root can remove a file from a read-only directory');
+        }
+
+        $directory = sys_get_temp_dir() . '/php-wifi-dnsmasq-test-' . bin2hex(random_bytes(8));
+        mkdir($directory);
+        $file = $directory . '/php-wifi-captive.conf';
+        file_put_contents($file, "address=/#/10.42.0.1\n");
+        chmod($directory, 0500);
+        $backend = new NmcliBackend($this->runner(), $directory);
+
+        try {
+            $backend->stopHotspot();
+            $this->fail('Expected RuntimeException to be thrown.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('delete it by hand', $exception->getMessage());
+        } finally {
+            chmod($directory, 0700);
+            unlink($file);
             rmdir($directory);
         }
     }

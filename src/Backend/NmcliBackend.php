@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\Backend;
 
+use RuntimeException;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
@@ -356,17 +357,16 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         // profile of another type, and the passphrase must reach this one and no other.
         $uuid = self::uuid();
 
-        $this->run(new Command(
-            'nmcli',
-            [
-                'connection', 'add', 'type', 'wifi', 'ifname', $device->name,
-                'con-name', self::HOTSPOT_CONNECTION_NAME, 'autoconnect', 'no', 'ssid', $config->ssid,
-                '--', 'connection.uuid', $uuid, ...$settings,
-            ],
-            ['LANG' => 'C'],
-        ));
-
         try {
+            $this->run(new Command(
+                'nmcli',
+                [
+                    'connection', 'add', 'type', 'wifi', 'ifname', $device->name,
+                    'con-name', self::HOTSPOT_CONNECTION_NAME, 'autoconnect', 'no', 'ssid', $config->ssid,
+                    '--', 'connection.uuid', $uuid, ...$settings,
+                ],
+                ['LANG' => 'C'],
+            ));
             $this->run(new Command(
                 'nmcli',
                 ['-w', '20', '--ask', 'connection', 'up', 'uuid', $uuid],
@@ -377,9 +377,11 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
             ));
         } catch (CommandFailed $exception) {
             $this->runner->run($this->deleteCommand($uuid));
-            $this->setCaptivePortal(false);
 
             throw $exception;
+        } finally {
+            // dnsmasq has read the file by now, or never will.
+            $this->setCaptivePortal(false);
         }
 
         return new Hotspot(self::HOTSPOT_CONNECTION_NAME, $config->ssid, $device);
@@ -398,20 +400,31 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
      * A captive portal needs every DNS name to resolve to this device.
      * NetworkManager starts the `dnsmasq` that serves the hotspot itself, so
      * the one line that does it goes into a file in the directory that
-     * `dnsmasq` reads, before the hotspot comes up. The file must not outlive
-     * the hotspot — it would apply to every later shared connection — so it
-     * is removed whenever a hotspot is started without a portal, stopped, or
-     * fails to start. Writing there takes root.
+     * `dnsmasq` reads when it starts.
      *
-     * @throws UnsupportedOperation when the file cannot be written
+     * That directory is read by the `dnsmasq` of every shared connection, not
+     * only the hotspot's, so the file is there for as short a time as
+     * possible: written just before the hotspot is activated and removed as
+     * soon as the activation has returned, whatever its outcome — the
+     * running `dnsmasq` keeps what it read. A shared connection of another
+     * kind that NetworkManager activates in that same moment would pick the
+     * line up too; nothing here can prevent that. `stopHotspot()` and a start
+     * without a portal remove a file a killed process may have left.
+     *
+     * @throws UnsupportedOperation when the file cannot be written, which takes root
+     * @throws RuntimeException when the file cannot be removed again
      */
     private function setCaptivePortal(bool $enabled): void
     {
         $file = $this->dnsmasqSharedDirectory . '/' . self::CAPTIVE_PORTAL_FILE;
 
         if (!$enabled) {
-            if (is_file($file)) {
-                @unlink($file);
+            if (is_file($file) && !@unlink($file) && is_file($file)) {
+                throw new RuntimeException(sprintf(
+                    'Could not remove "%s". While it exists, every connection NetworkManager shares answers all'
+                    . ' DNS queries with this device; delete it by hand.',
+                    $file,
+                ));
             }
 
             return;
