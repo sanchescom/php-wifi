@@ -1673,6 +1673,9 @@ final class WpaCliBackendTest extends TestCase
             $this->assertNotSame('kill', $command->program);
             $this->assertNotSame('ps', $command->program);
         }
+
+        // Nor is anything deleted there: the name could lead anywhere.
+        $this->assertFileExists($this->runtimeDir . self::HOSTAPD_PID_FILE);
     }
 
     #[Test]

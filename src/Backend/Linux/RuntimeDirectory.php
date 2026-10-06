@@ -108,15 +108,8 @@ final class RuntimeDirectory
             return posix_geteuid();
         }
 
-        // Without ext-posix, a file this process creates carries its user id.
-        $probe = tempnam(sys_get_temp_dir(), 'php-wifi-uid-');
-
-        if ($probe === false) {
-            return null;
-        }
-
-        $owner = fileowner($probe);
-        unlink($probe);
+        // Without ext-posix: on Linux the kernel reports the process's own user as the owner of /proc/self.
+        $owner = @fileowner('/proc/self');
 
         return $owner === false ? null : $owner;
     }

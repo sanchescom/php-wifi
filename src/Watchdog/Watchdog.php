@@ -121,7 +121,13 @@ final class Watchdog
      */
     public static function forgetHotspot(?string $stateFile = null): void
     {
-        $stateFile ??= self::defaultStateFile();
+        if ($stateFile === null) {
+            if (!(new RuntimeDirectory())->isSafe()) {
+                return;
+            }
+
+            $stateFile = self::defaultStateFile();
+        }
 
         if (is_file($stateFile)) {
             @unlink($stateFile);
@@ -338,7 +344,7 @@ final class Watchdog
         $this->hotspotRaisedAt = null;
         $this->persisted = false;
 
-        if (is_file($this->stateFile)) {
+        if ($this->runtimeDirectory?->isSafe() !== false && is_file($this->stateFile)) {
             $this->suppressingWarnings(fn (): bool => unlink($this->stateFile));
         }
     }

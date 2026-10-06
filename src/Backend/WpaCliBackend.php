@@ -639,7 +639,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
             }
         }
 
-        if (file_exists($pidFile)) {
+        if ($this->runtimeDirectory->isSafe() && file_exists($pidFile)) {
             unlink($pidFile);
         }
     }

@@ -526,6 +526,31 @@ final class WatchdogTest extends TestCase
         }
     }
 
+    /** The default state file is deleted only from a directory nobody else could have prepared. */
+    #[Test]
+    public function forget_hotspot_deletes_nothing_from_a_runtime_directory_others_can_write_to(): void
+    {
+        $directory = sys_get_temp_dir() . '/php-wifi-watchdog-test-' . bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+        $stateFile = $directory . '/watchdog.json';
+        file_put_contents($stateFile, '{"hotspotRaisedAt":1}');
+        putenv('WIFI_RUNTIME_DIR=' . $directory);
+
+        try {
+            chmod($directory, 0777);
+            Watchdog::forgetHotspot();
+            $this->assertFileExists($stateFile);
+
+            chmod($directory, 0700);
+            Watchdog::forgetHotspot();
+            $this->assertFileDoesNotExist($stateFile);
+        } finally {
+            putenv('WIFI_RUNTIME_DIR');
+            @unlink($stateFile);
+            rmdir($directory);
+        }
+    }
+
     /** A raise time left by a hotspot that is no longer up describes nothing; a tick that finds none drops it. */
     #[Test]
     public function a_tick_that_finds_no_hotspot_removes_a_leftover_state_file(): void
