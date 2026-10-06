@@ -615,7 +615,9 @@ final class WiFiCli extends CLI
                 ?? 'Install qrencode to get a QR code for joining the setup network here.') . PHP_EOL;
 
             $server = proc_open(
-                [PHP_BINARY, '-S', '0.0.0.0:' . $port, dirname(__DIR__, 2) . '/bin/wifi-portal.php'],
+                // Bound to the hotspot's own address: the page changes the device's network and has no
+                // login, so it must not answer on any other interface the device has.
+                [PHP_BINARY, '-S', HotspotConfig::ADDRESS . ':' . $port, dirname(__DIR__, 2) . '/bin/wifi-portal.php'],
                 [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => STDERR],
                 $pipes,
                 null,

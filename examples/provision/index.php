@@ -23,6 +23,7 @@ if (!is_file($autoload)) {
 require $autoload;
 
 use Sanchescom\WiFi\Backend\SupportsHotspot;
+use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\WiFiException;
 use Sanchescom\WiFi\Value\Band;
 use Sanchescom\WiFi\Value\Credentials;
@@ -188,7 +189,20 @@ if ($wifi !== null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 sleep(3);
             }
 
-            $wifi->connect($ssid, $credentials);
+            // NetworkManager's list of networks can still be empty for a moment after the AP has
+            // gone (measured on the Pi), so "not found" is only believed after a few scans.
+            for ($scan = 1;; $scan++) {
+                try {
+                    $wifi->connect($ssid, $credentials);
+                    break;
+                } catch (NetworkNotFound $exception) {
+                    if ($scan >= 6) {
+                        throw $exception;
+                    }
+
+                    sleep(2);
+                }
+            }
 
             $donePath = getenv('PROVISION_DONE') ?: '/run/php-wifi-provision/done';
 

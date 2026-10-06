@@ -33,6 +33,11 @@ final class Portal
     /** Seconds the radio is given to leave access-point mode before it scans and joins. */
     private const RADIO_SETTLE_SECONDS = 3;
 
+    /** How often, and how many seconds apart, the network is looked for once a hotspot has been stopped. */
+    private const SCANS_AFTER_HOTSPOT = 8;
+
+    private const SCAN_INTERVAL_SECONDS = 2;
+
     public function __construct(
         private readonly WiFi $wifi,
         private readonly ?State $state = null,
@@ -159,16 +164,47 @@ final class Portal
         return Response::json($result, $result['ok'] ? 200 : 422);
     }
 
+    /**
+     * The network as the scan shows it. Right after a hotspot has gone down
+     * one look is not enough: NetworkManager empties its list of networks
+     * when the radio leaves access-point mode and fills it again from a scan
+     * of its own, and for a moment in between `nmcli device wifi list` prints
+     * nothing at all — three seconds after the stop on one run on the Pi, not
+     * on the next. So the scan is repeated until the network is in it.
+     *
+     * @throws NetworkNotFound when the network is in none of $scans scans
+     */
+    private function find(string $ssid, int $scans): Network
+    {
+        for ($scan = 1;; $scan++) {
+            try {
+                return $this->wifi->scan()->bySsid($ssid);
+            } catch (NetworkNotFound $exception) {
+                if ($scan >= $scans) {
+                    throw $exception;
+                }
+
+                $this->clock->sleep(self::SCAN_INTERVAL_SECONDS);
+            }
+        }
+    }
+
     /** @return array{0: ?string, 1: ?string} reason and message, both null on success */
     private function join(string $ssid, string $password): array
     {
         try {
+            $scans = 1;
+
             if ($this->wifi->supports(SupportsHotspot::class) && $this->wifi->isHotspotActive()) {
                 $this->wifi->stopHotspot();
                 $this->clock->sleep(self::RADIO_SETTLE_SECONDS);
+                $scans = self::SCANS_AFTER_HOTSPOT;
             }
 
-            $this->wifi->connect($ssid, $password === '' ? Credentials::none() : Credentials::password($password));
+            $this->wifi->connect(
+                $this->find($ssid, $scans),
+                $password === '' ? Credentials::none() : Credentials::password($password),
+            );
 
             return [null, null];
         } catch (WrongPassphrase $exception) {

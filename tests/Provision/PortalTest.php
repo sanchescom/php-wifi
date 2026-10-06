@@ -63,6 +63,53 @@ final class PortalTest extends ProvisionTestCase
         $this->assertSame(1_003, $this->clock->now());
     }
 
+    /**
+     * Measured on the Pi: three seconds after `connection down`, `nmcli
+     * device wifi list` printed nothing — NetworkManager had emptied its
+     * list and not yet filled it again — and a right passphrase was answered
+     * with "no such network".
+     */
+    #[Test]
+    public function a_scan_that_comes_back_empty_right_after_the_hotspot_is_repeated(): void
+    {
+        $runner = $this->runner([
+            'connection show --active' => "Hotspot\n",
+            'device wifi list' => ['', '', self::FIXTURES . '/Networks.txt'],
+        ]);
+        $portal = new Portal($this->wifi($runner), $this->state(), $this->clock);
+
+        $result = $portal->connect('AlphaNet-foiEmE', 'hunter2-hunter2');
+
+        $this->assertTrue($result['ok'], (string) $result['message']);
+        // Three seconds for the radio, then two before each of the two repeats.
+        $this->assertSame(1_007, $this->clock->now());
+    }
+
+    #[Test]
+    public function a_network_that_never_shows_up_after_the_hotspot_is_given_up_on(): void
+    {
+        $runner = $this->runner(['connection show --active' => "Hotspot\n", 'device wifi list' => '']);
+        $portal = new Portal($this->wifi($runner), $this->state(), $this->clock);
+
+        $result = $portal->connect('AlphaNet-foiEmE', 'hunter2-hunter2');
+
+        $this->assertSame('network_not_found', $result['reason']);
+        $this->assertSame(1_000 + 3 + 7 * 2, $this->clock->now());
+    }
+
+    /** With no hotspot in the way the list is what it is; a mistyped name must not cost a quarter of a minute. */
+    #[Test]
+    public function without_a_hotspot_one_scan_decides(): void
+    {
+        $runner = $this->runner(['device wifi list' => '']);
+        $portal = new Portal($this->wifi($runner), $this->state(), $this->clock);
+
+        $portal->connect('AlphaNet-foiEmE');
+
+        $this->assertSame(1_000, $this->clock->now());
+        $this->assertCount(1, array_filter(self::commands($runner), static fn ($c) => str_contains($c, 'wifi list')));
+    }
+
     #[Test]
     public function a_wrong_passphrase_is_named_as_such(): void
     {
