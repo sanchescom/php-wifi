@@ -665,8 +665,14 @@ final class WpaCliBackendTest extends TestCase
         $this->assertSame(['list_networks', 'select_network 5', 'status'], self::wpaCliCalls($runner));
     }
 
+    /**
+     * Measured on the Pi: wpa_supplicant takes the value from the first
+     * quote to the last and reads nothing inside as an escape. `"a\"b"` was
+     * stored as `a\"b`, backslash included, so the escaping this backend used
+     * to apply made such a network unjoinable.
+     */
     #[Test]
-    public function connect_quotes_an_ssid_containing_quotes_and_a_backslash_so_it_round_trips(): void
+    public function connect_passes_quotes_and_backslashes_in_an_ssid_and_a_passphrase_through_as_they_are(): void
     {
         $runner = self::runner([
             'list_networks' => '',
@@ -677,18 +683,13 @@ final class WpaCliBackendTest extends TestCase
         ]);
         $backend = new WpaCliBackend($runner);
 
-        $ssid = "He said \"hi\"\\";
+        $backend->connect('He said "hi"\\', Credentials::password('pa"ss\\word'), new Device('wlan0'));
 
-        $backend->connect($ssid, Credentials::none(), new Device('wlan0'));
-
-        $ssidCommand = $runner->commands[3];
-        $this->assertSame(['-i', 'wlan0', 'set_network', '3', 'ssid'], array_slice($ssidCommand->arguments, 0, 5));
-        $ssidLine = 'set_network 3 ssid ' . $ssidCommand->arguments[5];
-
-        $quoted = substr($ssidLine, strlen('set_network 3 ssid '));
-        $this->assertStringStartsWith('"', $quoted);
-        $this->assertStringEndsWith('"', $quoted);
-        $this->assertSame($ssid, self::unescapeWpaSupplicantString($quoted));
+        $script = array_values(array_filter($runner->commands, static fn (Command $c): bool => $c->stdin !== null))[0];
+        $this->assertSame(
+            "set_network 3 ssid \"He said \"hi\"\\\"\nset_network 3 psk \"pa\"ss\\word\"\nquit\n",
+            $script->stdin,
+        );
     }
 
     #[Test]
@@ -1606,12 +1607,13 @@ final class WpaCliBackendTest extends TestCase
 
     /** A network's name is chosen by whoever set it up, and it is a line of the same script. */
     #[Test]
-    public function connect_never_lets_a_line_break_in_the_ssid_reach_wpa_cli(): void
+    public function connect_never_lets_a_control_character_in_the_ssid_reach_wpa_cli(): void
     {
         $runner = self::runner([]);
         $backend = new WpaCliBackend($runner, 'wlan0');
 
-        foreach (["Cafe\nterminate", "Cafe\rterminate", "Cafe\0"] as $ssid) {
+        // \x15 is Ctrl-U, which wipes the line typed so far; \x7f deletes a character; a tab completes.
+        foreach (["Cafe\nterminate", "Cafe\rterminate", "Cafe\0", "x\x15terminate", "abc\x7f", "a\tb"] as $ssid) {
             foreach ([Credentials::password('password1'), Credentials::none()] as $credentials) {
                 try {
                     $backend->connect($ssid, $credentials, new Device('wlan0'));
@@ -1981,23 +1983,5 @@ final class WpaCliBackendTest extends TestCase
     private static function searchPath(): string
     {
         return '/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin';
-    }
-
-    private static function unescapeWpaSupplicantString(string $quoted): string
-    {
-        $inner = substr($quoted, 1, -1);
-        $result = '';
-
-        for ($i = 0, $length = strlen($inner); $i < $length; $i++) {
-            if ($inner[$i] === '\\' && $i + 1 < $length) {
-                $result .= $inner[$i + 1];
-                $i++;
-                continue;
-            }
-
-            $result .= $inner[$i];
-        }
-
-        return $result;
     }
 }

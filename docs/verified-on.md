@@ -1080,8 +1080,27 @@ code (19 lines of it in the journal) now that `qrencode` is installed.
    [exit 1]
    ```
 
-3. **The passphrase could carry commands.** Not seen on the device: found by
-   the security review of the commit for the previous item. See the CHANGELOG.
+3. **An SSID or a passphrase could carry commands.** Found by the security
+   review of the commit for the previous item, then measured: the values are
+   lines of the script `wpa_cli` reads from stdin through a line editor. With
+   a network block `N` and a script line whose value was `x`, Ctrl-U,
+   `set_network N priority 7`:
+
+   ```
+   reply: OK
+   priority now: 7
+   ```
+
+   The same run showed that the backslash escaping this backend applied to
+   `"` and `\` was never right:
+
+   ```
+   raw quote inside           "a"b"      stored ssid:  " a " b "
+   backslash-escaped quote    "a\"b"     stored ssid:  " a \ " b "
+   ```
+
+   An SSID with a control character is now refused, a passphrase has to be
+   8–63 printable ASCII characters, and neither is escaped any more.
 
 ## Not verified
 

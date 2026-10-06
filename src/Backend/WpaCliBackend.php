@@ -253,7 +253,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * merely enabled block could lose to a still-associated old one, which
      * would also make COMPLETED meaningless.
      *
-     * @throws InvalidArgument when the SSID contains a line break
+     * @throws InvalidArgument when the SSID contains a control character
      * @throws WrongPassphrase when the passphrase is refused, or cannot be one (not 8–63 printable ASCII characters)
      * @throws NoAddress when the join worked and the DHCP client then failed
      */
@@ -261,11 +261,14 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     {
         $interface = $device->name;
 
-        // The SSID and the passphrase become lines of a script wpa_cli reads from stdin, so a line
-        // break in either would be the start of a command of the sender's choosing, run as root — and
-        // on the setup page the sender is whoever holds the phone, or whoever named a network in range.
-        if (preg_match('/[\r\n\0]/', $ssid) === 1) {
-            throw new InvalidArgument('WpaCliBackend cannot join a network whose name contains a line break.');
+        // The SSID and the passphrase become lines of a script wpa_cli reads from stdin, through a
+        // line editor. A line break in either starts a new command, and the editor acts on other
+        // control bytes as on keys: Ctrl-U wipes the line typed so far, DEL the last character
+        // (measured on the Pi: an SSID carrying Ctrl-U replaced the command with one of its own). The
+        // commands run as root, and the sender is whoever holds the phone, or whoever named a network
+        // in range. So no control byte gets through; bytes above 0x7f, a name in UTF-8, do.
+        if (preg_match('/[\x00-\x1f\x7f]/', $ssid) === 1) {
+            throw new InvalidArgument('WpaCliBackend cannot join a network whose name contains a control character.');
         }
 
         // A WPA passphrase is 8–63 printable ASCII characters. wpa_supplicant refuses to store anything
@@ -943,17 +946,19 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     }
 
     /**
-     * wpa_supplicant's `ssid`/`psk` network-block values are C-style quoted
-     * strings: a literal `"` or `\` inside the value must be backslash
-     * escaped, in that order (escaping `\` first, then `"`, so the
-     * backslash introduced by quote-escaping is not itself re-escaped).
+     * A `ssid`/`psk` value as `wpa_supplicant` takes it: between a pair of
+     * double quotes, with nothing inside escaped. It reads the value from the
+     * first quote to the last one on the line and takes every byte in between
+     * as it is — a `"` or a `\` included. Escaping them, as this method did
+     * until 3.3.0, stored the backslashes as part of the name or the
+     * passphrase (measured on the Pi: `"a\"b"` was stored as `a\"b`), so a
+     * network or a passphrase containing either character could not be
+     * joined. What must never be inside is a control byte, and
+     * {@see self::connect()} sees to that.
      */
     private static function quote(string $value): string
     {
-        $escaped = str_replace('\\', '\\\\', $value);
-        $escaped = str_replace('"', '\\"', $escaped);
-
-        return '"' . $escaped . '"';
+        return '"' . $value . '"';
     }
 
     /** One command in argument mode (`wpa_cli -i <iface> <command> <args...>`), which fails at once when no `wpa_supplicant` listens. */

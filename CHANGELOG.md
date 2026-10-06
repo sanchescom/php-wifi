@@ -34,14 +34,15 @@ Pi on both Linux backends — see [docs/verified-on.md](docs/verified-on.md).
   country, which NetworkManager has no setting for.
 
 ### Security
-- **A line break in an SSID or a passphrase could add commands to the script
-  `WpaCliBackend::connect()` feeds to `wpa_cli`**, which usually runs as root.
-  Both are lines of that script; quotes and backslashes were escaped, line
-  breaks were not. This has been there since `WpaCliBackend` was added in
-  3.2.0 and matters to anyone who passes on an SSID or a passphrase they did
-  not choose themselves — the provisioning demo does. An SSID with a line
-  break is now `InvalidArgument`, and a passphrase that is not 8–63 printable
-  ASCII characters is `WrongPassphrase`, both before any command runs.
+- **A control character in an SSID or a passphrase could add commands to the
+  script `WpaCliBackend::connect()` feeds to `wpa_cli`**, which usually runs
+  as root. Both are lines of that script, read through a line editor: a line
+  break starts a new command, and Ctrl-U wipes the one typed so far (measured
+  on the Pi). This has been there since `WpaCliBackend` was added in 3.2.0 and
+  matters to anyone who passes on an SSID or a passphrase they did not choose
+  themselves — the provisioning demo does. An SSID with a control character
+  is now `InvalidArgument`, and a passphrase that is not 8–63 printable ASCII
+  characters is `WrongPassphrase`, both before any command runs.
 - **`NmcliBackend::startHotspot()` no longer passes the hotspot passphrase as
   an argument.** `nmcli device wifi hotspot` has no other way to take it, so
   the hotspot is now a profile added without a passphrase and activated with
@@ -54,6 +55,10 @@ Pi on both Linux backends — see [docs/verified-on.md](docs/verified-on.md).
   interface puts the radio back into station mode; `hostapd` and `dnsmasq`
   live on. The check now also asks `iw` whether an interface is of type AP,
   and `startHotspot()` first kills daemons left over from such a hotspot.
+- **A network name or a passphrase containing `"` or `\` could not be joined
+  on `WpaCliBackend`.** Both were backslash-escaped, and `wpa_supplicant`
+  does not read escapes there: it stored the backslashes as part of the
+  value. They are now passed through as they are.
 - `NmcliBackend::startHotspot()` leaves one `Hotspot` profile however often it
   is called, and none after a start that failed.
 - `examples/provision`: a join right after the hotspot went down could fail
