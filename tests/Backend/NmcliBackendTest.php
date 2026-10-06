@@ -10,8 +10,10 @@ use Sanchescom\WiFi\Backend\NmcliBackend;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
+use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
+use Sanchescom\WiFi\Exception\WrongPassphrase;
 use Sanchescom\WiFi\Shell\Command;
 use Sanchescom\WiFi\Shell\Os;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
@@ -198,6 +200,112 @@ final class NmcliBackendTest extends TestCase
 
         $this->assertCount(2, $runner->commands);
         $this->assertSame('connect', $runner->last()->arguments[5]);
+    }
+
+    /**
+     * stdout and exit code as `nmcli -w 10 --ask device wifi connect` gave
+     * them on the Pi for a wrong passphrase: the secret is asked for a
+     * second time, in different words, and then the wait runs out.
+     */
+    #[Test]
+    public function connect_reports_a_wrong_passphrase(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show' => '',
+            'device wifi connect' => [
+                'output' => self::FIXTURES . '/ConnectWrongPassphrase.txt',
+                'exit' => 3,
+                'stderr' => "Error: Timeout 10 sec expired.\n",
+            ],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        try {
+            $backend->connect('BELL340', Credentials::password('typo-typo'), new Device('wlan0'));
+            $this->fail('Expected WrongPassphrase to be thrown.');
+        } catch (WrongPassphrase $exception) {
+            $this->assertSame('The passphrase for "BELL340" was not accepted.', $exception->getMessage());
+            $this->assertSame(3, $exception->result->exitCode);
+        }
+    }
+
+    /** A timeout alone says nothing about the passphrase: the first request for it is always printed. */
+    #[Test]
+    public function connect_that_times_out_without_a_second_request_for_the_secret_stays_a_plain_failure(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show' => '',
+            'device wifi connect' => [
+                'output' => "Push of the WPS button on the router or a password is required to access the wireless"
+                    . " network 'BELL340'.\nPassword (802-11-wireless-security.psk): \n",
+                'exit' => 3,
+                'stderr' => "Error: Timeout 10 sec expired.\n",
+            ],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        try {
+            $backend->connect('BELL340', Credentials::password('right-one'), new Device('wlan0'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed $exception) {
+            $this->assertSame(CommandFailed::class, $exception::class);
+        }
+    }
+
+    /** Reply and exit code as measured on the Pi. */
+    #[Test]
+    public function connect_reports_a_network_that_is_not_there(): void
+    {
+        $runner = new FakeCommandRunner([
+            'device wifi connect' => [
+                'output' => '',
+                'exit' => 10,
+                'stderr' => "Error: No network with SSID 'NoSuchNet20' found.\n",
+            ],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $this->expectException(NetworkNotFound::class);
+        $this->expectExceptionMessage('No network named "NoSuchNet20" was found in the scan.');
+
+        $backend->connect('NoSuchNet20', Credentials::none(), new Device('wlan0'));
+    }
+
+    /** NetworkManager's wording for activation failure reason 5; not reproduced on hardware. */
+    #[Test]
+    public function connect_reports_no_address(): void
+    {
+        $runner = new FakeCommandRunner([
+            'device wifi connect' => [
+                'output' => '',
+                'exit' => 4,
+                'stderr' => 'Error: Connection activation failed: (5) IP configuration could not be reserved'
+                    . " (no available address, timeout, etc.).\n",
+            ],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $this->expectException(NoAddress::class);
+        $this->expectExceptionMessage('Joined "Home", but the network gave the device no address.');
+
+        $backend->connect('Home', Credentials::none(), new Device('wlan0'));
+    }
+
+    #[Test]
+    public function connect_keeps_permission_denied_as_it_is(): void
+    {
+        $runner = new FakeCommandRunner([
+            'device wifi connect' => [
+                'output' => '',
+                'exit' => 4,
+                'stderr' => "Error: Failed to add/activate new connection: Not authorized to control networking.\n",
+            ],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $this->expectException(PermissionDenied::class);
+
+        $backend->connect('Home', Credentials::none(), new Device('wlan0'));
     }
 
     #[Test]

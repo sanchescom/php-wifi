@@ -12,7 +12,9 @@ use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
+use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
+use Sanchescom\WiFi\Exception\WrongPassphrase;
 use Sanchescom\WiFi\Parser\Iw\DevParser;
 use Sanchescom\WiFi\Parser\WpaCli\ListNetworksParser;
 use Sanchescom\WiFi\Parser\WpaCli\Printf;
@@ -262,8 +264,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         if ($credentials->password === null && $matching !== []) {
             // ponytail: joins the first block only; duplicates come from hand-edited configs, since
             // this method never leaves any behind. Try each in turn if that ever matters.
-            $this->joinBlock($interface, $matching[0], $blocks);
-            $this->requestAddress($device);
+            $this->joinBlock($interface, $matching[0], $blocks, $ssid);
+            $this->requestAddress($device, $ssid);
 
             return;
         }
@@ -281,7 +283,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
                 $this->wpaCli($interface, 'set_network', (string) $id, 'key_mgmt', 'NONE');
             }
 
-            $this->joinBlock($interface, (string) $id, $blocks);
+            $this->joinBlock($interface, (string) $id, $blocks, $ssid);
         } catch (Throwable $exception) {
             try {
                 $this->wpaCli($interface, 'remove_network', (string) $id);
@@ -298,7 +300,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
         $this->wpaCli($interface, 'save_config');
 
-        $this->requestAddress($device);
+        $this->requestAddress($device, $ssid);
     }
 
     /**
@@ -310,12 +312,12 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      *
      * @param list<array{id: string, ssid: string, flags: string}> $blocks as they were before joining
      */
-    private function joinBlock(string $interface, string $id, array $blocks): void
+    private function joinBlock(string $interface, string $id, array $blocks, string $ssid): void
     {
         $this->wpaCli($interface, 'select_network', $id);
 
         try {
-            $this->awaitAssociation($interface, $id);
+            $this->awaitAssociation($interface, $id, $ssid);
         } finally {
             foreach ($blocks as $block) {
                 // [P2P-PERSISTENT] blocks are left alone by select_network and refuse enable_network.
@@ -757,8 +759,19 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * With $expectedId, COMPLETED only counts once `status` reports that
      * block's `id=`: right after `select_network` the previous association
      * can still read COMPLETED for a moment.
+     *
+     * A wrong passphrase does not have to wait out the budget. After a
+     * failed 4-way handshake `wpa_supplicant` marks the block
+     * `[TEMP-DISABLED]` in `list_networks` — about eight seconds in, for ten
+     * seconds, then it tries again (measured on the Pi; its own log line is
+     * "pre-shared key may be incorrect"). So every poll that has not seen
+     * COMPLETED also looks at the block's flags and, once that one is set,
+     * throws {@see WrongPassphrase}. Checking only when the budget runs out
+     * would miss it: by then the block is enabled again.
+     *
+     * @throws WrongPassphrase when `wpa_supplicant` has disabled the block after a failed handshake
      */
-    private function awaitAssociation(string $interface, ?string $expectedId = null): void
+    private function awaitAssociation(string $interface, ?string $expectedId = null, string $ssid = ''): void
     {
         $lastState = 'UNKNOWN';
         $lastResult = new CommandResult(0, '', '');
@@ -770,6 +783,14 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
             if ($lastState === 'COMPLETED' && ($expectedId === null || ($status['id'] ?? null) === $expectedId)) {
                 return;
+            }
+
+            if ($expectedId !== null && $this->isTemporarilyDisabled($interface, $expectedId)) {
+                throw WrongPassphrase::forNetwork(
+                    $ssid,
+                    new Command('wpa_cli', ['-i', $interface], ['LANG' => 'C']),
+                    $lastResult,
+                );
             }
 
             if ($attempt < $this->associationAttempts - 1) {
@@ -805,10 +826,36 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * a `dhcpcd` daemon already supervises this interface, so it is left
      * alone — two DHCP clients fighting over one interface is worse than
      * one running.
+     *
+     * A client that runs and comes back without a lease is {@see NoAddress}:
+     * the join itself worked.
+     *
+     * @throws NoAddress when the DHCP client fails
      */
-    private function requestAddress(Device $device): void
+    private function requestAddress(Device $device, string $ssid): void
     {
-        $interface = $device->name;
+        try {
+            $this->runDhcpClient($device->name);
+        } catch (PermissionDenied $exception) {
+            throw $exception;
+        } catch (CommandFailed $exception) {
+            throw NoAddress::forNetwork($ssid, $exception->command, $exception->result);
+        }
+    }
+
+    private function isTemporarilyDisabled(string $interface, string $id): bool
+    {
+        foreach ($this->networkBlocks($interface) as $block) {
+            if ($block['id'] === $id) {
+                return str_contains($block['flags'], '[TEMP-DISABLED]');
+            }
+        }
+
+        return false;
+    }
+
+    private function runDhcpClient(string $interface): void
+    {
 
         $dhcpcd = $this->toolPath->resolve('dhcpcd');
 

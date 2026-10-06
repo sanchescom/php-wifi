@@ -10,7 +10,9 @@ use Sanchescom\WiFi\Backend\WpaCliBackend;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
+use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
+use Sanchescom\WiFi\Exception\WrongPassphrase;
 use Sanchescom\WiFi\Shell\Command;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Value\Credentials;
@@ -522,7 +524,55 @@ final class WpaCliBackendTest extends TestCase
         }
 
         $this->assertSame(
-            ['list_networks', 'add_network', '<stdin>', 'select_network 1', 'status', 'status', 'enable_network 0', 'remove_network 1'],
+            [
+                'list_networks', 'add_network', '<stdin>', 'select_network 1',
+                'status', 'list_networks', 'status', 'list_networks',
+                'enable_network 0', 'remove_network 1',
+            ],
+            self::wpaCliCalls($runner),
+        );
+    }
+
+    /**
+     * What a wrong passphrase looks like on the Pi: `4WAY_HANDSHAKE` for
+     * about eight seconds, then the block is `[TEMP-DISABLED]` and the state
+     * goes back to `SCANNING`. That flag is the answer; there is no reason to
+     * keep polling, and the new block still goes and nothing is saved.
+     */
+    #[Test]
+    public function connect_reports_a_wrong_passphrase_as_soon_as_wpa_supplicant_disables_the_block(): void
+    {
+        $header = "network id / ssid / bssid / flags\n";
+        $runner = self::runner([
+            'list_networks' => [
+                $header . "0\tOtherNet\tany\t\n",
+                $header . "0\tOtherNet\tany\t[DISABLED]\n1\tBELL340\tany\t[CURRENT]\n",
+                $header . "0\tOtherNet\tany\t[DISABLED]\n1\tBELL340\tany\t[TEMP-DISABLED]\n",
+            ],
+            'remove_network' => "OK\n",
+            'add_network' => "1\n",
+            'set_network' => "OK\n",
+            'status' => ["wpa_state=4WAY_HANDSHAKE\n", "wpa_state=SCANNING\n"],
+        ]);
+        $sleeps = 0;
+        $backend = new WpaCliBackend($runner, 'wlan0', sleep: static function () use (&$sleeps): void {
+            $sleeps++;
+        });
+
+        try {
+            $backend->connect('BELL340', Credentials::password('typo-typo'), new Device('wlan0'));
+            $this->fail('Expected WrongPassphrase to be thrown.');
+        } catch (WrongPassphrase $exception) {
+            $this->assertSame('The passphrase for "BELL340" was not accepted.', $exception->getMessage());
+        }
+
+        $this->assertSame(1, $sleeps, 'the second poll already had the answer');
+        $this->assertSame(
+            [
+                'list_networks', 'add_network', '<stdin>', 'select_network 1',
+                'status', 'list_networks', 'status', 'list_networks',
+                'enable_network 0', 'remove_network 1',
+            ],
             self::wpaCliCalls($runner),
         );
     }
@@ -843,7 +893,7 @@ final class WpaCliBackendTest extends TestCase
     }
 
     #[Test]
-    public function connect_throws_command_failed_when_the_dhcp_client_exits_non_zero(): void
+    public function connect_reports_no_address_when_the_dhcp_client_exits_non_zero(): void
     {
         $runner = self::runner([
             'list_networks' => '',
@@ -858,9 +908,11 @@ final class WpaCliBackendTest extends TestCase
 
         try {
             $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
-            $this->fail('Expected CommandFailed to be thrown.');
-        } catch (CommandFailed $exception) {
-            $this->assertStringContainsString('dhcpcd', $exception->getMessage());
+            $this->fail('Expected NoAddress to be thrown.');
+        } catch (NoAddress $exception) {
+            $this->assertSame('Joined "BELL340", but the network gave the device no address.', $exception->getMessage());
+            $this->assertSame('/sbin/dhcpcd', $exception->command->program);
+            $this->assertSame("dhcpcd: no valid lease\n", $exception->result->stderr);
         }
     }
 

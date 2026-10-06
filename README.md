@@ -92,6 +92,35 @@ $wifi->connect($network, Credentials::password('secret123'));
 The wireless device is detected automatically; pass a third `Device`
 argument to override it.
 
+### Why a join failed — Linux only
+
+Since 3.3.0 both Linux backends name the reason, where the tool underneath
+gives one away:
+
+```php
+use Sanchescom\WiFi\Exception\NetworkNotFound;
+use Sanchescom\WiFi\Exception\NoAddress;
+use Sanchescom\WiFi\Exception\WrongPassphrase;
+
+try {
+    $wifi->connect('Home', Credentials::password($typed));
+} catch (WrongPassphrase) {
+    // the network is there and refused the passphrase
+} catch (NetworkNotFound) {
+    // no such network in range
+} catch (NoAddress) {
+    // joined, but no DHCP lease
+}
+```
+
+`WrongPassphrase` and `NoAddress` extend `CommandFailed`, so code that
+catches that, or `WiFiException`, keeps working. Neither tool reports a wrong
+passphrase in so many words: NetworkManager asks for the secret a second time
+until `nmcli` times out, and `wpa_supplicant` disables the network block for
+ten seconds after the failed handshake. The backends read those signs — on
+`WpaCliBackend` that also ends the wait after about nine seconds instead of
+twenty-one.
+
 ### List known (saved) networks — Linux only
 
 ```php

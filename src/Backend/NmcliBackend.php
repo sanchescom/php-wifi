@@ -7,8 +7,11 @@ namespace Sanchescom\WiFi\Backend;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
+use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
+use Sanchescom\WiFi\Exception\WiFiException;
+use Sanchescom\WiFi\Exception\WrongPassphrase;
 use Sanchescom\WiFi\Parser\Nmcli\ConnectionListParser;
 use Sanchescom\WiFi\Parser\Nmcli\DeviceListParser;
 use Sanchescom\WiFi\Parser\Nmcli\ListParser;
@@ -93,7 +96,49 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
 
         $arguments = [...$arguments, 'device', 'wifi', 'connect', $ssid, 'ifname', $device->name];
 
-        $this->run(new Command('nmcli', $arguments, ['LANG' => 'C'], [], $stdin, $stdinIsSecret));
+        try {
+            $this->run(new Command('nmcli', $arguments, ['LANG' => 'C'], [], $stdin, $stdinIsSecret));
+        } catch (PermissionDenied $exception) {
+            throw $exception;
+        } catch (CommandFailed $exception) {
+            throw self::connectFailure($ssid, $exception);
+        }
+    }
+
+    /**
+     * Names the reason a join failed, where `nmcli` gives one away:
+     *
+     * - "No network with SSID … found" is {@see NetworkNotFound}.
+     * - A wrong passphrase has no message of its own. NetworkManager asks for
+     *   the secret a second time ("Passwords or encryption keys are required
+     *   …" — the first request is worded differently) and `nmcli` then runs
+     *   into its `-w` timeout and exits 3 (measured on the Pi). The second
+     *   request, or "Secrets were required, but not provided", is read as
+     *   {@see WrongPassphrase}.
+     * - "IP configuration could not be reserved" is {@see NoAddress}.
+     *
+     * Anything else stays the {@see CommandFailed} it was.
+     */
+    private static function connectFailure(string $ssid, CommandFailed $exception): WiFiException
+    {
+        $output = $exception->result->stdout . "\n" . $exception->result->stderr;
+
+        if (str_contains($output, 'No network with SSID')) {
+            return NetworkNotFound::bySsid($ssid);
+        }
+
+        if (
+            str_contains($output, 'Passwords or encryption keys are required')
+            || str_contains($output, 'Secrets were required, but not provided')
+        ) {
+            return WrongPassphrase::forNetwork($ssid, $exception->command, $exception->result);
+        }
+
+        if (str_contains($output, 'IP configuration could not be reserved')) {
+            return NoAddress::forNetwork($ssid, $exception->command, $exception->result);
+        }
+
+        return $exception;
     }
 
     public function disconnect(Device $device): void
