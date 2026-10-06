@@ -54,11 +54,9 @@ driven by `curl`. Three things differ from the plan that stood here:
 - `<name>.local` is the hostname `avahi-daemon` already publishes. Nothing is
   renamed or published by the library.
 
-Before the tag:
-
-- **A run with real phones.** Whether iOS and Android open the page by
-  themselves is the one thing `curl` cannot show.
-- The QR code on the device, which needs `qrencode` installed there.
+Run with an iPhone on both backends on 2026-10-06: the page opens by itself,
+a failed join shows its reason, a successful one ends the run. Not yet run:
+an Android phone, and joining from the printed QR code with a camera.
 
 Left open:
 

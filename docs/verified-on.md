@@ -988,16 +988,107 @@ unit result: Result=success ExecMainStatus=0
    (`listening: 10.42.0.1:80` above; a request to `127.0.0.1` gets no
    answer), and keeps working across the hotspot going down and coming back.
 
+## With a phone — 2026-10-06, evening
+
+The maintainer joined the setup hotspot from an iPhone, twice: once on each
+backend. What the phone showed is his report; the rest is the Pi's journal.
+
+On NetworkManager, at `ce7364f`:
+
+```
+DHCPACK(wlan0) 10.42.0.35 ce:39:4a:b7:a6:66 iPhone
+20:12:48 provision: serving
+20:14:21 provision: joining
+20:14:26 provision: restarted
+20:14:27 provision: serving
+{"at":1791314065,"ssid":"BELL340","ok":false,"reason":"wrong_passphrase","message":"The passphrase for \"BELL340\" was not accepted."}
+20:17:23 provision: joining
+20:17:31 provision: done
+Joined BELL340.
+The device answers to femus-pi.local on that network.
+```
+
+- The setup page opened by itself once the phone had joined `femus-setup`.
+- After the wrong passphrase the hotspot came back, and the page showed the
+  red line with the reason.
+- After the right one the page closed and the phone went back to its own
+  network by itself. What the answer page said was not noted.
+- From a Mac on the same network: `PING femus-pi.local (192.168.2.75)`, two
+  replies.
+
+On `wpa_supplicant`, with `--channel=1 --country=CA`:
+
+```
+DHCPACK(wlan0) 10.42.0.77 ce:39:4a:b7:a6:66 iPhone
+21:00:14 provision: serving
+21:07:29 provision: joining
+21:07:36 provision: restarted
+21:07:37 provision: serving
+21:08:37 provision: joining
+21:08:49 wlan0: leased 192.168.2.76 for 204236 seconds
+21:08:49 provision: done
+```
+
+`PING femus-pi.local (192.168.2.76)`, two replies. The command printed a QR
+code (19 lines of it in the journal) now that `qrencode` is installed.
+
+### Three more defects, found only because a phone was there
+
+1. **The first two attempts on `wpa_supplicant` showed no network on the
+   phone at all**, with `hostapd` alive and `wifi hotspot status` saying
+   `active`. `iw event` gave the sequence:
+
+   ```
+   04.115  wlan0: set interface type access point
+   04.256  wlan0: start_ap
+   05.902  del interface type P2P-Device
+   06.419  wlan0: stop ap
+   06.421  wlan0: set interface type station
+   ```
+
+   The `wpa_supplicant` for this test had been started inside the transient
+   unit of the script that set the test up, and systemd stopped it when that
+   script ended. That was the harness's mistake, not the library's — but a
+   `wpa_supplicant` that exits while `hostapd` serves the same interface puts
+   the radio back into station mode whoever stops it, and the library could
+   not tell. `isHotspotActive()` now also asks `iw` whether an interface is of
+   type AP, and `startHotspot()` kills daemons left over from such a hotspot.
+   At `b870269`:
+
+   ```
+   up:  ssid femus-setup type AP  hostapd=1 supplicant=1
+   $ php bin/wifi hotspot status
+   active
+   after wpa_supplicant exits:  type managed  hostapd=1 supplicant=0
+   $ php bin/wifi hotspot status
+   inactive
+   Hotspot femus-setup started on wlan0 (auto)
+   after the second start:  ssid femus-setup type AP  hostapd=1 supplicant=0
+   $ php bin/wifi hotspot status
+   active
+   ```
+
+2. **A wrong passphrase got the wrong explanation on `wpa_supplicant`.** The
+   first one typed was answered with "The device could not join the network";
+   the journal had `wpa_cli … exited 0 but reported failure`. `wpa_supplicant`
+   refuses to store a passphrase that is not 8–63 characters long, before any
+   handshake. Such a passphrase is now reported as not accepted:
+
+   ```
+   $ php bin/wifi connect --ssid=BELL340 --password-file=/tmp/short.pass
+   The passphrase for "BELL340" was not accepted.
+   [exit 1]
+   ```
+
+3. **The passphrase could carry commands.** Not seen on the device: found by
+   the security review of the commit for the previous item. See the CHANGELOG.
+
 ## Not verified
 
-- **Phones.** Whether iOS and Android open the setup page by themselves after
-  joining the hotspot. The DNS answers and the redirects they rely on are
-  shown above; the phones' own behaviour is not.
-- **The QR code.** `qrencode` is not installed on the Pi; the run shows the
-  line printed in its place.
+- **Android.** No Android phone was at hand. iOS is above.
+- Whether a phone's camera joins the setup network from the printed QR code.
 - `NoAddress`: no network without a DHCP server was at hand. Fixture-only,
   and `nmcli`'s wording for it is taken from NetworkManager, not measured.
 - The new `nmcli` hotspot start as an unprivileged user under the polkit
   rule: every run was root.
-- `<hostname>.local` actually resolving from another machine.
 - Windows and macOS are untouched by this release.
