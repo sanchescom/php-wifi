@@ -251,10 +251,24 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * `wpa_state=COMPLETED` on that block's id — `select_network`, because a
      * merely enabled block could lose to a still-associated old one, which
      * would also make COMPLETED meaningless.
+     *
+     * @throws WrongPassphrase when the passphrase is refused, or cannot be one (not 8–63 characters)
+     * @throws NoAddress when the join worked and the DHCP client then failed
      */
     public function connect(string $ssid, Credentials $credentials, Device $device): void
     {
         $interface = $device->name;
+
+        // wpa_supplicant refuses to store a passphrase that is not 8–63 characters long (`set_network …
+        // psk` answers FAIL), so the join would end as an unexplained command failure. Such a passphrase
+        // cannot be the right one for any WPA network; say that instead (found with a phone on the Pi).
+        if ($credentials->password !== null && !in_array(strlen($credentials->password), range(8, 63), true)) {
+            throw WrongPassphrase::forNetwork(
+                $ssid,
+                new Command('wpa_cli', ['-i', $interface], ['LANG' => 'C']),
+                new CommandResult(0, '', ''),
+            );
+        }
         $blocks = $this->networkBlocks($interface);
         $matching = array_values(array_map(
             static fn (array $block): string => $block['id'],
@@ -428,6 +442,11 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     {
         $this->guardAgainstAlreadyRunningHotspot();
 
+        // Daemons that outlived their access point ({@see self::radioIsAccessPoint()}) would
+        // hold the radio and the pid files against the ones about to be started.
+        $this->killPidFile($this->hostapdPidFile(), self::HOSTAPD_BINARY);
+        $this->killPidFile($this->dnsmasqPidFile(), self::DNSMASQ_BINARY);
+
         $interface = $device->name;
         $hostapdConfig = new HostapdConfig($interface, $config, $this->runtimeDirectory->ensure());
         $confFile = $hostapdConfig->create();
@@ -553,7 +572,32 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         $hostapd = $this->pidMatches($this->hostapdPidFile(), self::HOSTAPD_BINARY);
         $dnsmasq = $this->pidMatches($this->dnsmasqPidFile(), self::DNSMASQ_BINARY);
 
-        return $hostapd && $dnsmasq;
+        return $hostapd && $dnsmasq && $this->radioIsAccessPoint();
+    }
+
+    /**
+     * Both daemons alive is not yet an access point on the air. Measured on
+     * the Pi: a `wpa_supplicant` that exits while `hostapd` serves the same
+     * interface puts the radio back into station mode on its way out — `iw`
+     * reports "stop ap", then "set interface type station" — and `hostapd`
+     * goes on running with nothing to serve. A phone no longer sees the
+     * network, and nothing that only counts processes can tell.
+     *
+     * So `iw dev` has to list an interface of type AP as well. When `iw`
+     * cannot be found or fails, the answer is not known and the daemons are
+     * believed, as they were before this check existed.
+     */
+    private function radioIsAccessPoint(): bool
+    {
+        $iw = $this->toolPath->resolve('iw');
+
+        if ($iw === null) {
+            return true;
+        }
+
+        $result = $this->runner->run(new Command($iw, ['dev']));
+
+        return !$result->isSuccessful() || preg_match('/^\s*type AP\s*$/m', $result->stdout) === 1;
     }
 
     private function hostapdPidFile(): string
