@@ -274,6 +274,19 @@ final class CliTest extends TestCase
         $this->assertSame('Hotspot stopped.', trim($result['stdout']));
     }
 
+    /** The watchdog's raise time belongs to the hotspot just stopped; left behind, it would age the next one. */
+    #[Test]
+    public function hotspot_stop_removes_the_watchdogs_state_file(): void
+    {
+        $stateFile = $this->runtimeDir . '/watchdog.json';
+        file_put_contents($stateFile, '{"hotspotRaisedAt":1}');
+
+        $result = $this->runCli(['hotspot', 'stop'], self::LINUX_HOTSPOT_STOP_FIXTURES, 'Linux');
+
+        $this->assertSame(0, $result['exit'], $result['stderr']);
+        $this->assertFileDoesNotExist($stateFile);
+    }
+
     #[Test]
     public function known_is_unsupported_on_darwin(): void
     {
@@ -543,6 +556,23 @@ final class CliTest extends TestCase
         }
     }
 
+    /** Every run gets a runtime directory of this test's own, so nothing lands in the machine's real one. */
+    private string $runtimeDir;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->runtimeDir = sys_get_temp_dir() . '/php-wifi-cli-test-' . bin2hex(random_bytes(8));
+        mkdir($this->runtimeDir, 0700);
+    }
+
+    protected function tearDown(): void
+    {
+        array_map(unlink(...), glob($this->runtimeDir . '/*') ?: []);
+        rmdir($this->runtimeDir);
+        parent::tearDown();
+    }
+
     /** Writes $contents to a fresh temp file and returns its path. */
     private function writeTempFile(string $contents): string
     {
@@ -567,6 +597,7 @@ final class CliTest extends TestCase
                 'PATH' => (string) getenv('PATH'),
                 'WIFI_FAKE_RUNNER' => $fixturesDir,
                 'WIFI_FAKE_OS' => $os,
+                'WIFI_RUNTIME_DIR' => $this->runtimeDir,
             ],
             $env,
         );

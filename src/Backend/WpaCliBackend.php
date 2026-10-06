@@ -620,6 +620,12 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * names $expectedBinary — a stale file whose pid was reused by an
      * unrelated process must never be signalled. The pid file is removed
      * unconditionally afterwards, matched, mismatched, or already gone.
+     *
+     * `kill` only sends the signal: `hostapd` deletes its own pid file on the
+     * way out, a moment later. Returning before it has gone would let a start
+     * that follows at once write a new pid file at the same path and have
+     * the dying daemon delete it. So this waits, up to about two seconds,
+     * for the process to exit.
      */
     private function killPidFile(string $pidFile, string $expectedBinary): void
     {
@@ -627,6 +633,10 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
         if ($pid !== null && $this->processName($pid) === $expectedBinary) {
             $this->runner->run(new Command('kill', [$pid]));
+
+            for ($attempt = 0; $attempt < 20 && $this->processName($pid) === $expectedBinary; $attempt++) {
+                ($this->sleep)(100_000);
+            }
         }
 
         if (file_exists($pidFile)) {
@@ -646,9 +656,10 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         return basename(trim($result->stdout));
     }
 
+    /** Null too when the runtime directory is not one to trust a pid from. */
     private function readPid(string $pidFile): ?string
     {
-        if (!file_exists($pidFile)) {
+        if (!$this->runtimeDirectory->isSafe() || !file_exists($pidFile)) {
             return null;
         }
 

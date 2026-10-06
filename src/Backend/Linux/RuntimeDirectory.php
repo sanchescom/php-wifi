@@ -65,15 +65,11 @@ final class RuntimeDirectory
             @mkdir($path, 0700, true);
         }
 
-        clearstatcache(true, $path);
-
-        if (is_link($path) || !is_dir($path)) {
+        if (!is_dir($path) && !is_link($path)) {
             throw new RuntimeException(sprintf('The runtime directory "%s" cannot be created.', $path));
         }
 
-        $userId = self::userId();
-
-        if (($userId !== null && fileowner($path) !== $userId) || (fileperms($path) & 0022) !== 0) {
+        if (!$this->isSafe()) {
             throw new RuntimeException(sprintf(
                 'The runtime directory "%s" is not safe to use: it must belong to the current user and be writable'
                 . ' by nobody else.',
@@ -84,8 +80,44 @@ final class RuntimeDirectory
         return $path;
     }
 
+    /**
+     * Whether the directory exists and can be trusted: a real directory, not
+     * a symlink, owned by the current user and writable by nobody else.
+     * Reading a pid or a timestamp out of anything less would let whoever
+     * prepared it choose which process gets signalled.
+     */
+    public function isSafe(): bool
+    {
+        $path = $this->path();
+
+        clearstatcache(true, $path);
+
+        return !is_link($path)
+            && is_dir($path)
+            && fileowner($path) === self::userId()
+            && (fileperms($path) & 0022) === 0;
+    }
+
+    /**
+     * The effective user id, or null when it cannot be learned — which
+     * {@see self::isSafe()} then treats as "not the owner".
+     */
     private static function userId(): ?int
     {
-        return function_exists('posix_geteuid') ? posix_geteuid() : null;
+        if (function_exists('posix_geteuid')) {
+            return posix_geteuid();
+        }
+
+        // Without ext-posix, a file this process creates carries its user id.
+        $probe = tempnam(sys_get_temp_dir(), 'php-wifi-uid-');
+
+        if ($probe === false) {
+            return null;
+        }
+
+        $owner = fileowner($probe);
+        unlink($probe);
+
+        return $owner === false ? null : $owner;
     }
 }

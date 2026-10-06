@@ -65,6 +65,15 @@ use Throwable;
  * By default the file lives in {@see RuntimeDirectory}, never in the
  * world-writable temp directory.
  *
+ * The raise time describes one hotspot, and a hotspot can end without this
+ * class stopping it: `wifi hotspot stop`, or NetworkManager dropping it for a
+ * join that then fails. A time left over from that hotspot would make the
+ * next one — the provisioning demo's, say — look long idle and get it torn
+ * down on the first tick nobody is attached. So a tick that finds no hotspot
+ * forgets the time, and {@see self::forgetHotspot()} lets whoever stops or
+ * starts a hotspot themselves remove the file; a running watchdog that sees
+ * its file gone starts the count again.
+ *
  * {@see WatchdogConfig::$device}, when set, is the interface both
  * tryReconnect() and countHotspotStations() use, instead of each calling
  * {@see WiFi::device()} separately — on a multi-radio host that keeps a
@@ -82,6 +91,9 @@ final class Watchdog
     private readonly ?RuntimeDirectory $runtimeDirectory;
 
     private ?int $hotspotRaisedAt = null;
+
+    /** Whether the raise time reached the state file, so that a missing file means someone removed it. */
+    private bool $persisted = false;
 
     private ?string $lastError = null;
 
@@ -102,6 +114,20 @@ final class Watchdog
         return (new RuntimeDirectory())->path() . '/watchdog.json';
     }
 
+    /**
+     * Removes the persisted raise time. For code that stops or starts a
+     * hotspot without going through this class, so the watchdog does not
+     * hold the next hotspot to the previous one's age.
+     */
+    public static function forgetHotspot(?string $stateFile = null): void
+    {
+        $stateFile ??= self::defaultStateFile();
+
+        if (is_file($stateFile)) {
+            @unlink($stateFile);
+        }
+    }
+
     /** One decision. Never sleeps. */
     public function tick(): WatchdogState
     {
@@ -111,6 +137,8 @@ final class Watchdog
             if ($this->wifi->isHotspotActive()) {
                 return $this->manageActiveHotspot();
             }
+
+            $this->clearHotspotRaisedAt();
 
             if ($this->wifi->scan()->connected()->isNotEmpty()) {
                 return WatchdogState::Connected;
@@ -165,6 +193,11 @@ final class Watchdog
 
     private function manageActiveHotspot(): WatchdogState
     {
+        if ($this->persisted && !is_file($this->stateFile)) {
+            // Removed behind our back: this is not the hotspot the time was recorded for.
+            $this->hotspotRaisedAt = null;
+        }
+
         $this->hotspotRaisedAt ??= $this->readHotspotRaisedAt() ?? $this->recordHotspotRaisedAt();
 
         $stations = $this->countHotspotStations();
@@ -283,14 +316,16 @@ final class Watchdog
         $now = $this->clock->now();
         $this->hotspotRaisedAt = $now;
 
+        $this->persisted = false;
+
         try {
             $this->runtimeDirectory?->ensure();
-            $this->suppressingWarnings(
+            $this->persisted = $this->suppressingWarnings(
                 fn (): int|false => file_put_contents(
                     $this->stateFile,
                     (string) json_encode(['hotspotRaisedAt' => $now]),
                 ),
-            );
+            ) !== false;
         } catch (RuntimeException) {
             // No safe place to persist it: the in-memory value still serves this process.
         }
@@ -301,6 +336,7 @@ final class Watchdog
     private function clearHotspotRaisedAt(): void
     {
         $this->hotspotRaisedAt = null;
+        $this->persisted = false;
 
         if (is_file($this->stateFile)) {
             $this->suppressingWarnings(fn (): bool => unlink($this->stateFile));
@@ -310,6 +346,10 @@ final class Watchdog
     /** Null on anything short of a clean, valid read — missing, unreadable or malformed alike. */
     private function readHotspotRaisedAt(): ?int
     {
+        if ($this->runtimeDirectory?->isSafe() === false) {
+            return null;
+        }
+
         if (!is_file($this->stateFile) || !is_readable($this->stateFile)) {
             return null;
         }

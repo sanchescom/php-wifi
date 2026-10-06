@@ -407,6 +407,7 @@ final class WiFiCli extends CLI
         );
 
         $hotspot = $this->wifi->startHotspot($config);
+        Watchdog::forgetHotspot();
 
         echo sprintf('Hotspot %s started on %s%s', $hotspot->ssid, $hotspot->device, $auto ? ' (auto)' : '')
             . PHP_EOL;
@@ -415,6 +416,7 @@ final class WiFiCli extends CLI
     private function cmdHotspotStop(): void
     {
         $this->wifi->stopHotspot();
+        Watchdog::forgetHotspot();
 
         echo 'Hotspot stopped.' . PHP_EOL;
     }

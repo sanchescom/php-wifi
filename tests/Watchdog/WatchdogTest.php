@@ -494,6 +494,55 @@ final class WatchdogTest extends TestCase
         $this->assertSame(WatchdogState::Recovered, $state);
     }
 
+    /**
+     * `wifi hotspot stop` followed by someone else's `wifi hotspot start`
+     * (the provisioning demo) between two ticks: the hotspot the watchdog
+     * now sees is not the one whose age it remembers, and the removed state
+     * file is how it learns that. It must not be torn down as long idle.
+     */
+    #[Test]
+    public function a_hotspot_raised_by_someone_else_is_not_held_to_the_previous_ones_age(): void
+    {
+        $stateFile = $this->freshStateFile();
+        $runner = self::runner([
+            'connection show --active' => "Hotspot\n",
+            '-f DEVICE,TYPE device' => self::DEVICES,
+            'which iw' => "/usr/sbin/iw\n",
+            'station dump' => '',
+            'connection down' => '',
+            'device wifi connect' => '',
+        ]);
+        $clock = new TestClock(1_000);
+        $watchdog = $this->watchdog($runner, $clock, retryAfter: 300, stateFile: $stateFile);
+
+        $watchdog->tick();
+        Watchdog::forgetHotspot($stateFile);
+        $clock->sleep(300);
+        $state = $watchdog->tick();
+
+        $this->assertSame(WatchdogState::HotspotBusy, $state);
+        foreach ($runner->commands as $command) {
+            $this->assertStringNotContainsString('connection down', $command->describe());
+        }
+    }
+
+    /** A raise time left by a hotspot that is no longer up describes nothing; a tick that finds none drops it. */
+    #[Test]
+    public function a_tick_that_finds_no_hotspot_removes_a_leftover_state_file(): void
+    {
+        $stateFile = $this->freshStateFile();
+        file_put_contents($stateFile, (string) json_encode(['hotspotRaisedAt' => 1]));
+        $runner = self::runner([
+            'connection show --active' => '',
+            'device wifi list' => $this->networkList(true),
+        ]);
+
+        $state = $this->watchdog($runner, new TestClock(1_000), stateFile: $stateFile)->tick();
+
+        $this->assertSame(WatchdogState::Connected, $state);
+        $this->assertFileDoesNotExist($stateFile);
+    }
+
     #[Test]
     public function a_corrupt_state_file_falls_back_to_treating_the_hotspot_as_just_raised(): void
     {

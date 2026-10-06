@@ -61,7 +61,7 @@ final class WpaCliBackendTest extends TestCase
         parent::tearDown();
     }
 
-    /** @param array<string, string|array{output: string, exit?: int, stderr?: string}> $fixtures */
+    /** @param array<string, mixed> $fixtures */
     private static function runner(array $fixtures): FakeCommandRunner
     {
         return new FakeCommandRunner(array_merge([
@@ -74,6 +74,17 @@ final class WpaCliBackendTest extends TestCase
             'enable_network' => "OK\n",
             'save_config' => "OK\n",
         ], $fixtures));
+    }
+
+    /**
+     * `ps` replies for a daemon that is alive when first asked and gone the
+     * next time, i.e. one that exits as soon as it is signalled.
+     *
+     * @return list<string|array{output: string, exit: int}>
+     */
+    private static function exitsOnceKilled(string $binary): array
+    {
+        return [$binary . "\n", ['output' => '', 'exit' => 1]];
     }
 
     // --- detectDevice() -----------------------------------------------------
@@ -1242,7 +1253,8 @@ final class WpaCliBackendTest extends TestCase
                 'exit' => 1,
                 'stderr' => "dnsmasq: failed to create listening socket for port 53: Address already in use\n",
             ],
-            'ps -p 111' => "hostapd\n",
+            // Alive for the already-running check, alive when about to be killed, then gone.
+            'ps -p 111' => ["hostapd\n", ...self::exitsOnceKilled('hostapd')],
             'kill 111' => '',
         ]);
         $backend = new WpaCliBackend($runner, 'wlan0');
@@ -1291,7 +1303,7 @@ final class WpaCliBackendTest extends TestCase
             self::IP . ' link set wlan0 up' => '',
             self::HOSTAPD . ' -B -P' => '',
             self::DNSMASQ . ' --interface=wlan0' => ['output' => '', 'exit' => 2, 'stderr' => "dnsmasq: Address already in use\n"],
-            'ps -p 111' => "hostapd\n",
+            'ps -p 111' => self::exitsOnceKilled('hostapd'),
             'kill 111' => '',
             'reconnect' => "OK\n",
         ]);
@@ -1310,10 +1322,10 @@ final class WpaCliBackendTest extends TestCase
 
         $tail = array_map(
             static fn (Command $command): string => $command->describe(),
-            array_slice($runner->commands, -4),
+            array_slice($runner->commands, -5),
         );
         $this->assertSame(
-            ['ps -p 111 -o comm=', 'kill 111', self::IP . ' addr flush dev wlan0', self::WPA_CLI . ' -i wlan0 reconnect'],
+            ['ps -p 111 -o comm=', 'kill 111', 'ps -p 111 -o comm=', self::IP . ' addr flush dev wlan0', self::WPA_CLI . ' -i wlan0 reconnect'],
             $tail,
         );
         $this->assertFileDoesNotExist($pidFile);
@@ -1485,8 +1497,8 @@ final class WpaCliBackendTest extends TestCase
         file_put_contents($this->runtimeDir . self::DNSMASQ_PID_FILE, "222\n");
 
         $runner = self::runner([
-            'ps -p 111' => "hostapd\n",
-            'ps -p 222' => "dnsmasq\n",
+            'ps -p 111' => self::exitsOnceKilled('hostapd'),
+            'ps -p 222' => self::exitsOnceKilled('dnsmasq'),
             'kill 111' => '',
             'kill 222' => '',
             self::IP . ' addr flush dev wlan0' => '',
@@ -1498,14 +1510,15 @@ final class WpaCliBackendTest extends TestCase
 
         $programs = array_map(static fn (Command $command): string => $command->program, $runner->commands);
         $this->assertSame(
-            ['ps', 'kill', 'ps', 'kill', 'which', self::IP, 'which', self::WPA_CLI],
+            // Each kill is followed by a `ps` that confirms the daemon has gone.
+            ['ps', 'kill', 'ps', 'ps', 'kill', 'ps', 'which', self::IP, 'which', self::WPA_CLI],
             $programs,
         );
 
         $this->assertSame(['111'], $runner->commands[1]->arguments);
-        $this->assertSame(['222'], $runner->commands[3]->arguments);
-        $this->assertSame(['addr', 'flush', 'dev', 'wlan0'], $runner->commands[5]->arguments);
-        $this->assertSame(['-i', 'wlan0', 'reconnect'], $runner->commands[7]->arguments);
+        $this->assertSame(['222'], $runner->commands[4]->arguments);
+        $this->assertSame(['addr', 'flush', 'dev', 'wlan0'], $runner->commands[7]->arguments);
+        $this->assertSame(['-i', 'wlan0', 'reconnect'], $runner->commands[9]->arguments);
 
         $this->assertFileDoesNotExist($this->runtimeDir . self::HOSTAPD_PID_FILE);
         $this->assertFileDoesNotExist($this->runtimeDir . self::DNSMASQ_PID_FILE);
@@ -1525,7 +1538,7 @@ final class WpaCliBackendTest extends TestCase
 
         $runner = self::runner([
             'ps -p 111' => "vim\n",
-            'ps -p 222' => "dnsmasq\n",
+            'ps -p 222' => self::exitsOnceKilled('dnsmasq'),
             'kill 222' => '',
             self::IP . ' addr flush dev wlan0' => '',
             'reconnect' => "OK\n",
@@ -1551,8 +1564,8 @@ final class WpaCliBackendTest extends TestCase
         file_put_contents($this->runtimeDir . self::DNSMASQ_PID_FILE, "222\n");
 
         $runner = self::runner([
-            'ps -p 111' => "hostapd\n",
-            'ps -p 222' => "dnsmasq\n",
+            'ps -p 111' => self::exitsOnceKilled('hostapd'),
+            'ps -p 222' => self::exitsOnceKilled('dnsmasq'),
             'kill 111' => '',
             'kill 222' => '',
             self::IP . ' addr flush dev wlan0' => '',
@@ -1592,8 +1605,8 @@ final class WpaCliBackendTest extends TestCase
 
         $runner = self::runner([
             self::IW . ' dev' => self::FIXTURES . '/iw/DevApOnly.txt',
-            'ps -p 111' => "hostapd\n",
-            'ps -p 222' => "dnsmasq\n",
+            'ps -p 111' => self::exitsOnceKilled('hostapd'),
+            'ps -p 222' => self::exitsOnceKilled('dnsmasq'),
             'kill 111' => '',
             'kill 222' => '',
             self::IP . ' addr flush dev wlan0' => '',
@@ -1605,11 +1618,61 @@ final class WpaCliBackendTest extends TestCase
 
         $this->assertSame(self::IW, $runner->commands[1]->program);
         $this->assertSame(['dev'], $runner->commands[1]->arguments);
-        $this->assertSame(['addr', 'flush', 'dev', 'wlan0'], $runner->commands[7]->arguments);
-        $this->assertSame(['-i', 'wlan0', 'reconnect'], $runner->commands[9]->arguments);
+        $this->assertSame(['addr', 'flush', 'dev', 'wlan0'], $runner->commands[9]->arguments);
+        $this->assertSame(['-i', 'wlan0', 'reconnect'], $runner->commands[11]->arguments);
 
         $this->assertFileDoesNotExist($this->runtimeDir . self::HOSTAPD_PID_FILE);
         $this->assertFileDoesNotExist($this->runtimeDir . self::DNSMASQ_PID_FILE);
+    }
+
+    /**
+     * `hostapd` deletes its own pid file as it exits, after the signal. A
+     * stop that returned at once would let the next start's pid file be the
+     * one it deletes, so stop keeps asking `ps` until the daemon has gone.
+     */
+    #[Test]
+    public function stop_hotspot_does_not_return_while_hostapd_is_still_exiting(): void
+    {
+        file_put_contents($this->runtimeDir . self::HOSTAPD_PID_FILE, "111\n");
+
+        $runner = self::runner([
+            'ps -p 111' => ["hostapd\n", "hostapd\n", "hostapd\n", ['output' => '', 'exit' => 1]],
+            'kill 111' => '',
+            self::IP . ' addr flush dev wlan0' => '',
+            'reconnect' => "OK\n",
+        ]);
+        $sleeps = [];
+        $backend = new WpaCliBackend($runner, 'wlan0', sleep: static function (int $microseconds) use (&$sleeps): void {
+            $sleeps[] = $microseconds;
+        });
+
+        $backend->stopHotspot();
+
+        $programs = array_map(static fn (Command $command): string => $command->program, $runner->commands);
+        $this->assertSame(['ps', 'kill', 'ps', 'ps', 'ps'], array_slice($programs, 0, 5));
+        $this->assertSame([100_000, 100_000], $sleeps);
+    }
+
+    /** A pid file in a directory someone else can write to may name any process; it is not read. */
+    #[Test]
+    public function stop_hotspot_signals_nothing_from_a_runtime_directory_others_can_write_to(): void
+    {
+        file_put_contents($this->runtimeDir . self::HOSTAPD_PID_FILE, "111\n");
+        chmod($this->runtimeDir, 0777);
+
+        $runner = self::runner([
+            'ps -p 111' => "hostapd\n",
+            self::IP . ' addr flush dev wlan0' => '',
+            'reconnect' => "OK\n",
+        ]);
+        $backend = new WpaCliBackend($runner, 'wlan0');
+
+        $backend->stopHotspot();
+
+        foreach ($runner->commands as $command) {
+            $this->assertNotSame('kill', $command->program);
+            $this->assertNotSame('ps', $command->program);
+        }
     }
 
     #[Test]
