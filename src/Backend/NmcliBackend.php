@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Sanchescom\WiFi\Backend;
 
+use RuntimeException;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
+use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
+use Sanchescom\WiFi\Exception\WiFiException;
+use Sanchescom\WiFi\Exception\WrongPassphrase;
 use Sanchescom\WiFi\Parser\Nmcli\ConnectionListParser;
 use Sanchescom\WiFi\Parser\Nmcli\DeviceListParser;
 use Sanchescom\WiFi\Parser\Nmcli\ListParser;
@@ -33,8 +37,17 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
 {
     private const HOTSPOT_CONNECTION_NAME = 'Hotspot';
 
-    public function __construct(private readonly CommandRunner $runner)
-    {
+    private const CAPTIVE_PORTAL_FILE = 'php-wifi-captive.conf';
+
+    /**
+     * $dnsmasqSharedDirectory is where NetworkManager's own `dnsmasq` — the
+     * one it runs for a shared connection, a hotspot among them — reads
+     * extra configuration from.
+     */
+    public function __construct(
+        private readonly CommandRunner $runner,
+        private readonly string $dnsmasqSharedDirectory = '/etc/NetworkManager/dnsmasq-shared.d',
+    ) {
     }
 
     public function scan(): NetworkCollection
@@ -84,13 +97,7 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         $stdinIsSecret = false;
 
         if ($credentials->password !== null) {
-            $listing = $this->runner->run($this->profileListCommand());
-
-            if ($listing->isSuccessful()) {
-                foreach ($this->wifiProfileUuids($listing->stdout, $ssid) as $uuid) {
-                    $this->runner->run($this->deleteCommand($uuid));
-                }
-            }
+            $this->deleteWifiProfiles($ssid);
 
             $arguments[] = '--ask';
             $stdin = $credentials->password . "\n";
@@ -99,7 +106,49 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
 
         $arguments = [...$arguments, 'device', 'wifi', 'connect', $ssid, 'ifname', $device->name];
 
-        $this->run(new Command('nmcli', $arguments, ['LANG' => 'C'], [], $stdin, $stdinIsSecret));
+        try {
+            $this->run(new Command('nmcli', $arguments, ['LANG' => 'C'], [], $stdin, $stdinIsSecret));
+        } catch (PermissionDenied $exception) {
+            throw $exception;
+        } catch (CommandFailed $exception) {
+            throw self::connectFailure($ssid, $exception);
+        }
+    }
+
+    /**
+     * Names the reason a join failed, where `nmcli` gives one away:
+     *
+     * - "No network with SSID … found" is {@see NetworkNotFound}.
+     * - A wrong passphrase has no message of its own. NetworkManager asks for
+     *   the secret a second time ("Passwords or encryption keys are required
+     *   …" — the first request is worded differently) and `nmcli` then runs
+     *   into its `-w` timeout and exits 3 (measured on the Pi). The second
+     *   request, or "Secrets were required, but not provided", is read as
+     *   {@see WrongPassphrase}.
+     * - "IP configuration could not be reserved" is {@see NoAddress}.
+     *
+     * Anything else stays the {@see CommandFailed} it was.
+     */
+    private static function connectFailure(string $ssid, CommandFailed $exception): WiFiException
+    {
+        $output = $exception->result->stdout . "\n" . $exception->result->stderr;
+
+        if (str_contains($output, 'No network with SSID')) {
+            return NetworkNotFound::bySsid($ssid);
+        }
+
+        if (
+            str_contains($output, 'Passwords or encryption keys are required')
+            || str_contains($output, 'Secrets were required, but not provided')
+        ) {
+            return WrongPassphrase::forNetwork($ssid, $exception->command, $exception->result);
+        }
+
+        if (str_contains($output, 'IP configuration could not be reserved')) {
+            return NoAddress::forNetwork($ssid, $exception->command, $exception->result);
+        }
+
+        return $exception;
     }
 
     public function disconnect(Device $device): void
@@ -182,6 +231,30 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         }
     }
 
+    /** Deletes every Wi-Fi profile named $name, by UUID. Never throws: there usually is none. */
+    private function deleteWifiProfiles(string $name): void
+    {
+        $listing = $this->runner->run($this->profileListCommand());
+
+        if (!$listing->isSuccessful()) {
+            return;
+        }
+
+        foreach ($this->wifiProfileUuids($listing->stdout, $name) as $uuid) {
+            $this->runner->run($this->deleteCommand($uuid));
+        }
+    }
+
+    /** A random (version 4) UUID. */
+    private static function uuid(): string
+    {
+        $bytes = random_bytes(16);
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
+    }
+
     private function profileListCommand(): Command
     {
         return new Command('nmcli', ['-t', '-f', 'NAME,UUID,TYPE', 'connection', 'show'], ['LANG' => 'C']);
@@ -217,41 +290,152 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         return $uuids;
     }
 
+    /**
+     * The passphrase goes to `nmcli` on stdin, never in argv. `nmcli device
+     * wifi hotspot` has no way to do that — its `password` is an argument —
+     * so the hotspot is raised in two steps instead: `connection add`
+     * creates the access-point profile with no passphrase in it, and
+     * `--ask connection up` activates it, at which point NetworkManager asks
+     * for the missing secret and `--ask` reads it from standard input, the
+     * same mechanism {@see self::connect()} uses. Measured on the Pi: the
+     * access point comes up and NetworkManager stores the passphrase in the
+     * profile, as `device wifi hotspot` did.
+     *
+     * Any Wi-Fi profile already called "Hotspot" is deleted first, so there
+     * is one such profile however often this is called, and a profile whose
+     * activation fails is deleted again instead of being left behind. The
+     * new profile is created with a UUID generated here and activated by
+     * that UUID, never by its name.
+     *
+     * `nmcli` accepts a channel only together with a band, so a channel
+     * given without one brings the band it belongs to
+     * ({@see HotspotConfig::resolvedBand()}). There is no country to pass:
+     * NetworkManager takes the regulatory domain from the system, so a
+     * config that asks for one is refused instead of being silently ignored.
+     *
+     * @throws UnsupportedOperation for a 6 GHz band, or when $config names a country
+     */
     public function startHotspot(HotspotConfig $config, Device $device): Hotspot
     {
-        $band = match ($config->band) {
+        if ($config->country !== null) {
+            throw new UnsupportedOperation(
+                'NmcliBackend cannot set a hotspot country: NetworkManager uses the system regulatory domain'
+                . ' (set it with "iw reg set ' . $config->country . '" or raspi-config).',
+            );
+        }
+
+        $band = match ($config->resolvedBand()) {
             null => null,
             Band::GHz5 => 'a',
             Band::GHz2_4 => 'bg',
             Band::GHz6 => throw new UnsupportedOperation('NmcliBackend does not support a 6 GHz hotspot.'),
         };
 
-        $arguments = [
-            'device',
-            'wifi',
-            'hotspot',
-            'ifname',
-            $device->name,
-            'ssid',
-            $config->ssid,
-            'password',
-            $config->password,
-        ];
-        $secretIndexes = [count($arguments) - 1];
+        $settings = ['wifi.mode', 'ap'];
 
         if ($band !== null) {
-            $arguments[] = 'band';
-            $arguments[] = $band;
+            $settings = [...$settings, 'wifi.band', $band];
         }
 
-        $this->run(new Command('nmcli', $arguments, ['LANG' => 'C'], $secretIndexes));
+        if ($config->channel !== null) {
+            $settings = [...$settings, 'wifi.channel', (string) $config->channel];
+        }
+
+        // WPA2 with CCMP only, as `device wifi hotspot` sets it: left out,
+        // NetworkManager would also offer WPA and TKIP.
+        $settings = [
+            ...$settings,
+            'ipv4.method', 'shared', 'ipv6.method', 'ignore',
+            'wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.proto', 'rsn',
+            'wifi-sec.pairwise', 'ccmp', 'wifi-sec.group', 'ccmp',
+        ];
+
+        $this->deleteWifiProfiles(self::HOTSPOT_CONNECTION_NAME);
+        $this->setCaptivePortal($config->captivePortal);
+
+        // The profile gets a UUID chosen here and is activated by it: "Hotspot" may also be the name of a
+        // profile of another type, and the passphrase must reach this one and no other.
+        $uuid = self::uuid();
+
+        try {
+            $this->run(new Command(
+                'nmcli',
+                [
+                    'connection', 'add', 'type', 'wifi', 'ifname', $device->name,
+                    'con-name', self::HOTSPOT_CONNECTION_NAME, 'autoconnect', 'no', 'ssid', $config->ssid,
+                    '--', 'connection.uuid', $uuid, ...$settings,
+                ],
+                ['LANG' => 'C'],
+            ));
+            $this->run(new Command(
+                'nmcli',
+                ['-w', '20', '--ask', 'connection', 'up', 'uuid', $uuid],
+                ['LANG' => 'C'],
+                [],
+                $config->password . "\n",
+                true,
+            ));
+        } catch (CommandFailed $exception) {
+            $this->runner->run($this->deleteCommand($uuid));
+
+            throw $exception;
+        } finally {
+            // dnsmasq has read the file by now, or never will.
+            $this->setCaptivePortal(false);
+        }
 
         return new Hotspot(self::HOTSPOT_CONNECTION_NAME, $config->ssid, $device);
     }
 
     public function stopHotspot(): void
     {
-        $this->run(new Command('nmcli', ['connection', 'down', self::HOTSPOT_CONNECTION_NAME], ['LANG' => 'C']));
+        try {
+            $this->run(new Command('nmcli', ['connection', 'down', self::HOTSPOT_CONNECTION_NAME], ['LANG' => 'C']));
+        } finally {
+            $this->setCaptivePortal(false);
+        }
+    }
+
+    /**
+     * A captive portal needs every DNS name to resolve to this device.
+     * NetworkManager starts the `dnsmasq` that serves the hotspot itself, so
+     * the one line that does it goes into a file in the directory that
+     * `dnsmasq` reads when it starts.
+     *
+     * That directory is read by the `dnsmasq` of every shared connection, not
+     * only the hotspot's, so the file is there for as short a time as
+     * possible: written just before the hotspot is activated and removed as
+     * soon as the activation has returned, whatever its outcome — the
+     * running `dnsmasq` keeps what it read. A shared connection of another
+     * kind that NetworkManager activates in that same moment would pick the
+     * line up too; nothing here can prevent that. `stopHotspot()` and a start
+     * without a portal remove a file a killed process may have left.
+     *
+     * @throws UnsupportedOperation when the file cannot be written, which takes root
+     * @throws RuntimeException when the file cannot be removed again
+     */
+    private function setCaptivePortal(bool $enabled): void
+    {
+        $file = $this->dnsmasqSharedDirectory . '/' . self::CAPTIVE_PORTAL_FILE;
+
+        if (!$enabled) {
+            if (is_file($file) && !@unlink($file) && is_file($file)) {
+                throw new RuntimeException(sprintf(
+                    'Could not remove "%s". While it exists, every connection NetworkManager shares answers all'
+                    . ' DNS queries with this device; delete it by hand.',
+                    $file,
+                ));
+            }
+
+            return;
+        }
+
+        if (@file_put_contents($file, 'address=/#/' . HotspotConfig::ADDRESS . "\n") === false) {
+            throw new UnsupportedOperation(sprintf(
+                'A captive portal on NmcliBackend needs to write "%s", which takes root.',
+                $file,
+            ));
+        }
     }
 
     public function isHotspotActive(): bool

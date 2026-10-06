@@ -2,6 +2,74 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.0] - 2026-10-06
+
+`wifi provision`, and what it stands on. Nothing in this release breaks
+calling code; the behaviour changes are in
+[UPGRADE.md](UPGRADE.md#32--33). Verified live on the maintainer's Raspberry
+Pi on both Linux backends, with an iPhone on each — see
+[docs/verified-on.md](docs/verified-on.md). Not run: an Android phone.
+
+### Added
+- **`wifi provision`**: one command that raises a setup hotspot, serves a
+  page on it for a phone to pick a network and type its passphrase, and exits
+  once the device has joined. The hotspot is a captive portal, so the phone
+  opens the page by itself. The page answers before it joins — the phone
+  loses it the moment the radio switches — and when a join fails the hotspot
+  comes back and the page says why. Prints a QR code for the setup network
+  when `qrencode` is installed, and names `<hostname>.local` when
+  `avahi-daemon` is running.
+- **`Provision\Portal`**: the reusable part — `networks()`, `connect()` and
+  `status()` as methods and as framework-free JSON endpoints
+  (`GET /api/networks`, `GET /api/status`, `POST /api/connect`) that any PHP
+  application can mount behind its own authentication.
+- **A failed join says why.** `WrongPassphrase` and `NoAddress` (both extend
+  `CommandFailed`) on both Linux backends, and `NetworkNotFound` from
+  `NmcliBackend::connect()`. On `WpaCliBackend` a wrong passphrase now also
+  ends the wait as soon as `wpa_supplicant` has given up on the handshake,
+  instead of after the full twenty-one seconds.
+- **`HotspotConfig` takes a `channel`, a `country` and `captivePortal`.**
+  `wifi hotspot start` has `--channel` and `--country`. `hostapd` gets
+  `country_code` and announces it; until now the radio stayed in the world
+  regulatory domain. `NmcliBackend` passes the channel on and refuses a
+  country, which NetworkManager has no setting for.
+
+### Security
+- **An SSID or a passphrase could add commands to the script
+  `WpaCliBackend::connect()` feeds to `wpa_cli`**, which usually runs as root.
+  Both were written into that script as text, and `wpa_cli` reads it through
+  a line editor: a line break starts a new command, and Ctrl-U wipes the one
+  typed so far (measured on the Pi, where an SSID carrying Ctrl-U replaced the
+  command with one of its own). This has been there since `WpaCliBackend` was
+  added in 3.2.0 and matters to anyone who passes on an SSID or a passphrase
+  they did not choose themselves — the provisioning demo does. The SSID now
+  goes in as hex digits, and instead of the passphrase the 256-bit key WPA
+  derives from it; nothing a caller supplies is written into the script.
+- **`NmcliBackend::startHotspot()` no longer passes the hotspot passphrase as
+  an argument.** `nmcli device wifi hotspot` has no other way to take it, so
+  the hotspot is now a profile added without a passphrase and activated with
+  `nmcli --ask`, which reads it from stdin. That was the last place a Linux
+  backend put a passphrase in a process's arguments.
+
+### Fixed
+- **`WpaCliBackend::isHotspotActive()` said `active` for a hotspot that was
+  off the air.** A `wpa_supplicant` that exits while `hostapd` serves the same
+  interface puts the radio back into station mode; `hostapd` and `dnsmasq`
+  live on. The check now also asks `iw` whether an interface is of type AP,
+  and `startHotspot()` first kills daemons left over from such a hotspot.
+- **A network name or a passphrase containing `"` or `\` could not be joined
+  on `WpaCliBackend`.** Both were backslash-escaped, and `wpa_supplicant`
+  does not read escapes there: it stored the backslashes as part of the
+  value. Hex digits and a derived key need no quoting at all.
+- **A passphrase that cannot be one** — not 8–63 printable ASCII characters —
+  ended as an unexplained command failure on `WpaCliBackend`. It is now
+  `WrongPassphrase`.
+- `NmcliBackend::startHotspot()` leaves one `Hotspot` profile however often it
+  is called, and none after a start that failed.
+- `examples/provision`: a join right after the hotspot went down could fail
+  with "no such network" — NetworkManager's list of networks is empty for a
+  moment after the radio leaves access-point mode. The page now looks again.
+
 ## [3.2.5] - 2026-10-06
 
 Hardening. No API changes; three behaviour changes are listed in

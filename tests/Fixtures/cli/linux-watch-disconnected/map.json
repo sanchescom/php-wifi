@@ -7,5 +7,7 @@
         "exit": 1,
         "stderr": "Error: No network with SSID 'DoesNotExist' found."
     },
-    "device wifi hotspot": "Empty.txt"
+    "-f NAME,UUID,TYPE connection show": "Empty.txt",
+    "connection add": "Empty.txt",
+    "connection up": "Empty.txt"
 }

@@ -6,13 +6,18 @@ namespace Sanchescom\WiFi\Test\Backend;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Sanchescom\WiFi\Backend\NmcliBackend;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
+use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
+use Sanchescom\WiFi\Exception\WrongPassphrase;
 use Sanchescom\WiFi\Shell\Command;
+use Sanchescom\WiFi\Shell\CommandResult;
+use Sanchescom\WiFi\Shell\CommandRunner;
 use Sanchescom\WiFi\Shell\Os;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Value\Band;
@@ -42,7 +47,8 @@ final class NmcliBackendTest extends TestCase
             'connection show Hotspot' => "femus-setup\n",
             'connection delete' => '',
             'connection down' => '',
-            'device wifi hotspot' => '',
+            'connection add' => '',
+            'connection up' => '',
             'device wifi connect' => '',
             'device disconnect' => '',
             'device wifi list' => self::FIXTURES . '/Networks.txt',
@@ -197,6 +203,112 @@ final class NmcliBackendTest extends TestCase
 
         $this->assertCount(2, $runner->commands);
         $this->assertSame('connect', $runner->last()->arguments[5]);
+    }
+
+    /**
+     * stdout and exit code as `nmcli -w 10 --ask device wifi connect` gave
+     * them on the Pi for a wrong passphrase: the secret is asked for a
+     * second time, in different words, and then the wait runs out.
+     */
+    #[Test]
+    public function connect_reports_a_wrong_passphrase(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show' => '',
+            'device wifi connect' => [
+                'output' => self::FIXTURES . '/ConnectWrongPassphrase.txt',
+                'exit' => 3,
+                'stderr' => "Error: Timeout 10 sec expired.\n",
+            ],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        try {
+            $backend->connect('BELL340', Credentials::password('typo-typo'), new Device('wlan0'));
+            $this->fail('Expected WrongPassphrase to be thrown.');
+        } catch (WrongPassphrase $exception) {
+            $this->assertSame('The passphrase for "BELL340" was not accepted.', $exception->getMessage());
+            $this->assertSame(3, $exception->result->exitCode);
+        }
+    }
+
+    /** A timeout alone says nothing about the passphrase: the first request for it is always printed. */
+    #[Test]
+    public function connect_that_times_out_without_a_second_request_for_the_secret_stays_a_plain_failure(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show' => '',
+            'device wifi connect' => [
+                'output' => "Push of the WPS button on the router or a password is required to access the wireless"
+                    . " network 'BELL340'.\nPassword (802-11-wireless-security.psk): \n",
+                'exit' => 3,
+                'stderr' => "Error: Timeout 10 sec expired.\n",
+            ],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        try {
+            $backend->connect('BELL340', Credentials::password('right-one'), new Device('wlan0'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed $exception) {
+            $this->assertSame(CommandFailed::class, $exception::class);
+        }
+    }
+
+    /** Reply and exit code as measured on the Pi. */
+    #[Test]
+    public function connect_reports_a_network_that_is_not_there(): void
+    {
+        $runner = new FakeCommandRunner([
+            'device wifi connect' => [
+                'output' => '',
+                'exit' => 10,
+                'stderr' => "Error: No network with SSID 'NoSuchNet20' found.\n",
+            ],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $this->expectException(NetworkNotFound::class);
+        $this->expectExceptionMessage('No network named "NoSuchNet20" was found in the scan.');
+
+        $backend->connect('NoSuchNet20', Credentials::none(), new Device('wlan0'));
+    }
+
+    /** NetworkManager's wording for activation failure reason 5; not reproduced on hardware. */
+    #[Test]
+    public function connect_reports_no_address(): void
+    {
+        $runner = new FakeCommandRunner([
+            'device wifi connect' => [
+                'output' => '',
+                'exit' => 4,
+                'stderr' => 'Error: Connection activation failed: (5) IP configuration could not be reserved'
+                    . " (no available address, timeout, etc.).\n",
+            ],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $this->expectException(NoAddress::class);
+        $this->expectExceptionMessage('Joined "Home", but the network gave the device no address.');
+
+        $backend->connect('Home', Credentials::none(), new Device('wlan0'));
+    }
+
+    #[Test]
+    public function connect_keeps_permission_denied_as_it_is(): void
+    {
+        $runner = new FakeCommandRunner([
+            'device wifi connect' => [
+                'output' => '',
+                'exit' => 4,
+                'stderr' => "Error: Failed to add/activate new connection: Not authorized to control networking.\n",
+            ],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $this->expectException(PermissionDenied::class);
+
+        $backend->connect('Home', Credentials::none(), new Device('wlan0'));
     }
 
     #[Test]
@@ -379,25 +491,79 @@ final class NmcliBackendTest extends TestCase
         }
     }
 
+    /**
+     * @param list<Command> $commands
+     * @return list<string> the arguments of the one `connection add` among $commands
+     */
+    private function addArguments(array $commands): array
+    {
+        $adds = array_values(array_filter(
+            $commands,
+            static fn (Command $command): bool => ($command->arguments[1] ?? null) === 'add',
+        ));
+        $this->assertCount(1, $adds);
+
+        return $adds[0]->arguments;
+    }
+
+    /**
+     * `nmcli device wifi hotspot` takes the passphrase as an argument. The
+     * hotspot is raised without it instead: a profile with no passphrase,
+     * then an activation that is handed the passphrase on stdin.
+     */
+    #[Test]
+    public function start_hotspot_adds_a_profile_without_the_passphrase_and_activates_it_with_the_passphrase_on_stdin(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        $hotspot = $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+
+        $add = $this->addArguments($runner->commands);
+        $uuid = $add[14];
+        $this->assertMatchesRegularExpression(
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',
+            $uuid,
+        );
+        $this->assertSame(
+            [
+                'connection', 'add', 'type', 'wifi', 'ifname', 'wlan0', 'con-name', 'Hotspot', 'autoconnect', 'no',
+                'ssid', 'femus-setup', '--', 'connection.uuid', $uuid, 'wifi.mode', 'ap',
+                'ipv4.method', 'shared', 'ipv6.method', 'ignore',
+                // WPA2/CCMP only: without these NetworkManager would also accept WPA and TKIP.
+                'wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.proto', 'rsn',
+                'wifi-sec.pairwise', 'ccmp', 'wifi-sec.group', 'ccmp',
+            ],
+            $add,
+        );
+
+        // Activated by the UUID it was created with: a profile of another type may share the name.
+        $up = $runner->last();
+        $this->assertSame(['-w', '20', '--ask', 'connection', 'up', 'uuid', $uuid], $up->arguments);
+        $this->assertSame("password1\n", $up->stdin);
+        $this->assertTrue($up->stdinIsSecret);
+
+        foreach ($runner->commands as $command) {
+            foreach ($command->arguments as $argument) {
+                $this->assertStringNotContainsString('password1', $argument);
+            }
+        }
+
+        $this->assertEquals(new Hotspot('Hotspot', 'femus-setup', new Device('wlan0')), $hotspot);
+    }
+
     #[Test]
     public function start_hotspot_with_5ghz_band(): void
     {
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
 
-        $hotspot = $backend->startHotspot(
-            new HotspotConfig('femus-setup', 'password1', Band::GHz5),
-            new Device('wlan0'),
-        );
-
-        $command = $runner->last();
+        $backend->startHotspot(new HotspotConfig('femus-setup', 'password1', Band::GHz5), new Device('wlan0'));
 
         $this->assertSame(
-            ['device', 'wifi', 'hotspot', 'ifname', 'wlan0', 'ssid', 'femus-setup', 'password', 'password1', 'band', 'a'],
-            $command->arguments,
+            ['wifi.mode', 'ap', 'wifi.band', 'a', 'ipv4.method'],
+            array_slice($this->addArguments($runner->commands), 15, 5),
         );
-        $this->assertSame([8], $command->secretIndexes);
-        $this->assertEquals(new Hotspot('Hotspot', 'femus-setup', new Device('wlan0')), $hotspot);
     }
 
     #[Test]
@@ -406,32 +572,228 @@ final class NmcliBackendTest extends TestCase
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
 
-        $backend->startHotspot(
-            new HotspotConfig('femus-setup', 'password1', Band::GHz2_4),
-            new Device('wlan0'),
-        );
+        $backend->startHotspot(new HotspotConfig('femus-setup', 'password1', Band::GHz2_4), new Device('wlan0'));
 
         $this->assertSame(
-            ['device', 'wifi', 'hotspot', 'ifname', 'wlan0', 'ssid', 'femus-setup', 'password', 'password1', 'band', 'bg'],
-            $runner->last()->arguments,
+            ['wifi.mode', 'ap', 'wifi.band', 'bg', 'ipv4.method'],
+            array_slice($this->addArguments($runner->commands), 15, 5),
         );
     }
 
+    /** nmcli refuses a channel that comes without a band, so the band the channel belongs to goes with it. */
     #[Test]
-    public function start_hotspot_without_a_band_omits_the_band_pair(): void
+    public function start_hotspot_with_a_channel_passes_it_together_with_its_band(): void
     {
         $runner = $this->runner();
         $backend = new NmcliBackend($runner);
 
-        $backend->startHotspot(
-            new HotspotConfig('femus-setup', 'password1'),
-            new Device('wlan0'),
-        );
+        $backend->startHotspot(new HotspotConfig('femus-setup', 'password1', channel: 11), new Device('wlan0'));
 
         $this->assertSame(
-            ['device', 'wifi', 'hotspot', 'ifname', 'wlan0', 'ssid', 'femus-setup', 'password', 'password1'],
+            ['wifi.mode', 'ap', 'wifi.band', 'bg', 'wifi.channel', '11', 'ipv4.method'],
+            array_slice($this->addArguments($runner->commands), 15, 7),
+        );
+    }
+
+    /** One "Hotspot" profile however often a hotspot is started — and never somebody's VPN of that name. */
+    #[Test]
+    public function start_hotspot_first_deletes_an_earlier_hotspot_profile_by_its_uuid(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show' => "Hotspot:aaaaaaaa-0000-0000-0000-000000000001:802-11-wireless\n"
+                . "Hotspot:aaaaaaaa-0000-0000-0000-000000000002:vpn\n",
+            'connection delete' => '',
+            'connection add' => '',
+            'connection up' => '',
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+
+        $this->assertSame(
+            [
+                'nmcli -t -f NAME,UUID,TYPE connection show',
+                'nmcli connection delete uuid aaaaaaaa-0000-0000-0000-000000000001',
+            ],
+            array_map(static fn (Command $command): string => $command->describe(), array_slice($runner->commands, 0, 2)),
+        );
+        $this->assertSame('add', $runner->commands[2]->arguments[1]);
+    }
+
+    /** A profile that could not be activated is of no use and used to pile up, one per refused call. */
+    #[Test]
+    public function start_hotspot_removes_the_profile_it_added_when_the_activation_fails(): void
+    {
+        $runner = new FakeCommandRunner([
+            'connection show' => '',
+            'connection delete' => '',
+            'connection add' => '',
+            'connection up' => ['output' => '', 'exit' => 4, 'stderr' => 'Error: Connection activation failed.'],
+        ]);
+        $backend = new NmcliBackend($runner);
+
+        try {
+            $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed $exception) {
+            $this->assertStringNotContainsString('password1', $exception->getMessage());
+        }
+
+        $this->assertSame(
+            ['connection', 'delete', 'uuid', $this->addArguments($runner->commands)[14]],
             $runner->last()->arguments,
         );
+    }
+
+    /**
+     * NetworkManager runs the hotspot's dnsmasq itself; the portal is one
+     * line in a file that dnsmasq reads when it starts. Every other shared
+     * connection's dnsmasq reads that directory too, so the file is there
+     * while the hotspot is being activated and gone the moment it is up.
+     */
+    #[Test]
+    public function a_captive_portal_is_a_dnsmasq_file_that_exists_only_while_the_hotspot_is_activated(): void
+    {
+        $directory = sys_get_temp_dir() . '/php-wifi-dnsmasq-test-' . bin2hex(random_bytes(8));
+        mkdir($directory);
+        $file = $directory . '/php-wifi-captive.conf';
+
+        $runner = new class ($this->runner(), $file) implements CommandRunner {
+            /** @var array<string, string|false> what the file held as each nmcli subcommand ran */
+            public array $seen = [];
+
+            public function __construct(private readonly CommandRunner $inner, private readonly string $file)
+            {
+            }
+
+            public function run(Command $command): CommandResult
+            {
+                foreach (['connection add', 'connection up', 'connection down'] as $step) {
+                    if (str_contains($command->describe(), $step)) {
+                        $this->seen[$step] = is_file($this->file) ? file_get_contents($this->file) : false;
+                    }
+                }
+
+                return $this->inner->run($command);
+            }
+        };
+        $backend = new NmcliBackend($runner, $directory);
+
+        try {
+            $backend->startHotspot(
+                new HotspotConfig('femus-setup', 'password1', captivePortal: true),
+                new Device('wlan0'),
+            );
+
+            $this->assertSame("address=/#/10.42.0.1\n", $runner->seen['connection up']);
+            $this->assertFileDoesNotExist($file, 'the file must not outlive the activation');
+
+            // A file a killed process left behind goes when the hotspot is stopped…
+            file_put_contents($file, "address=/#/10.42.0.1\n");
+            $backend->stopHotspot();
+            $this->assertFileDoesNotExist($file);
+
+            // …and a hotspot started without a portal must not inherit one.
+            file_put_contents($file, "address=/#/10.42.0.1\n");
+            $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
+            $this->assertFalse($runner->seen['connection up']);
+        } finally {
+            @unlink($file);
+            rmdir($directory);
+        }
+    }
+
+    /** A file that cannot be removed keeps hijacking DNS; that is reported, never swallowed. */
+    #[Test]
+    public function a_captive_portal_file_that_cannot_be_removed_is_an_error(): void
+    {
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            $this->markTestSkipped('root can remove a file from a read-only directory');
+        }
+
+        $directory = sys_get_temp_dir() . '/php-wifi-dnsmasq-test-' . bin2hex(random_bytes(8));
+        mkdir($directory);
+        $file = $directory . '/php-wifi-captive.conf';
+        file_put_contents($file, "address=/#/10.42.0.1\n");
+        chmod($directory, 0500);
+        $backend = new NmcliBackend($this->runner(), $directory);
+
+        try {
+            $backend->stopHotspot();
+            $this->fail('Expected RuntimeException to be thrown.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('delete it by hand', $exception->getMessage());
+        } finally {
+            chmod($directory, 0700);
+            unlink($file);
+            rmdir($directory);
+        }
+    }
+
+    #[Test]
+    public function a_captive_portal_file_does_not_survive_a_hotspot_that_failed_to_start(): void
+    {
+        $directory = sys_get_temp_dir() . '/php-wifi-dnsmasq-test-' . bin2hex(random_bytes(8));
+        mkdir($directory);
+        $runner = new FakeCommandRunner([
+            'connection show' => '',
+            'connection delete' => '',
+            'connection add' => '',
+            'connection up' => ['output' => '', 'exit' => 4, 'stderr' => 'Error: Connection activation failed.'],
+        ]);
+        $backend = new NmcliBackend($runner, $directory);
+
+        try {
+            $backend->startHotspot(
+                new HotspotConfig('femus-setup', 'password1', captivePortal: true),
+                new Device('wlan0'),
+            );
+            $this->fail('Expected CommandFailed to be thrown.');
+        } catch (CommandFailed) {
+            $this->assertFileDoesNotExist($directory . '/php-wifi-captive.conf');
+        } finally {
+            rmdir($directory);
+        }
+    }
+
+    #[Test]
+    public function a_captive_portal_that_cannot_be_configured_is_refused_before_any_profile_is_added(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner, '/nonexistent/php-wifi-test');
+
+        try {
+            $backend->startHotspot(
+                new HotspotConfig('femus-setup', 'password1', captivePortal: true),
+                new Device('wlan0'),
+            );
+            $this->fail('Expected UnsupportedOperation to be thrown.');
+        } catch (UnsupportedOperation $exception) {
+            $this->assertStringContainsString('takes root', $exception->getMessage());
+        }
+
+        foreach ($runner->commands as $command) {
+            $this->assertNotSame('add', $command->arguments[1] ?? null);
+        }
+    }
+
+    /** NetworkManager has nowhere to put a country; ignoring it would leave the caller believing it was set. */
+    #[Test]
+    public function start_hotspot_with_a_country_is_refused_before_any_command(): void
+    {
+        $runner = $this->runner();
+        $backend = new NmcliBackend($runner);
+
+        try {
+            $backend->startHotspot(
+                new HotspotConfig('femus-setup', 'password1', country: 'CA'),
+                new Device('wlan0'),
+            );
+            $this->fail('Expected UnsupportedOperation to be thrown.');
+        } catch (UnsupportedOperation $exception) {
+            $this->assertStringContainsString('iw reg set CA', $exception->getMessage());
+            $this->assertSame([], $runner->commands);
+        }
     }
 
     #[Test]

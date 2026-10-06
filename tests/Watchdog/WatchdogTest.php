@@ -121,7 +121,7 @@ final class WatchdogTest extends TestCase
         $this->assertSame(WatchdogState::Connected, $state);
         foreach ($runner->commands as $command) {
             $this->assertStringNotContainsString('device wifi connect', $command->describe());
-            $this->assertStringNotContainsString('device wifi hotspot', $command->describe());
+            $this->assertStringNotContainsString('connection up', $command->describe());
         }
     }
 
@@ -150,14 +150,16 @@ final class WatchdogTest extends TestCase
             'device wifi list' => $this->networkList(connected: false),
             '-f DEVICE,TYPE device' => self::DEVICES,
             'device wifi connect' => self::CONNECT_FAILS,
-            'device wifi hotspot' => '',
+            '-f NAME,UUID,TYPE connection show' => '',
+            'connection add' => '',
+            'connection up' => '',
         ]);
         $watchdog = $this->watchdog($runner, new TestClock());
 
         $state = $watchdog->tick();
 
         $this->assertSame(WatchdogState::HotspotRaised, $state);
-        $this->assertStringContainsString('device wifi hotspot', $runner->last()->describe());
+        $this->assertStringContainsString('connection up uuid ', $runner->last()->describe());
     }
 
     #[Test]
@@ -233,7 +235,9 @@ final class WatchdogTest extends TestCase
             'station dump' => '',
             'connection down' => '',
             'device wifi connect' => self::CONNECT_FAILS,
-            'device wifi hotspot' => '',
+            '-f NAME,UUID,TYPE connection show' => '',
+            'connection add' => '',
+            'connection up' => '',
         ]);
         $clock = new TestClock(1_000);
         $watchdog = $this->watchdog($runner, $clock, retryAfter: 300);
@@ -243,7 +247,7 @@ final class WatchdogTest extends TestCase
         $state = $watchdog->tick();
 
         $this->assertSame(WatchdogState::HotspotRaised, $state);
-        $this->assertStringContainsString('device wifi hotspot', $runner->last()->describe());
+        $this->assertStringContainsString('connection up uuid ', $runner->last()->describe());
     }
 
     /**

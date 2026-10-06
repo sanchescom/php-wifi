@@ -1,0 +1,4 @@
+Push of the WPS button on the router or a password is required to access the wireless network 'BELL340'.
+Password (802-11-wireless-security.psk): 
+Passwords or encryption keys are required to access the wireless network 'BELL340'.
+Password (802-11-wireless-security.psk): 

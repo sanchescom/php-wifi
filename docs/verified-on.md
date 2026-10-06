@@ -809,3 +809,353 @@ $ ping -c 2 -W 3 -I wlan0 192.168.2.1
 - The symlink attack itself was not staged; what was checked is that nothing
   is written to `/tmp` and that an unsafe directory is refused.
 - Windows and macOS are untouched by this release.
+
+---
+
+# Verified on real hardware — 3.3.0
+
+Same Raspberry Pi, **2026-10-06**, branch `3.3.0`. Every run was a transient
+systemd unit, as root; the radio was `disabled` before and after each, and no
+profile and no file under `/etc/NetworkManager/dnsmasq-shared.d` was left
+behind. The suite on the Pi at the last run: `OK (498 tests, 1627
+assertions)`. Outputs are as printed, minus `dnsmasq`'s and `dhcpcd`'s
+routine lines.
+
+No phone took part. The setup page was driven with `curl` from the Pi itself,
+so whether a phone opens it unasked is **not** verified here — see the end.
+
+## What the tools actually say when a join fails
+
+Recorded first, so that the typed failures are read off real replies.
+
+`nmcli -w 10 --ask device wifi connect BELL340 ifname wlan0` with a wrong
+passphrase asks for the secret a second time, in other words, and times out:
+
+```
+[exit 3] 10s
+stdout: Push of the WPS button on the router or a password is required to access the wireless network 'BELL340'.|Password (802-11-wireless-security.psk): …|Passwords or encryption keys are required to access the wireless network 'BELL340'.|…
+stderr: Error: Timeout 10 sec expired.|
+```
+
+A network that is not there: `[exit 10]`, `Error: No network with SSID
+'NoSuchNet20' found.`
+
+`wpa_supplicant`, wrong passphrase, polled every two seconds:
+
+```
+t+2s ssid=BELL340 wpa_state=4WAY_HANDSHAKE  | 0 BELL340 any [CURRENT]
+t+8s ssid=BELL340 wpa_state=4WAY_HANDSHAKE  | 0 BELL340 any [CURRENT]
+t+10s wpa_state=SCANNING  | 0 BELL340 any [TEMP-DISABLED]
+t+20s wpa_state=SCANNING  | 0 BELL340 any [TEMP-DISABLED]
+t+22s ssid=BELL340 wpa_state=4WAY_HANDSHAKE  | 0 BELL340 any [CURRENT]
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+wlan0: CTRL-EVENT-SSID-TEMP-DISABLED id=0 ssid="BELL340" auth_failures=1 duration=10 reason=WRONG_KEY
+```
+
+## The foundation, at `a42a3be`
+
+`NmcliBackend`, hotspot with the passphrase on stdin, on a chosen channel.
+`ps -ww -eo args` was sampled eighty times over four seconds for the
+passphrase, read from a file:
+
+```
+$ php bin/wifi hotspot start --ssid=femus-setup --password-file=/tmp/hs.pass --channel=11
+Hotspot femus-setup started on wlan0 (auto)
+[exit 0]
+passphrase seen in ps (distinct counts over 4s): 0
+	ssid femus-setup
+	type AP
+	channel 11 (2462 MHz), width: 20 MHz, center1: 2462 MHz
+profile: proto=rsn pairwise=ccmp group=ccmp key-mgmt=wpa-psk
+```
+
+After a stop and a second start: `Hotspot profiles: 1`.
+
+```
+$ php bin/wifi hotspot start --ssid=femus-setup --password-file=/tmp/hs.pass --country=ca
+NmcliBackend cannot set a hotspot country: NetworkManager uses the system regulatory domain (set it with "iw reg set CA" or raspi-config).
+[exit 2]
+$ php bin/wifi connect --ssid=BELL340 --password-file=/tmp/wrong.pass
+The passphrase for "BELL340" was not accepted.
+[exit 1]
+$ php bin/wifi connect --ssid=BELL340 --password-file=/home/femus/.wifi-pass
+Connected to BELL340 via wlan0 (auto)
+[exit 0]
+```
+
+`WpaCliBackend`:
+
+```
+reg before: country 00: DFS-UNSET
+$ php bin/wifi hotspot start --ssid=femus-setup --password-file=/tmp/hs.pass --channel=1 --country=CA
+Hotspot femus-setup started on wlan0 (auto)
+[exit 0]
+	ssid femus-setup
+	type AP
+	channel 1 (2412 MHz), width: 20 MHz, center1: 2412 MHz
+reg with the hotspot up: country CA: DFS-FCC
+$ php bin/wifi connect --ssid=BELL340 --password-file=/tmp/wrong.pass
+The passphrase for "BELL340" was not accepted.
+[exit 1]
+$ php bin/wifi connect --ssid=BELL340 --password-file=/home/femus/.wifi-pass
+Connected to BELL340 via wlan0 (auto)
+[exit 0]
+```
+
+How long each `connect` took was not recorded: the script timed them with
+`bc`, which the Pi does not have.
+
+## `wifi provision`, at `ce7364f`
+
+`php bin/wifi provision --ssid=femus-setup --password-file=/tmp/hs.pass
+--timeout=240`, a wrong passphrase first, then the right one. On
+NetworkManager:
+
+```
+t0 unit=active hotspot=active joining=no addr=10.42.0.1/24
+listening: 10.42.0.1:80
+captive.apple.com -> 10.42.0.1
+connectivitycheck.gstatic.com -> 10.42.0.1
+$ curl -H 'Host: captive.apple.com' http://10.42.0.1/hotspot-detect.html
+302 -> http://10.42.0.1/
+$ curl -H 'Host: connectivitycheck.gstatic.com' http://10.42.0.1/generate_204
+302 -> http://10.42.0.1/
+{"hotspot":true,"joining":false,"connected":null,"lastAttempt":null}
+--- wrong passphrase
+POST 200 in 0.076879s
+now joining <b>BELL340</b> http://femus-pi.local/
++4s unit=active hotspot=inactive joining=yes addr=
+back unit=active hotspot=active joining=no addr=10.42.0.1/24
+Could not join <b>BELL340</b>: The passphrase for &quot;BELL340&quot; was not accepted.
+--- right passphrase
+POST 200 in 0.092794s
+end unit=inactive hotspot=inactive joining=no addr=192.168.2.75/24
+unit result: Result=success ExecMainStatus=0
+$ ping -c 2 -W 3 -I wlan0 192.168.2.1
+2 packets transmitted, 2 received, 0% packet loss, time 1002ms
+```
+
+The two name lookups were sent straight to the hotspot's DNS on
+`10.42.0.1:53`. The command's own output:
+
+```
+Setup network: femus-setup
+Passphrase:    ***
+Setup page:    http://10.42.0.1/
+Install qrencode to get a QR code for joining the setup network here.
+PHP 8.4.24 Development Server (http://10.42.0.1:80) started
+13:03:37 provision: serving
+13:03:41 provision: joining
+13:03:58 provision: restarted
+13:03:59 provision: serving
+13:04:02 provision: joining
+13:04:12 provision: done
+Joined BELL340.
+The device answers to femus-pi.local on that network.
+```
+
+On `wpa_supplicant`, with `--channel=1 --country=CA` and `KillMode=process` on
+the unit, the same script printed the same lines, ending in:
+
+```
+POST 200 in 0.045706s
+end unit=inactive hotspot=inactive joining=no addr=192.168.2.76/24
+unit result: Result=success ExecMainStatus=0
+2 packets transmitted, 2 received, 0% packet loss, time 1002ms
+```
+
+## Two defects these runs found
+
+1. **A right passphrase was answered with "no such network"** on
+   NetworkManager, on some runs and not on others. A wrapper around `nmcli`
+   that logged every call showed why: three seconds after
+   `nmcli connection down Hotspot`, `nmcli device wifi list` printed nothing
+   at all.
+
+   ```
+   13:57:29.424 rc=0 nmcli connection down Hotspot
+   13:57:32.526 rc=0 nmcli --terse --fields active,ssid,… device wifi list
+         out:
+   ```
+
+   Nine seconds later, at the same point of the next attempt, the list held
+   BELL340 again. NetworkManager empties its list when the radio leaves
+   access-point mode and fills it from a scan of its own. The page now repeats
+   the scan, up to eight times two seconds apart, once it has stopped a
+   hotspot. The 3.1 demo page had the same fixed three-second wait.
+2. **The setup page answered on every interface.** PHP's built-in server was
+   started on `0.0.0.0`. It is now bound to the hotspot's address
+   (`listening: 10.42.0.1:80` above; a request to `127.0.0.1` gets no
+   answer), and keeps working across the hotspot going down and coming back.
+
+## With a phone — 2026-10-06, evening
+
+The maintainer joined the setup hotspot from an iPhone, twice: once on each
+backend. What the phone showed is his report; the rest is the Pi's journal.
+
+On NetworkManager, at `ce7364f`:
+
+```
+DHCPACK(wlan0) 10.42.0.35 ce:39:4a:b7:a6:66 iPhone
+20:12:48 provision: serving
+20:14:21 provision: joining
+20:14:26 provision: restarted
+20:14:27 provision: serving
+{"at":1791314065,"ssid":"BELL340","ok":false,"reason":"wrong_passphrase","message":"The passphrase for \"BELL340\" was not accepted."}
+20:17:23 provision: joining
+20:17:31 provision: done
+Joined BELL340.
+The device answers to femus-pi.local on that network.
+```
+
+- The setup page opened by itself once the phone had joined `femus-setup`.
+- After the wrong passphrase the hotspot came back, and the page showed the
+  red line with the reason.
+- After the right one the page closed and the phone went back to its own
+  network by itself. What the answer page said was not noted.
+- From a Mac on the same network: `PING femus-pi.local (192.168.2.75)`, two
+  replies.
+
+On `wpa_supplicant`, with `--channel=1 --country=CA`:
+
+```
+DHCPACK(wlan0) 10.42.0.77 ce:39:4a:b7:a6:66 iPhone
+21:00:14 provision: serving
+21:07:29 provision: joining
+21:07:36 provision: restarted
+21:07:37 provision: serving
+21:08:37 provision: joining
+21:08:49 wlan0: leased 192.168.2.76 for 204236 seconds
+21:08:49 provision: done
+```
+
+`PING femus-pi.local (192.168.2.76)`, two replies. The command printed a QR
+code (19 lines of it in the journal) now that `qrencode` is installed.
+
+### Three more defects, found only because a phone was there
+
+1. **The first two attempts on `wpa_supplicant` showed no network on the
+   phone at all**, with `hostapd` alive and `wifi hotspot status` saying
+   `active`. `iw event` gave the sequence:
+
+   ```
+   04.115  wlan0: set interface type access point
+   04.256  wlan0: start_ap
+   05.902  del interface type P2P-Device
+   06.419  wlan0: stop ap
+   06.421  wlan0: set interface type station
+   ```
+
+   The `wpa_supplicant` for this test had been started inside the transient
+   unit of the script that set the test up, and systemd stopped it when that
+   script ended. That was the harness's mistake, not the library's — but a
+   `wpa_supplicant` that exits while `hostapd` serves the same interface puts
+   the radio back into station mode whoever stops it, and the library could
+   not tell. `isHotspotActive()` now also asks `iw` whether an interface is of
+   type AP, and `startHotspot()` kills daemons left over from such a hotspot.
+   At `b870269`:
+
+   ```
+   up:  ssid femus-setup type AP  hostapd=1 supplicant=1
+   $ php bin/wifi hotspot status
+   active
+   after wpa_supplicant exits:  type managed  hostapd=1 supplicant=0
+   $ php bin/wifi hotspot status
+   inactive
+   Hotspot femus-setup started on wlan0 (auto)
+   after the second start:  ssid femus-setup type AP  hostapd=1 supplicant=0
+   $ php bin/wifi hotspot status
+   active
+   ```
+
+2. **A wrong passphrase got the wrong explanation on `wpa_supplicant`.** The
+   first one typed was answered with "The device could not join the network";
+   the journal had `wpa_cli … exited 0 but reported failure`. `wpa_supplicant`
+   refuses to store a passphrase that is not 8–63 characters long, before any
+   handshake. Such a passphrase is now reported as not accepted:
+
+   ```
+   $ php bin/wifi connect --ssid=BELL340 --password-file=/tmp/short.pass
+   The passphrase for "BELL340" was not accepted.
+   [exit 1]
+   ```
+
+3. **An SSID or a passphrase could carry commands.** Found by the security
+   review of the commit for the previous item, then measured: the values are
+   lines of the script `wpa_cli` reads from stdin through a line editor. With
+   a network block `N` and a script line whose value was `x`, Ctrl-U,
+   `set_network N priority 7`:
+
+   ```
+   reply: OK
+   priority now: 7
+   ```
+
+   The same run showed that the backslash escaping this backend applied to
+   `"` and `\` was never right:
+
+   ```
+   raw quote inside           "a"b"      stored ssid:  " a " b "
+   backslash-escaped quote    "a\"b"     stored ssid:  " a \ " b "
+   ```
+
+   A second pass of the review pointed out that filtering bytes would keep
+   missing some. So nothing a caller supplies is written into that script any
+   more: the SSID goes in as hex digits, and instead of the passphrase the key
+   WPA derives from it. Run on the Pi at the commit that does this:
+
+   ```
+   $ php bin/wifi connect --ssid=BELL340 --password-file=/tmp/wrong.pass
+   The passphrase for "BELL340" was not accepted.
+   [exit 1]
+   $ php bin/wifi connect --ssid=BELL340 --password-file=/home/femus/.wifi-pass
+   Connected to BELL340 via wlan0 (auto)
+   [exit 0]
+   addr=192.168.2.76/24
+   2 packets transmitted, 2 received, 0% packet loss, time 1001ms
+   network={
+   	ssid="BELL340"
+   	psk=f199…931d (64 hex digits)
+   }
+   passphrase present in the config: 0
+   ```
+
+   Not run: a network whose name or passphrase really contains a quote, a
+   backslash or a non-ASCII character. None was at hand.
+
+## With no options, left to time out
+
+`wifi provision` as someone would first type it, on NetworkManager, with
+nobody joining:
+
+```
+$ php bin/wifi provision --timeout=20
+    [while it runs:  ssid femus-pi-setup channel 1 (2412 MHz), width: 20 MHz, center1: 2412 MHz  profile-psk-length=12]
+Setup network: femus-pi-setup
+Passphrase:    9pb6******** (12 characters)
+Setup page:    http://10.42.0.1/
+    … 19 lines of QR code
+2026-10-06T21:23:47+00:00 provision: serving
+provision: nobody finished the setup within 20 seconds.
+[exit 1]
+after: hotspot=inactive
+radio=disabled nm=active hostapd=masked profiles=0 captive-file=0 port80=0
+```
+
+The name is the hostname with `-setup`, the passphrase twelve random
+characters, and after the timeout nothing is left behind: no hotspot, no
+profile, no file for `dnsmasq`, nothing listening on port 80.
+
+## Not verified
+
+- **Android.** No Android phone was at hand. iOS is above.
+- The QR code off a terminal. Its content was checked: the string the command
+  hands to `qrencode`, drawn as an image, was scanned with the iPhone's camera,
+  which joined `femus-setup` without the passphrase being typed
+  (`DHCPACK(wlan0) 10.42.0.35 ce:39:4a:b7:a6:66 iPhone`). The command's own
+  drawing, as it appears in a terminal, was not what the camera saw.
+- `NoAddress`: no network without a DHCP server was at hand. Fixture-only,
+  and `nmcli`'s wording for it is taken from NetworkManager, not measured.
+- The new `nmcli` hotspot start as an unprivileged user under the polkit
+  rule: every run was root.
+- Windows and macOS are untouched by this release.

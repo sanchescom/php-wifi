@@ -60,6 +60,47 @@ final class HotspotConfigTest extends TestCase
     }
 
     #[Test]
+    public function a_channel_without_a_band_brings_the_band_it_belongs_to(): void
+    {
+        $this->assertSame(Band::GHz2_4, (new HotspotConfig('MyHotspot', 'a-strong-passphrase', channel: 11))->resolvedBand());
+        $this->assertSame(Band::GHz5, (new HotspotConfig('MyHotspot', 'a-strong-passphrase', channel: 44))->resolvedBand());
+        $this->assertNull((new HotspotConfig('MyHotspot', 'a-strong-passphrase'))->resolvedBand());
+    }
+
+    #[Test]
+    public function a_channel_that_is_not_on_the_given_band_throws(): void
+    {
+        $this->expectException(InvalidArgument::class);
+        $this->expectExceptionMessage('Channel 36 does not exist on the 2.4 GHz band.');
+
+        new HotspotConfig('MyHotspot', 'a-strong-passphrase', Band::GHz2_4, channel: 36);
+    }
+
+    #[Test]
+    public function a_channel_that_exists_on_neither_band_throws(): void
+    {
+        $this->expectException(InvalidArgument::class);
+
+        new HotspotConfig('MyHotspot', 'a-strong-passphrase', channel: 15);
+    }
+
+    /** The country ends up as a line of hostapd's config: anything but two letters could carry a directive. */
+    #[Test]
+    public function a_country_that_is_not_two_upper_case_letters_throws(): void
+    {
+        foreach (['de', 'DEU', "DE\nssid=evil", ''] as $country) {
+            try {
+                new HotspotConfig('MyHotspot', 'a-strong-passphrase', country: $country);
+                $this->fail(sprintf('Expected InvalidArgument for %s.', json_encode($country)));
+            } catch (InvalidArgument) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $this->assertSame('DE', (new HotspotConfig('MyHotspot', 'a-strong-passphrase', country: 'DE'))->country);
+    }
+
+    #[Test]
     public function a_thirty_three_byte_ssid_throws(): void
     {
         $this->expectException(InvalidArgument::class);

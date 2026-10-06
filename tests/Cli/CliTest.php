@@ -354,6 +354,56 @@ final class CliTest extends TestCase
     }
 
     #[Test]
+    public function hotspot_start_passes_the_channel_on(): void
+    {
+        $log = tempnam(sys_get_temp_dir(), 'php-wifi-log-');
+        self::assertIsString($log);
+
+        try {
+            $result = $this->runCli(
+                ['hotspot', 'start', '--ssid=femus-setup', '--password=password1', '--channel=11'],
+                self::LINUX_FIXTURES,
+                'Linux',
+                ['WIFI_FAKE_LOG' => $log],
+            );
+
+            $this->assertSame(0, $result['exit'], $result['stderr']);
+            $add = $this->lastLoggedCommand($log, 'connection add');
+            $this->assertContains('wifi.channel', $add['arguments']);
+            $this->assertSame('11', $add['arguments'][array_search('wifi.channel', $add['arguments'], true) + 1]);
+        } finally {
+            unlink($log);
+        }
+    }
+
+    #[Test]
+    public function hotspot_start_rejects_a_channel_that_is_not_a_number(): void
+    {
+        $result = $this->runCli(
+            ['hotspot', 'start', '--ssid=femus-setup', '--password=password1', '--channel=auto'],
+            self::LINUX_FIXTURES,
+            'Linux',
+        );
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertSame('--channel must be a number.', trim($result['stderr']));
+    }
+
+    /** Lower case is accepted on the command line; NetworkManager has no country to set, hence exit 2. */
+    #[Test]
+    public function hotspot_start_with_a_country_is_unsupported_on_network_manager(): void
+    {
+        $result = $this->runCli(
+            ['hotspot', 'start', '--ssid=femus-setup', '--password=password1', '--country=ca'],
+            self::LINUX_FIXTURES,
+            'Linux',
+        );
+
+        $this->assertSame(2, $result['exit']);
+        $this->assertStringContainsString('iw reg set CA', $result['stderr']);
+    }
+
+    #[Test]
     public function connect_reads_the_password_from_stdin(): void
     {
         $log = tempnam(sys_get_temp_dir(), 'php-wifi-log-');
@@ -552,6 +602,24 @@ final class CliTest extends TestCase
             '/^\S+ watch: hotspot_busy: cannot count hotspot stations: iw was not found$/',
             trim($line),
         );
+    }
+
+    #[Test]
+    public function provision_is_unsupported_on_darwin(): void
+    {
+        $result = $this->runCli(['provision'], self::DARWIN_FIXTURES, 'Darwin');
+
+        $this->assertSame(2, $result['exit']);
+        $this->assertStringContainsString('does not support', $result['stderr']);
+    }
+
+    #[Test]
+    public function provision_rejects_a_port_that_is_not_one(): void
+    {
+        $result = $this->runCli(['provision', '--port=0'], self::LINUX_FIXTURES, 'Linux');
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertStringContainsString('--port must be 1–65535', $result['stderr']);
     }
 
     #[Test]

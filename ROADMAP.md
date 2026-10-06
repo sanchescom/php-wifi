@@ -41,46 +41,30 @@ open: `wifi-watch.service` stops `hostapd`, `dnsmasq` and the DHCP client when
 the unit restarts on `WpaCliBackend` (see "Not verified" in
 docs/verified-on.md).
 
-## 3.3.0 — `wifi provision`
+## 3.3.0 — shipped
 
-One command turns a headless Linux device into one you set up from a phone.
-The device raises a setup hotspot and shows a QR code to join it, and the
-phone opens the setup page on its own (captive portal). The page lists the
-networks and says plainly why a join failed — wrong passphrase, network not
-found, no address from the router. On success the device joins its network,
-is reachable as `<name>.local`, and the watchdog keeps it there. This turns
-`examples/provision`, which has to be assembled by hand today, into a product
-feature.
+See CHANGELOG.md, UPGRADE.md and docs/verified-on.md. `wifi provision`, the
+`Provision\Portal` handlers, typed failure reasons, the hotspot channel and
+country, and the hotspot passphrase off `nmcli`'s arguments are the 3.3.0
+release. Three things differ from the plan that stood here:
 
-- Captive portal: `dnsmasq` answers every DNS query with the device, and a
-  small HTTP server redirects the phones' connectivity checks
-  (`generate_204`, `hotspot-detect.html`) to the setup page.
-- Typed failure reasons (`WrongPassphrase` and friends) from
-  `wpa_supplicant`'s events and `nmcli`'s replies — useful to every caller of
-  `connect()`, not only the setup page.
-- A QR code (`WIFI:T:WPA;S:…;P:…;;`) for the setup hotspot, as terminal
-  output.
-- `<name>.local` through avahi.
-- The setup page is built from reusable parts: framework-free request
-  handlers and JSON endpoints (scan, connect, status) that any PHP app can
-  mount behind its own authentication. `wifi provision` is one app built from
-  them, not the only one.
-- Foundation in the same release:
-  - **`hostapd` channel and country code.** Today the channel is fixed (6 for
-    2.4 GHz, 36 for 5 GHz) and no country code is set; the Pi runs in world
-    regulatory mode (`country 00`).
-  - **Argv-free hotspot passphrase for `nmcli`.** `NmcliBackend::startHotspot()`
-    still passes it as an argument — `nmcli` has no stdin mode for that
-    subcommand. A keyfile under `/etc/NetworkManager/system-connections/`,
-    the same shape as `Backend\Windows\ProfileFile` and `HostapdConfig`,
-    closes it.
-- Risks to settle in the spec:
-  - A single radio cannot hold the hotspot and join the network at once, so
-    the phone loses the page at the moment of success. The page has to tell
-    the user where to go next, and bring the hotspot back with the reason if
-    the join fails.
-  - Captive-portal detection differs between iOS and Android; only a live run
-    with real phones settles it.
+- The hotspot passphrase for `nmcli` goes through `nmcli --ask connection up`
+  on stdin, not through a keyfile. A keyfile needs root, which the old demo's
+  `www-data` does not have.
+- The QR code is drawn by `qrencode` when it is installed; there is no
+  encoder in the library.
+- `<name>.local` is the hostname `avahi-daemon` already publishes. Nothing is
+  renamed or published by the library.
+
+Left open:
+
+- An Android phone on the setup hotspot. An iPhone opened the page by itself
+  on both backends; Android's check is answered the same way but was not run.
+- `wifi-watch.service` stops `hostapd`, `dnsmasq` and the DHCP client when the
+  unit restarts on `WpaCliBackend` (see "Not verified" for 3.2.5 in
+  docs/verified-on.md).
+- `wifi watch` raises a hotspot with no page on it. Serving the setup page
+  from the watchdog's hotspot would close the loop.
 
 ## 3.4.0 — `wifi doctor` and events
 

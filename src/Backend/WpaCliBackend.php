@@ -12,7 +12,9 @@ use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
+use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
+use Sanchescom\WiFi\Exception\WrongPassphrase;
 use Sanchescom\WiFi\Parser\Iw\DevParser;
 use Sanchescom\WiFi\Parser\WpaCli\ListNetworksParser;
 use Sanchescom\WiFi\Parser\WpaCli\Printf;
@@ -70,7 +72,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
     private const DNSMASQ_BINARY = 'dnsmasq';
 
-    private const HOTSPOT_ADDRESS = '10.42.0.1/24';
+    private const HOTSPOT_ADDRESS = HotspotConfig::ADDRESS . '/24';
 
     private const DHCP_RANGE = '10.42.0.10,10.42.0.100,12h';
 
@@ -249,10 +251,24 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * `wpa_state=COMPLETED` on that block's id — `select_network`, because a
      * merely enabled block could lose to a still-associated old one, which
      * would also make COMPLETED meaningless.
+     *
+     * @throws WrongPassphrase when the passphrase is refused, or cannot be one (not 8–63 printable ASCII characters)
+     * @throws NoAddress when the join worked and the DHCP client then failed
      */
     public function connect(string $ssid, Credentials $credentials, Device $device): void
     {
         $interface = $device->name;
+
+        // A WPA passphrase is 8–63 printable ASCII characters; anything else cannot be the right one
+        // for any network, and is reported as a wrong one before a key is derived from it.
+        if ($credentials->password !== null && preg_match('/^[\x20-\x7e]{8,63}$/D', $credentials->password) !== 1) {
+            throw WrongPassphrase::forNetwork(
+                $ssid,
+                new Command('wpa_cli', ['-i', $interface], ['LANG' => 'C']),
+                new CommandResult(0, '', ''),
+            );
+        }
+
         $blocks = $this->networkBlocks($interface);
         $matching = array_values(array_map(
             static fn (array $block): string => $block['id'],
@@ -262,8 +278,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         if ($credentials->password === null && $matching !== []) {
             // ponytail: joins the first block only; duplicates come from hand-edited configs, since
             // this method never leaves any behind. Try each in turn if that ever matters.
-            $this->joinBlock($interface, $matching[0], $blocks);
-            $this->requestAddress($device);
+            $this->joinBlock($interface, $matching[0], $blocks, $ssid);
+            $this->requestAddress($device, $ssid);
 
             return;
         }
@@ -273,15 +289,15 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         try {
             if ($credentials->password !== null) {
                 $this->wpaCliScript($interface, [
-                    sprintf('set_network %d ssid %s', $id, self::quote($ssid)),
-                    sprintf('set_network %d psk %s', $id, self::quote($credentials->password)),
+                    sprintf('set_network %d ssid %s', $id, bin2hex($ssid)),
+                    sprintf('set_network %d psk %s', $id, self::psk($ssid, $credentials->password)),
                 ]);
             } else {
-                $this->wpaCli($interface, 'set_network', (string) $id, 'ssid', self::quote($ssid));
+                $this->wpaCli($interface, 'set_network', (string) $id, 'ssid', bin2hex($ssid));
                 $this->wpaCli($interface, 'set_network', (string) $id, 'key_mgmt', 'NONE');
             }
 
-            $this->joinBlock($interface, (string) $id, $blocks);
+            $this->joinBlock($interface, (string) $id, $blocks, $ssid);
         } catch (Throwable $exception) {
             try {
                 $this->wpaCli($interface, 'remove_network', (string) $id);
@@ -298,7 +314,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
         $this->wpaCli($interface, 'save_config');
 
-        $this->requestAddress($device);
+        $this->requestAddress($device, $ssid);
     }
 
     /**
@@ -310,12 +326,12 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      *
      * @param list<array{id: string, ssid: string, flags: string}> $blocks as they were before joining
      */
-    private function joinBlock(string $interface, string $id, array $blocks): void
+    private function joinBlock(string $interface, string $id, array $blocks, string $ssid): void
     {
         $this->wpaCli($interface, 'select_network', $id);
 
         try {
-            $this->awaitAssociation($interface, $id);
+            $this->awaitAssociation($interface, $id, $ssid);
         } finally {
             foreach ($blocks as $block) {
                 // [P2P-PERSISTENT] blocks are left alone by select_network and refuse enable_network.
@@ -426,6 +442,11 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     {
         $this->guardAgainstAlreadyRunningHotspot();
 
+        // Daemons that outlived their access point ({@see self::radioIsAccessPoint()}) would
+        // hold the radio and the pid files against the ones about to be started.
+        $this->killPidFile($this->hostapdPidFile(), self::HOSTAPD_BINARY);
+        $this->killPidFile($this->dnsmasqPidFile(), self::DNSMASQ_BINARY);
+
         $interface = $device->name;
         $hostapdConfig = new HostapdConfig($interface, $config, $this->runtimeDirectory->ensure());
         $confFile = $hostapdConfig->create();
@@ -457,6 +478,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
                 '--except-interface=lo',
                 '--dhcp-range=' . self::DHCP_RANGE,
                 '--pid-file=' . $this->dnsmasqPidFile(),
+                // Captive portal: every name resolves to this device.
+                ...($config->captivePortal ? ['--address=/#/' . HotspotConfig::ADDRESS] : []),
             ]));
         } catch (Throwable $exception) {
             try {
@@ -549,7 +572,32 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         $hostapd = $this->pidMatches($this->hostapdPidFile(), self::HOSTAPD_BINARY);
         $dnsmasq = $this->pidMatches($this->dnsmasqPidFile(), self::DNSMASQ_BINARY);
 
-        return $hostapd && $dnsmasq;
+        return $hostapd && $dnsmasq && $this->radioIsAccessPoint();
+    }
+
+    /**
+     * Both daemons alive is not yet an access point on the air. Measured on
+     * the Pi: a `wpa_supplicant` that exits while `hostapd` serves the same
+     * interface puts the radio back into station mode on its way out — `iw`
+     * reports "stop ap", then "set interface type station" — and `hostapd`
+     * goes on running with nothing to serve. A phone no longer sees the
+     * network, and nothing that only counts processes can tell.
+     *
+     * So `iw dev` has to list an interface of type AP as well. When `iw`
+     * cannot be found or fails, the answer is not known and the daemons are
+     * believed, as they were before this check existed.
+     */
+    private function radioIsAccessPoint(): bool
+    {
+        $iw = $this->toolPath->resolve('iw');
+
+        if ($iw === null) {
+            return true;
+        }
+
+        $result = $this->runner->run(new Command($iw, ['dev']));
+
+        return !$result->isSuccessful() || preg_match('/^\s*type AP\s*$/m', $result->stdout) === 1;
     }
 
     private function hostapdPidFile(): string
@@ -757,8 +805,19 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * With $expectedId, COMPLETED only counts once `status` reports that
      * block's `id=`: right after `select_network` the previous association
      * can still read COMPLETED for a moment.
+     *
+     * A wrong passphrase does not have to wait out the budget. After a
+     * failed 4-way handshake `wpa_supplicant` marks the block
+     * `[TEMP-DISABLED]` in `list_networks` — about eight seconds in, for ten
+     * seconds, then it tries again (measured on the Pi; its own log line is
+     * "pre-shared key may be incorrect"). So every poll that has not seen
+     * COMPLETED also looks at the block's flags and, once that one is set,
+     * throws {@see WrongPassphrase}. Checking only when the budget runs out
+     * would miss it: by then the block is enabled again.
+     *
+     * @throws WrongPassphrase when `wpa_supplicant` has disabled the block after a failed handshake
      */
-    private function awaitAssociation(string $interface, ?string $expectedId = null): void
+    private function awaitAssociation(string $interface, ?string $expectedId = null, string $ssid = ''): void
     {
         $lastState = 'UNKNOWN';
         $lastResult = new CommandResult(0, '', '');
@@ -770,6 +829,14 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
 
             if ($lastState === 'COMPLETED' && ($expectedId === null || ($status['id'] ?? null) === $expectedId)) {
                 return;
+            }
+
+            if ($expectedId !== null && $this->isTemporarilyDisabled($interface, $expectedId)) {
+                throw WrongPassphrase::forNetwork(
+                    $ssid,
+                    new Command('wpa_cli', ['-i', $interface], ['LANG' => 'C']),
+                    $lastResult,
+                );
             }
 
             if ($attempt < $this->associationAttempts - 1) {
@@ -805,10 +872,36 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * a `dhcpcd` daemon already supervises this interface, so it is left
      * alone — two DHCP clients fighting over one interface is worse than
      * one running.
+     *
+     * A client that runs and comes back without a lease is {@see NoAddress}:
+     * the join itself worked.
+     *
+     * @throws NoAddress when the DHCP client fails
      */
-    private function requestAddress(Device $device): void
+    private function requestAddress(Device $device, string $ssid): void
     {
-        $interface = $device->name;
+        try {
+            $this->runDhcpClient($device->name);
+        } catch (PermissionDenied $exception) {
+            throw $exception;
+        } catch (CommandFailed $exception) {
+            throw NoAddress::forNetwork($ssid, $exception->command, $exception->result);
+        }
+    }
+
+    private function isTemporarilyDisabled(string $interface, string $id): bool
+    {
+        foreach ($this->networkBlocks($interface) as $block) {
+            if ($block['id'] === $id) {
+                return str_contains($block['flags'], '[TEMP-DISABLED]');
+            }
+        }
+
+        return false;
+    }
+
+    private function runDhcpClient(string $interface): void
+    {
 
         $dhcpcd = $this->toolPath->resolve('dhcpcd');
 
@@ -840,17 +933,28 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     }
 
     /**
-     * wpa_supplicant's `ssid`/`psk` network-block values are C-style quoted
-     * strings: a literal `"` or `\` inside the value must be backslash
-     * escaped, in that order (escaping `\` first, then `"`, so the
-     * backslash introduced by quote-escaping is not itself re-escaped).
+     * The 256-bit key WPA derives from a passphrase and the network's name,
+     * as 64 hex digits — what `wpa_supplicant` computes itself when it is
+     * given the passphrase, and accepts ready-made as an unquoted `psk`.
+     *
+     * Nothing a caller supplies is ever written into the script `wpa_cli`
+     * reads: the SSID goes in as hex ({@see self::connect()}) and the
+     * passphrase as this key. `wpa_cli` reads that script through a line
+     * editor, which acts on bytes of a value as on keys — a line break ends
+     * the command, Ctrl-U wipes it (measured on the Pi: an SSID carrying
+     * Ctrl-U replaced the command with one of its own, run as root). Two
+     * rounds of filtering such bytes each missed some; hex digits leave
+     * nothing to filter. It also means the passphrase itself is never stored
+     * in `wpa_supplicant`'s config, only the key.
+     *
+     * Quoting was wrong in its own right: `wpa_supplicant` reads a quoted
+     * value from the first quote to the last with no escapes, so the
+     * backslash escaping applied until 3.3.0 stored the backslashes too and a
+     * name or passphrase containing `"` or `\` could not be joined.
      */
-    private static function quote(string $value): string
+    private static function psk(string $ssid, string $passphrase): string
     {
-        $escaped = str_replace('\\', '\\\\', $value);
-        $escaped = str_replace('"', '\\"', $escaped);
-
-        return '"' . $escaped . '"';
+        return hash_pbkdf2('sha1', $passphrase, $ssid, 4096, 64);
     }
 
     /** One command in argument mode (`wpa_cli -i <iface> <command> <args...>`), which fails at once when no `wpa_supplicant` listens. */
