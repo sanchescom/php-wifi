@@ -6,11 +6,13 @@ namespace Sanchescom\WiFi\Backend;
 
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
+use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
 use Sanchescom\WiFi\Parser\Nmcli\ConnectionListParser;
 use Sanchescom\WiFi\Parser\Nmcli\DeviceListParser;
 use Sanchescom\WiFi\Parser\Nmcli\ListParser;
+use Sanchescom\WiFi\Parser\Nmcli\TerseLine;
 use Sanchescom\WiFi\Shell\Command;
 use Sanchescom\WiFi\Shell\CommandResult;
 use Sanchescom\WiFi\Shell\CommandRunner;
@@ -68,11 +70,12 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
      * holds a (possibly stale) passphrase makes nmcli connect with that
      * stored secret and ignore whatever arrives on stdin — a freshly typed,
      * corrected passphrase would then silently never take effect. So a
-     * passphrase here first deletes any existing profile for $ssid; its
-     * failure (there usually is no such profile) is expected and ignored —
-     * this call must never throw. This also drops any other setting that
-     * profile held (static IP, autoconnect), which is the price of
-     * honouring a freshly supplied passphrase over a stale saved one.
+     * passphrase here first deletes any existing Wi-Fi profile named $ssid
+     * ({@see self::deleteWifiProfiles()}); usually there is none, and a
+     * failure of that step is ignored — it must never throw. This also
+     * drops any other setting that profile held (static IP, autoconnect),
+     * which is the price of honouring a freshly supplied passphrase over a
+     * stale saved one.
      */
     public function connect(string $ssid, Credentials $credentials, Device $device): void
     {
@@ -81,7 +84,13 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         $stdinIsSecret = false;
 
         if ($credentials->password !== null) {
-            $this->runner->run(new Command('nmcli', ['connection', 'delete', $ssid], ['LANG' => 'C']));
+            $listing = $this->runner->run($this->profileListCommand());
+
+            if ($listing->isSuccessful()) {
+                foreach ($this->wifiProfileUuids($listing->stdout, $ssid) as $uuid) {
+                    $this->runner->run($this->deleteCommand($uuid));
+                }
+            }
 
             $arguments[] = '--ask';
             $stdin = $credentials->password . "\n";
@@ -152,9 +161,60 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         return $ssid === '' ? null : $ssid;
     }
 
+    /**
+     * Deletes the saved Wi-Fi profile(s) named $ssidOrName, each by its
+     * UUID. `nmcli connection delete <name>` matches every profile of that
+     * name whatever its type, so a VPN or a wired profile that happens to
+     * share a Wi-Fi network's name would go with it.
+     *
+     * @throws NetworkNotFound when no saved Wi-Fi profile has that name
+     */
     public function forget(string $ssidOrName): void
     {
-        $this->run(new Command('nmcli', ['connection', 'delete', $ssidOrName], ['LANG' => 'C']));
+        $uuids = $this->wifiProfileUuids($this->run($this->profileListCommand())->stdout, $ssidOrName);
+
+        if ($uuids === []) {
+            throw NetworkNotFound::notSaved($ssidOrName);
+        }
+
+        foreach ($uuids as $uuid) {
+            $this->run($this->deleteCommand($uuid));
+        }
+    }
+
+    private function profileListCommand(): Command
+    {
+        return new Command('nmcli', ['-t', '-f', 'NAME,UUID,TYPE', 'connection', 'show'], ['LANG' => 'C']);
+    }
+
+    private function deleteCommand(string $uuid): Command
+    {
+        return new Command('nmcli', ['connection', 'delete', 'uuid', $uuid], ['LANG' => 'C']);
+    }
+
+    /**
+     * @param string $listing the output of {@see self::profileListCommand()}
+     * @return list<string> the UUID of every Wi-Fi profile whose name, or own UUID, is $nameOrUuid
+     */
+    private function wifiProfileUuids(string $listing, string $nameOrUuid): array
+    {
+        $uuids = [];
+
+        foreach (preg_split('/\r?\n/', $listing) ?: [] as $line) {
+            $fields = TerseLine::split($line);
+
+            if (count($fields) !== 3) {
+                continue;
+            }
+
+            [$name, $uuid, $type] = $fields;
+
+            if ($type === '802-11-wireless' && ($name === $nameOrUuid || $uuid === $nameOrUuid)) {
+                $uuids[] = $uuid;
+            }
+        }
+
+        return $uuids;
     }
 
     public function startHotspot(HotspotConfig $config, Device $device): Hotspot

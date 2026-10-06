@@ -360,7 +360,7 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         );
 
         if ($blocks === []) {
-            throw NetworkNotFound::bySsid($ssidOrName);
+            throw NetworkNotFound::notSaved($ssidOrName);
         }
 
         foreach ($blocks as $block) {

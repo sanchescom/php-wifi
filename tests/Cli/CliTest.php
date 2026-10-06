@@ -224,6 +224,16 @@ final class CliTest extends TestCase
         $this->assertSame('Forgot BELL340.', trim($result['stdout']));
     }
 
+    /** Saved networks are not scanned for; the old message blamed the scan. */
+    #[Test]
+    public function forget_of_an_unknown_network_names_the_saved_networks_not_the_scan(): void
+    {
+        $result = $this->runCli(['forget', 'NoSuchNetwork'], self::LINUX_FIXTURES, 'Linux');
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertSame('No saved network named "NoSuchNetwork".', trim($result['stderr']));
+    }
+
     #[Test]
     public function disconnect_reports_permission_denied_as_exit_three(): void
     {

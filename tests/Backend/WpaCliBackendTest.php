@@ -948,6 +948,7 @@ final class WpaCliBackendTest extends TestCase
         $backend = new WpaCliBackend($runner, 'wlan0');
 
         $this->expectException(NetworkNotFound::class);
+        $this->expectExceptionMessage('No saved network named "Nope".');
 
         try {
             $backend->forget('Nope');

@@ -11,6 +11,12 @@ final class NetworkNotFound extends WiFiException
         return new self(sprintf('No network named "%s" was found in the scan.', $ssid));
     }
 
+    /** For a saved network, which no scan is involved in. */
+    public static function notSaved(string $name): self
+    {
+        return new self(sprintf('No saved network named "%s".', $name));
+    }
+
     public static function byBssid(string $bssid): self
     {
         return new self(sprintf('No network with BSSID %s was found in the scan.', $bssid));
