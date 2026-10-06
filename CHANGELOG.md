@@ -2,12 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.3.0] - unreleased
+## [3.3.0] - 2026-10-06
 
 `wifi provision`, and what it stands on. Nothing in this release breaks
 calling code; the behaviour changes are in
 [UPGRADE.md](UPGRADE.md#32--33). Verified live on the maintainer's Raspberry
-Pi on both Linux backends — see [docs/verified-on.md](docs/verified-on.md).
+Pi on both Linux backends, with an iPhone on each — see
+[docs/verified-on.md](docs/verified-on.md). Not run: an Android phone.
 
 ### Added
 - **`wifi provision`**: one command that raises a setup hotspot, serves a

@@ -1,5 +1,9 @@
 # Headless Wi-Fi provisioning on a Raspberry Pi
 
+> Since 3.3.0 this is one command, `wifi provision`, with a captive portal
+> and typed failure reasons — see the main README.md. This directory is the
+> hand-assembled version it grew out of; it still works and shows every part.
+
 A small demo that turns a headless Raspberry Pi into a Wi-Fi setup wizard:
 it opens a temporary hotspot, a phone joins it, and a plain PHP page lets
 the phone pick a network and a password — no SSH, no keyboard, no monitor.

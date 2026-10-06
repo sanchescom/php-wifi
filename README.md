@@ -16,7 +16,9 @@ On Linux it also raises a hotspot (`hostapd`/`dnsmasq` or NetworkManager) and
 ships `wifi watch`, a watchdog that keeps a headless device — a Raspberry Pi
 with no keyboard or screen — reachable: it rejoins the network on its own, and
 raises a provisioning hotspot when it cannot, leaving it up while someone is
-attached to it. Every release is verified on real hardware before it is
+attached to it. `wifi provision` puts such a device on a network from a
+phone: a setup hotspot with a captive-portal page, and a failed join that says
+why. Every release is verified on real hardware before it is
 tagged — the transcripts, and the defects those runs found, are in
 [`docs/verified-on.md`](docs/verified-on.md).
 
@@ -58,6 +60,8 @@ and fixed the earlier, OS-wrong version of it.)
   (NetworkManager) or `wpa_supplicant`/`wpa_cli` on Linux (see "Linux — two
   backends" below), `networksetup` (built in) on macOS, `netsh` (built in) on
   Windows
+- Optional, for `wifi provision`: `qrencode` (a QR code for joining the setup
+  network) and a running `avahi-daemon` (the device's `<hostname>.local` name)
 
 ## Installation
 
@@ -162,7 +166,8 @@ printf("%s on %s\n", $hotspot->ssid, $hotspot->device);
 
 `HotspotConfig` also takes a `channel` and a `country`:
 `new HotspotConfig(ssid: …, password: …, channel: 11, country: 'DE')`. Without
-a channel the hotspot is on 6 (2.4 GHz) or 36 (5 GHz). Without a country
+a channel `WpaCliBackend`'s hotspot is on 6 (2.4 GHz) or 36 (5 GHz) and
+NetworkManager picks its own. Without a country
 `hostapd` leaves the radio in the regulatory domain the system has — on a
 Raspberry Pi that was never told its country, the world domain. `NmcliBackend`
 passes the channel on and refuses a country with `UnsupportedOperation`:
@@ -179,8 +184,8 @@ from a phone — no SSH, no keyboard, no monitor:
 
 ```
 $ sudo wifi provision
-Setup network: femus-pi-setup
-Passphrase:    k7m2xw9qhd4t
+Setup network: <hostname>-setup
+Passphrase:    <twelve random characters>
 Setup page:    http://10.42.0.1/
 ```
 
@@ -375,7 +380,9 @@ $backend = BackendFactory::forLinux(ShellCommandRunner::forCurrentOs());
 | `iw` | Device detection (`iw dev`); `wifi watch`'s station count (`iw dev <iface> station dump`) | Always |
 | A DHCP client — `dhcpcd`, `udhcpc`, or `dhclient` | Getting an address after `connect()` associates | Recommended — `connect()` still succeeds without one, but the interface is then associated with no address; something else (a static configuration, `systemd-networkd`) has to address it |
 | `hostapd` | The hotspot access point | Only for `startHotspot()` / `stopHotspot()` / `isHotspotActive()` |
-| `dnsmasq` | DHCP for hotspot clients | Only for the hotspot |
+| `dnsmasq` | DHCP for hotspot clients, and the captive portal's DNS | Only for the hotspot |
+| `qrencode` | The QR code `wifi provision` prints (either backend) | Optional |
+| `avahi-daemon` | `<hostname>.local`, which `wifi provision` names after a join (either backend) | Optional |
 
 Every tool above is spawned by its absolute path, resolved with `which`
 against a fixed search path that includes `/usr/local/sbin`, `/usr/sbin` and
@@ -430,6 +437,9 @@ an unprivileged call answers `inactive`.
 | detect (`device()`) | ✅ verified live | ✅ verified live (implicit — no `--device` was passed in any 3.2.0 run, so `iw dev` resolved it every time) | ✅ verified live | ✅ tests only |
 | known networks | ✅ verified live | `forget()` ✅ verified live; `knownNetworks()` (`wifi known`) — tests only, not shown in the 3.2.0 run | ❌ throws `UnsupportedOperation` | ❌ throws `UnsupportedOperation` |
 | hotspot | ✅ verified live | ✅ verified live (`hostapd` + `dnsmasq`) | ❌ throws `UnsupportedOperation` | ❌ throws `UnsupportedOperation` |
+| hotspot channel / country | channel ✅ verified live; a country is refused (`UnsupportedOperation`) | ✅ both verified live | ❌ | ❌ |
+| why a join failed (`WrongPassphrase`, `NetworkNotFound`, `NoAddress`) | wrong passphrase and missing network ✅ verified live; `NoAddress` tests only | wrong passphrase ✅ verified live; `NoAddress` tests only | ❌ plain `CommandFailed` | ❌ plain `CommandFailed` |
+| `wifi provision` / `Provision\Portal` | ✅ verified live with an iPhone — the page opens by itself; Android not run | ✅ verified live with an iPhone; Android not run | ❌ `provision` exits 2; nothing in `Portal` needs a hotspot, but it was not run there | ❌ same as macOS |
 
 See [`docs/verified-on.md`](docs/verified-on.md) for the raw commands
 behind every "verified live" cell above. `wifi watch` (Linux only, either
@@ -566,7 +576,11 @@ directory, with the same checks.
 tag from 3.0.0 on: the raw output of `device`, `list`, `list --unique`,
 `known`, `hotspot start`/`status`/`stop`, `forget`, `watch --once`, and a
 real `connect` to the maintainer's own network, run on a Raspberry Pi — on
-`NmcliBackend` since 3.0.0, and on `WpaCliBackend` as well since 3.2.0.
+`NmcliBackend` since 3.0.0, and on `WpaCliBackend` as well since 3.2.0. For
+3.3.0 it also holds `wifi provision` on both backends, driven with `curl` and
+then with a phone, and the replies `nmcli` and `wpa_supplicant` give to a
+wrong passphrase, which the typed failures are read from. Each release's
+section ends with what was not verified.
 
 ## CLI reference
 
@@ -656,6 +670,73 @@ bin/wifi list --unique --json`:
 `bssid`, `channel`, `band`, `frequency`, `quality` and `dbm` are `null` when
 the platform does not report them.
 
+### `wifi provision`
+
+```
+$ sudo wifi provision --ssid=femus-setup --password-file=/tmp/hs.pass
+Setup network: femus-setup
+Passphrase:    ********
+Setup page:    http://10.42.0.1/
+█▀▀▀▀▀█ …                              (a QR code, when qrencode is installed)
+2026-10-06T19:12:48+00:00 provision: serving
+2026-10-06T19:14:21+00:00 provision: joining
+2026-10-06T19:14:26+00:00 provision: restarted
+2026-10-06T19:17:23+00:00 provision: joining
+2026-10-06T19:17:31+00:00 provision: done
+Joined BELL340.
+The device answers to femus-pi.local on that network.
+```
+
+The first four lines and the last two go to stdout, the timestamped ones to
+stderr — under systemd, all of it to the journal. The run above is the one
+recorded with a phone on the Pi (the passphrase masked here): a wrong passphrase first (`joining`, then
+`restarted` — the hotspot is back), then the right one.
+
+| Option | Default | |
+| --- | --- | --- |
+| `--ssid=` | `<hostname>-setup` | Name of the setup hotspot |
+| `--password-file=` | a random 12-character passphrase, printed | File holding the hotspot passphrase, or `-` for stdin. There is no inline option: the passphrase would sit in `ps` |
+| `--port=` | `80` | Port of the setup page. Phones only open a captive portal on 80 by themselves |
+| `--timeout=` | `900` | Seconds to wait for a join before taking the hotspot down and exiting 1 |
+| `--channel=` | 6 on `WpaCliBackend`; NetworkManager's own choice on `NmcliBackend` | Channel of the setup hotspot |
+| `--country=` | — | Regulatory domain, two letters; `WpaCliBackend` only |
+| `--device=` | auto-detected | Which radio to use |
+
+What each state on stderr means:
+
+| State | |
+| --- | --- |
+| `serving` | The hotspot is up and the page is waiting |
+| `joining` | The page has taken the hotspot down and is joining the network that was picked |
+| `restarted` | The join failed; the hotspot was raised again and the page now shows the reason |
+| `done` | The device is on the network; the command exits 0 |
+
+It needs root. It scans once, before the hotspot goes up — a single radio
+cannot scan while it is an access point — so the list on the page is the one
+from that moment. The page is served on the hotspot's own address only, and
+only while the hotspot is up.
+
+A unit that runs it at boot, on either backend:
+
+```ini
+# /etc/systemd/system/wifi-provision.service
+[Unit]
+Description=php-wifi: put this device on Wi-Fi from a phone
+After=network.target
+
+[Service]
+ExecStart=/opt/php-wifi/bin/wifi provision --ssid=my-device-setup --password-file=/etc/php-wifi-setup.passphrase
+# Without NetworkManager the DHCP client the join starts has to outlive this unit.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
+```
+
+As written it runs on every boot, also on a device that is already on its
+network. To run it only when needed, start it from whatever decides that —
+a button, or a check that no saved network could be joined.
+
 ### `wifi watch`
 
 ![wifi watch on a Raspberry Pi: hotspot_raised, hotspot_busy, then recovered once --retry passes; log recorded live](.github/wifi-watch.gif)
@@ -727,7 +808,7 @@ autoloaded in a `composer require --no-dev` install.
 | `new WiFi(Backend $backend)` | `self` | Construct directly over a given backend (tests, custom runners) |
 | `scan()` | `NetworkCollection` | Scan for surrounding networks |
 | `connect(Network\|string $network, Credentials $credentials, ?Device $device = null)` | `void` | Connect; a hidden/redacted `Network` throws `InvalidArgument` — pass the SSID as a string instead |
-| `connectTo(string $ssid, Credentials $credentials, ?Device $device = null)` | `void` | Join `$ssid` without scanning first — for callers who already know the SSID and want to skip the scan (custom backends, scripted flows); a wrong SSID then surfaces as the backend's own `CommandFailed` rather than `NetworkNotFound` |
+| `connectTo(string $ssid, Credentials $credentials, ?Device $device = null)` | `void` | Join `$ssid` without scanning first — for callers who already know the SSID and want to skip the scan (custom backends, scripted flows); a wrong SSID then surfaces as the backend's own failure: `NetworkNotFound` on `NmcliBackend`, a `CommandFailed` naming the last `wpa_state` on `WpaCliBackend` |
 | `disconnect(?Device $device = null)` | `void` | Disconnect |
 | `device()` | `Device` | The detected wireless device |
 | `knownNetworks()` | `list<KnownNetwork>` | Saved connections (Linux only; `UnsupportedOperation` elsewhere) |
@@ -776,6 +857,75 @@ Every other `Illuminate\Support\Collection` method (`all()`, `first()`,
 | `$security` | `Security` | Enum: `WPA3`/`WPA2`/`WPA`/`WEP`/`Open`/`Unknown` |
 | `$securityFlags` | `string` | Raw flags string as the tool printed it |
 | `$connected` | `bool` | |
+
+### `HotspotConfig` (readonly)
+
+`new HotspotConfig(ssid: …, password: …, band: …, device: …, channel: …, country: …, captivePortal: …)`
+
+| Property | Type | Notes |
+| --- | --- | --- |
+| `$ssid` | `string` | 1–32 bytes |
+| `$password` | `string` | 8–63 characters; the hotspot is WPA2 |
+| `$band` | `?Band` | `GHz2_4` or `GHz5`; `GHz6` is refused by both backends |
+| `$device` | `?Device` | Auto-detected when `null` |
+| `$channel` | `?int` | Must exist on `$band`; given alone, it brings its band (`resolvedBand()`) |
+| `$country` | `?string` | Two upper-case letters. `WpaCliBackend` only |
+| `$captivePortal` | `bool` | The hotspot's DNS answers every name with `HotspotConfig::ADDRESS` (`10.42.0.1`). Needs root on `NmcliBackend` |
+
+### Exceptions (`Sanchescom\WiFi\Exception`)
+
+All extend `WiFiException`.
+
+| Exception | Extends | Thrown when |
+| --- | --- | --- |
+| `CommandFailed` | `WiFiException` | A tool exited non-zero or reported failure. `$command` and `$result` are attached; the message masks secrets |
+| `PermissionDenied` | `CommandFailed` | The process may not control NetworkManager or `wpa_supplicant` |
+| `WrongPassphrase` | `CommandFailed` | Linux: the network refused the passphrase, or it cannot be one (not 8–63 printable ASCII characters, `WpaCliBackend`) |
+| `NoAddress` | `CommandFailed` | Linux: joined, but no DHCP lease |
+| `NetworkNotFound` | `WiFiException` | No such network in the scan, no such saved network, or `nmcli` found none to join |
+| `DeviceNotFound` | `WiFiException` | No wireless device |
+| `UnsupportedOperation` | `WiFiException` | The backend lacks the capability, a 6 GHz hotspot, or a hotspot country on `NmcliBackend` |
+| `InvalidArgument` | `WiFiException` | A value that cannot be used: an empty SSID, a hidden network, a hotspot channel that is not on its band |
+
+### `Provision\Portal`
+
+`new Portal(WiFi $wifi, ?State $state = null)`
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `networks()` | `list<array{ssid, band, quality, security}>` | Networks in range, strongest first, one per name; the list a `State` cached when there is one |
+| `connect(string $ssid, string $password = '')` | `array{ok, ssid, reason, message}` | Joins; never throws. Stops a hotspot this device is serving first, then looks for the network for up to a quarter of a minute |
+| `status()` | `array{hotspot, joining, connected, lastAttempt}` | Never scans while a hotspot is up |
+| `handle(string $method, string $path, array $input = [])` | `?Response` | The three JSON endpoints; `null` for any other path |
+| `Portal::describe(NetworkCollection $networks)` | the same rows as `networks()` | Static; for a caller that already has a scan |
+
+`reason` is `null` on success, otherwise one of:
+
+| `reason` | From | `message` |
+| --- | --- | --- |
+| `wrong_passphrase` | `WrongPassphrase` | `The passphrase for "Home" was not accepted.` |
+| `network_not_found` | `NetworkNotFound` | `No network named "Home" was found in the scan.` |
+| `no_address` | `NoAddress` | `Joined "Home", but the network gave the device no address.` |
+| `permission_denied` | `PermissionDenied` | `The device is not allowed to change its Wi-Fi settings.` |
+| `invalid` | `InvalidArgument`, or no SSID in the request | what was wrong with the value |
+| `failed` | anything else | `The device could not join the network.` — the detail goes to the error log |
+
+| Endpoint | Status | Body |
+| --- | --- | --- |
+| `GET /api/networks` | 200 | `{"networks": [{"ssid": "Home", "band": "5", "quality": 87, "security": "WPA2"}]}` |
+| `GET /api/status` | 200 | `{"hotspot": false, "joining": false, "connected": "Home", "lastAttempt": null}` |
+| `POST /api/connect` (`ssid`, `password`) | 200, 400 without an SSID, 422 when the join failed | `{"ok": false, "ssid": "Home", "reason": "wrong_passphrase", "message": "…"}` |
+
+The rest of `Sanchescom\WiFi\Provision`:
+
+| Class | |
+| --- | --- |
+| `Response` | `$status`, `$headers`, `$body`, and `$after` — work to run once the answer has been sent. `send()` for plain PHP |
+| `SetupPage` | The page `wifi provision` serves: `handle($method, $host, $path, $input): Response`. Redirects any request for a foreign host to itself, answers the form before the join |
+| `Supervisor` | `start()`, `tick(): SupervisorState`, `stop()` — keeps the setup hotspot up, and leaves it alone while a join runs |
+| `State` | The cached scan, the "join is running" marker and the last attempt's outcome, in `/run/php-wifi`. Never a passphrase |
+| `QrCode` | `payload($ssid, $password)` — the `WIFI:T:WPA;…` string; `render()` draws it with `qrencode` |
+| `LocalName` | `detect()` — `<hostname>.local` when `avahi-daemon` is running |
 
 ## Contributing
 

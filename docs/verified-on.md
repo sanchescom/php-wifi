@@ -812,7 +812,7 @@ $ ping -c 2 -W 3 -I wlan0 192.168.2.1
 
 ---
 
-# Verified on real hardware — 3.3.0 (before the tag)
+# Verified on real hardware — 3.3.0
 
 Same Raspberry Pi, **2026-10-06**, branch `3.3.0`. Every run was a transient
 systemd unit, as root; the radio was `disabled` before and after each, and no
@@ -1126,7 +1126,11 @@ code (19 lines of it in the journal) now that `qrencode` is installed.
 ## Not verified
 
 - **Android.** No Android phone was at hand. iOS is above.
-- Whether a phone's camera joins the setup network from the printed QR code.
+- The QR code off a terminal. Its content was checked: the string the command
+  hands to `qrencode`, drawn as an image, was scanned with the iPhone's camera,
+  which joined `femus-setup` without the passphrase being typed
+  (`DHCPACK(wlan0) 10.42.0.35 ce:39:4a:b7:a6:66 iPhone`). The command's own
+  drawing, as it appears in a terminal, was not what the camera saw.
 - `NoAddress`: no network without a DHCP server was at hand. Fixture-only,
   and `nmcli`'s wording for it is taken from NetworkManager, not measured.
 - The new `nmcli` hotspot start as an unprivileged user under the polkit

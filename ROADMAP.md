@@ -41,10 +41,12 @@ open: `wifi-watch.service` stops `hostapd`, `dnsmasq` and the DHCP client when
 the unit restarts on `WpaCliBackend` (see "Not verified" in
 docs/verified-on.md).
 
-## 3.3.0 — `wifi provision` (built, not yet tagged)
+## 3.3.0 — shipped
 
-See CHANGELOG.md. Built and run on the Pi on both backends, with the page
-driven by `curl`. Three things differ from the plan that stood here:
+See CHANGELOG.md, UPGRADE.md and docs/verified-on.md. `wifi provision`, the
+`Provision\Portal` handlers, typed failure reasons, the hotspot channel and
+country, and the hotspot passphrase off `nmcli`'s arguments are the 3.3.0
+release. Three things differ from the plan that stood here:
 
 - The hotspot passphrase for `nmcli` goes through `nmcli --ask connection up`
   on stdin, not through a keyfile. A keyfile needs root, which the old demo's
@@ -54,12 +56,10 @@ driven by `curl`. Three things differ from the plan that stood here:
 - `<name>.local` is the hostname `avahi-daemon` already publishes. Nothing is
   renamed or published by the library.
 
-Run with an iPhone on both backends on 2026-10-06: the page opens by itself,
-a failed join shows its reason, a successful one ends the run. Not yet run:
-an Android phone, and joining from the printed QR code with a camera.
-
 Left open:
 
+- An Android phone on the setup hotspot. An iPhone opened the page by itself
+  on both backends; Android's check is answered the same way but was not run.
 - `wifi-watch.service` stops `hostapd`, `dnsmasq` and the DHCP client when the
   unit restarts on `WpaCliBackend` (see "Not verified" for 3.2.5 in
   docs/verified-on.md).

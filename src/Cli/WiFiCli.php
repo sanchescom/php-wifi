@@ -120,7 +120,7 @@ final class WiFiCli extends CLI
             'hotspot',
         );
         $options->registerOption('band', 'Radio band: 2.4 or 5', null, true, 'hotspot');
-        $options->registerOption('channel', 'Channel (default: 6 on 2.4 GHz, 36 on 5 GHz)', null, true, 'hotspot');
+        $options->registerOption('channel', 'Channel (default: the backend\'s own choice)', null, true, 'hotspot');
         $options->registerOption(
             'country',
             'Two-letter country code for the regulatory domain, e.g. DE (wpa_cli backend only)',
