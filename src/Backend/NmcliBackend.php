@@ -190,6 +190,16 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         }
     }
 
+    /** A random (version 4) UUID. */
+    private static function uuid(): string
+    {
+        $bytes = random_bytes(16);
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
+    }
+
     private function profileListCommand(): Command
     {
         return new Command('nmcli', ['-t', '-f', 'NAME,UUID,TYPE', 'connection', 'show'], ['LANG' => 'C']);
@@ -238,7 +248,9 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
      *
      * Any Wi-Fi profile already called "Hotspot" is deleted first, so there
      * is one such profile however often this is called, and a profile whose
-     * activation fails is deleted again instead of being left behind.
+     * activation fails is deleted again instead of being left behind. The
+     * new profile is created with a UUID generated here and activated by
+     * that UUID, never by its name.
      *
      * `nmcli` accepts a channel only together with a band, so a channel
      * given without one brings the band it belongs to
@@ -274,16 +286,27 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
             $settings = [...$settings, 'wifi.channel', (string) $config->channel];
         }
 
-        $settings = [...$settings, 'ipv4.method', 'shared', 'ipv6.method', 'ignore', 'wifi-sec.key-mgmt', 'wpa-psk'];
+        // WPA2 with CCMP only, as `device wifi hotspot` sets it: left out,
+        // NetworkManager would also offer WPA and TKIP.
+        $settings = [
+            ...$settings,
+            'ipv4.method', 'shared', 'ipv6.method', 'ignore',
+            'wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.proto', 'rsn',
+            'wifi-sec.pairwise', 'ccmp', 'wifi-sec.group', 'ccmp',
+        ];
 
         $this->deleteWifiProfiles(self::HOTSPOT_CONNECTION_NAME);
+
+        // The profile gets a UUID chosen here and is activated by it: "Hotspot" may also be the name of a
+        // profile of another type, and the passphrase must reach this one and no other.
+        $uuid = self::uuid();
 
         $this->run(new Command(
             'nmcli',
             [
                 'connection', 'add', 'type', 'wifi', 'ifname', $device->name,
                 'con-name', self::HOTSPOT_CONNECTION_NAME, 'autoconnect', 'no', 'ssid', $config->ssid,
-                '--', ...$settings,
+                '--', 'connection.uuid', $uuid, ...$settings,
             ],
             ['LANG' => 'C'],
         ));
@@ -291,14 +314,14 @@ final class NmcliBackend implements Backend, SupportsKnownNetworks, SupportsHots
         try {
             $this->run(new Command(
                 'nmcli',
-                ['-w', '20', '--ask', 'connection', 'up', self::HOTSPOT_CONNECTION_NAME],
+                ['-w', '20', '--ask', 'connection', 'up', 'uuid', $uuid],
                 ['LANG' => 'C'],
                 [],
                 $config->password . "\n",
                 true,
             ));
         } catch (CommandFailed $exception) {
-            $this->deleteWifiProfiles(self::HOTSPOT_CONNECTION_NAME);
+            $this->runner->run($this->deleteCommand($uuid));
 
             throw $exception;
         }

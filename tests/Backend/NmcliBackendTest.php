@@ -408,17 +408,27 @@ final class NmcliBackendTest extends TestCase
 
         $hotspot = $backend->startHotspot(new HotspotConfig('femus-setup', 'password1'), new Device('wlan0'));
 
+        $add = $this->addArguments($runner->commands);
+        $uuid = $add[14];
+        $this->assertMatchesRegularExpression(
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',
+            $uuid,
+        );
         $this->assertSame(
             [
                 'connection', 'add', 'type', 'wifi', 'ifname', 'wlan0', 'con-name', 'Hotspot', 'autoconnect', 'no',
-                'ssid', 'femus-setup', '--', 'wifi.mode', 'ap', 'ipv4.method', 'shared', 'ipv6.method', 'ignore',
-                'wifi-sec.key-mgmt', 'wpa-psk',
+                'ssid', 'femus-setup', '--', 'connection.uuid', $uuid, 'wifi.mode', 'ap',
+                'ipv4.method', 'shared', 'ipv6.method', 'ignore',
+                // WPA2/CCMP only: without these NetworkManager would also accept WPA and TKIP.
+                'wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.proto', 'rsn',
+                'wifi-sec.pairwise', 'ccmp', 'wifi-sec.group', 'ccmp',
             ],
-            $this->addArguments($runner->commands),
+            $add,
         );
 
+        // Activated by the UUID it was created with: a profile of another type may share the name.
         $up = $runner->last();
-        $this->assertSame(['-w', '20', '--ask', 'connection', 'up', 'Hotspot'], $up->arguments);
+        $this->assertSame(['-w', '20', '--ask', 'connection', 'up', 'uuid', $uuid], $up->arguments);
         $this->assertSame("password1\n", $up->stdin);
         $this->assertTrue($up->stdinIsSecret);
 
@@ -441,7 +451,7 @@ final class NmcliBackendTest extends TestCase
 
         $this->assertSame(
             ['wifi.mode', 'ap', 'wifi.band', 'a', 'ipv4.method'],
-            array_slice($this->addArguments($runner->commands), 13, 5),
+            array_slice($this->addArguments($runner->commands), 15, 5),
         );
     }
 
@@ -455,7 +465,7 @@ final class NmcliBackendTest extends TestCase
 
         $this->assertSame(
             ['wifi.mode', 'ap', 'wifi.band', 'bg', 'ipv4.method'],
-            array_slice($this->addArguments($runner->commands), 13, 5),
+            array_slice($this->addArguments($runner->commands), 15, 5),
         );
     }
 
@@ -470,7 +480,7 @@ final class NmcliBackendTest extends TestCase
 
         $this->assertSame(
             ['wifi.mode', 'ap', 'wifi.band', 'bg', 'wifi.channel', '11', 'ipv4.method'],
-            array_slice($this->addArguments($runner->commands), 13, 7),
+            array_slice($this->addArguments($runner->commands), 15, 7),
         );
     }
 
@@ -504,7 +514,7 @@ final class NmcliBackendTest extends TestCase
     public function start_hotspot_removes_the_profile_it_added_when_the_activation_fails(): void
     {
         $runner = new FakeCommandRunner([
-            'connection show' => ['', "Hotspot:aaaaaaaa-0000-0000-0000-000000000003:802-11-wireless\n"],
+            'connection show' => '',
             'connection delete' => '',
             'connection add' => '',
             'connection up' => ['output' => '', 'exit' => 4, 'stderr' => 'Error: Connection activation failed.'],
@@ -519,8 +529,8 @@ final class NmcliBackendTest extends TestCase
         }
 
         $this->assertSame(
-            'nmcli connection delete uuid aaaaaaaa-0000-0000-0000-000000000003',
-            $runner->last()->describe(),
+            ['connection', 'delete', 'uuid', $this->addArguments($runner->commands)[14]],
+            $runner->last()->arguments,
         );
     }
 

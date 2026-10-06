@@ -159,7 +159,7 @@ final class WatchdogTest extends TestCase
         $state = $watchdog->tick();
 
         $this->assertSame(WatchdogState::HotspotRaised, $state);
-        $this->assertStringContainsString('connection up Hotspot', $runner->last()->describe());
+        $this->assertStringContainsString('connection up uuid ', $runner->last()->describe());
     }
 
     #[Test]
@@ -247,7 +247,7 @@ final class WatchdogTest extends TestCase
         $state = $watchdog->tick();
 
         $this->assertSame(WatchdogState::HotspotRaised, $state);
-        $this->assertStringContainsString('connection up Hotspot', $runner->last()->describe());
+        $this->assertStringContainsString('connection up uuid ', $runner->last()->describe());
     }
 
     /**

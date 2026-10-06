@@ -389,7 +389,7 @@ final class WiFiTest extends TestCase
         $this->assertCount(4, $runner->commands);
         $this->assertStringContainsString('-f DEVICE,TYPE device', $runner->commands[0]->describe());
         $this->assertStringContainsString('connection add type wifi ifname wlan0', $runner->commands[2]->describe());
-        $this->assertStringContainsString('connection up Hotspot', $runner->commands[3]->describe());
+        $this->assertStringContainsString('connection up uuid ', $runner->commands[3]->describe());
         $this->assertSame('femus-setup', $hotspot->ssid);
     }
 
@@ -404,7 +404,7 @@ final class WiFiTest extends TestCase
         foreach ($runner->commands as $command) {
             $this->assertStringNotContainsString('DEVICE,TYPE device', $command->describe());
         }
-        $this->assertStringContainsString('connection up Hotspot', $runner->last()->describe());
+        $this->assertStringContainsString('connection up uuid ', $runner->last()->describe());
     }
 
     #[Test]
