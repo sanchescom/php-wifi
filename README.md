@@ -525,8 +525,8 @@ wrapper around one. A command can also carry input for the child's stdin
 
 - **Neither Linux backend puts a `connect()` passphrase in any process's
   arguments.** `NmcliBackend::connect()` passes it to `nmcli --ask` on
-  stdin; `WpaCliBackend::connect()` passes it to `wpa_cli`'s interactive
-  stdin. Measured on the Pi during a live `connect`, sampling `ps -ww -eo
+  stdin; `WpaCliBackend::connect()` passes `wpa_cli`'s interactive stdin the
+  key derived from it (since 3.3.0 — before that, the passphrase itself). Measured on the Pi during a live `connect`, sampling `ps -ww -eo
   args` for the passphrase (read from a file, so the measuring `grep`
   itself never carries the secret): `0` matches, on both backends — see
   [`docs/verified-on.md`](docs/verified-on.md). 3.1 could only make this

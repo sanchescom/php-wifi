@@ -11,7 +11,6 @@ use Sanchescom\WiFi\Backend\Linux\RuntimeDirectory;
 use Sanchescom\WiFi\Backend\Linux\ToolPath;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
-use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
@@ -253,7 +252,6 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
      * merely enabled block could lose to a still-associated old one, which
      * would also make COMPLETED meaningless.
      *
-     * @throws InvalidArgument when the SSID contains a control character
      * @throws WrongPassphrase when the passphrase is refused, or cannot be one (not 8–63 printable ASCII characters)
      * @throws NoAddress when the join worked and the DHCP client then failed
      */
@@ -261,19 +259,8 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     {
         $interface = $device->name;
 
-        // The SSID and the passphrase become lines of a script wpa_cli reads from stdin, through a
-        // line editor. A line break in either starts a new command, and the editor acts on other
-        // control bytes as on keys: Ctrl-U wipes the line typed so far, DEL the last character
-        // (measured on the Pi: an SSID carrying Ctrl-U replaced the command with one of its own). The
-        // commands run as root, and the sender is whoever holds the phone, or whoever named a network
-        // in range. So no control byte gets through; bytes above 0x7f, a name in UTF-8, do.
-        if (preg_match('/[\x00-\x1f\x7f]/', $ssid) === 1) {
-            throw new InvalidArgument('WpaCliBackend cannot join a network whose name contains a control character.');
-        }
-
-        // A WPA passphrase is 8–63 printable ASCII characters. wpa_supplicant refuses to store anything
-        // else (`set_network … psk` answers FAIL), which used to end as an unexplained command failure;
-        // such a string cannot be the right passphrase for any network, so it is reported as a wrong one.
+        // A WPA passphrase is 8–63 printable ASCII characters; anything else cannot be the right one
+        // for any network, and is reported as a wrong one before a key is derived from it.
         if ($credentials->password !== null && preg_match('/^[\x20-\x7e]{8,63}$/D', $credentials->password) !== 1) {
             throw WrongPassphrase::forNetwork(
                 $ssid,
@@ -302,11 +289,11 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
         try {
             if ($credentials->password !== null) {
                 $this->wpaCliScript($interface, [
-                    sprintf('set_network %d ssid %s', $id, self::quote($ssid)),
-                    sprintf('set_network %d psk %s', $id, self::quote($credentials->password)),
+                    sprintf('set_network %d ssid %s', $id, bin2hex($ssid)),
+                    sprintf('set_network %d psk %s', $id, self::psk($ssid, $credentials->password)),
                 ]);
             } else {
-                $this->wpaCli($interface, 'set_network', (string) $id, 'ssid', self::quote($ssid));
+                $this->wpaCli($interface, 'set_network', (string) $id, 'ssid', bin2hex($ssid));
                 $this->wpaCli($interface, 'set_network', (string) $id, 'key_mgmt', 'NONE');
             }
 
@@ -946,19 +933,28 @@ final class WpaCliBackend implements Backend, SupportsKnownNetworks, SupportsHot
     }
 
     /**
-     * A `ssid`/`psk` value as `wpa_supplicant` takes it: between a pair of
-     * double quotes, with nothing inside escaped. It reads the value from the
-     * first quote to the last one on the line and takes every byte in between
-     * as it is — a `"` or a `\` included. Escaping them, as this method did
-     * until 3.3.0, stored the backslashes as part of the name or the
-     * passphrase (measured on the Pi: `"a\"b"` was stored as `a\"b`), so a
-     * network or a passphrase containing either character could not be
-     * joined. What must never be inside is a control byte, and
-     * {@see self::connect()} sees to that.
+     * The 256-bit key WPA derives from a passphrase and the network's name,
+     * as 64 hex digits — what `wpa_supplicant` computes itself when it is
+     * given the passphrase, and accepts ready-made as an unquoted `psk`.
+     *
+     * Nothing a caller supplies is ever written into the script `wpa_cli`
+     * reads: the SSID goes in as hex ({@see self::connect()}) and the
+     * passphrase as this key. `wpa_cli` reads that script through a line
+     * editor, which acts on bytes of a value as on keys — a line break ends
+     * the command, Ctrl-U wipes it (measured on the Pi: an SSID carrying
+     * Ctrl-U replaced the command with one of its own, run as root). Two
+     * rounds of filtering such bytes each missed some; hex digits leave
+     * nothing to filter. It also means the passphrase itself is never stored
+     * in `wpa_supplicant`'s config, only the key.
+     *
+     * Quoting was wrong in its own right: `wpa_supplicant` reads a quoted
+     * value from the first quote to the last with no escapes, so the
+     * backslash escaping applied until 3.3.0 stored the backslashes too and a
+     * name or passphrase containing `"` or `\` could not be joined.
      */
-    private static function quote(string $value): string
+    private static function psk(string $ssid, string $passphrase): string
     {
-        return '"' . $value . '"';
+        return hash_pbkdf2('sha1', $passphrase, $ssid, 4096, 64);
     }
 
     /** One command in argument mode (`wpa_cli -i <iface> <command> <args...>`), which fails at once when no `wpa_supplicant` listens. */

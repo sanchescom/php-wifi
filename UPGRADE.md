@@ -19,6 +19,11 @@ Nothing breaks for calling code. What behaves differently:
   existing Wi-Fi profile of that name is deleted first, so settings added to
   it by hand do not survive a restart of the hotspot. The polkit actions it
   needs are the three the README already lists.
+- **`WpaCliBackend::connect()` saves the derived key, not the passphrase.**
+  A network block it writes to `wpa_supplicant`'s config now holds
+  `psk=<64 hex digits>` where it used to hold `psk="<passphrase>"`. Blocks
+  already there keep working. If something else reads the passphrase back out
+  of that file, it will no longer find it.
 - **`HotspotConfig`'s constructor gained `$channel`, `$country` and
   `$captivePortal`**, and `NmcliBackend`'s a `$dnsmasqSharedDirectory`, all
   optional and at the end.

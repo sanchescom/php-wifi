@@ -9,7 +9,6 @@ use PHPUnit\Framework\TestCase;
 use Sanchescom\WiFi\Backend\WpaCliBackend;
 use Sanchescom\WiFi\Exception\CommandFailed;
 use Sanchescom\WiFi\Exception\DeviceNotFound;
-use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Exception\NetworkNotFound;
 use Sanchescom\WiFi\Exception\NoAddress;
 use Sanchescom\WiFi\Exception\PermissionDenied;
@@ -461,7 +460,11 @@ final class WpaCliBackendTest extends TestCase
         $script = $runner->commands[3];
         $this->assertSame(self::WPA_CLI, $script->program);
         $this->assertSame(['-i', 'wlan0'], $script->arguments);
-        $this->assertSame("set_network 0 ssid \"BELL340\"\nset_network 0 psk \"p w  p w \"\nquit\n", $script->stdin);
+        $this->assertSame(
+            "set_network 0 ssid 42454c4c333430\nset_network 0 psk " . hash_pbkdf2('sha1', 'p w  p w ', 'BELL340', 4096, 64)
+            . "\nquit\n",
+            $script->stdin,
+        );
         $this->assertTrue($script->stdinIsSecret);
 
         foreach ($runner->commands as $command) {
@@ -619,7 +622,7 @@ final class WpaCliBackendTest extends TestCase
         $backend->connect('BELL340', Credentials::none(), new Device('wlan0'));
 
         $this->assertSame(
-            ['list_networks', 'add_network', 'set_network 0 ssid "BELL340"', 'set_network 0 key_mgmt NONE', 'select_network 0', 'status', 'save_config'],
+            ['list_networks', 'add_network', 'set_network 0 ssid 42454c4c333430', 'set_network 0 key_mgmt NONE', 'select_network 0', 'status', 'save_config'],
             self::wpaCliCalls($runner),
         );
         foreach ($runner->commands as $command) {
@@ -666,13 +669,11 @@ final class WpaCliBackendTest extends TestCase
     }
 
     /**
-     * Measured on the Pi: wpa_supplicant takes the value from the first
-     * quote to the last and reads nothing inside as an escape. `"a\"b"` was
-     * stored as `a\"b`, backslash included, so the escaping this backend used
-     * to apply made such a network unjoinable.
+     * The key for the IEEE 802.11i test vector: passphrase "password", SSID
+     * "IEEE". If this ever differs, no network can be joined.
      */
     #[Test]
-    public function connect_passes_quotes_and_backslashes_in_an_ssid_and_a_passphrase_through_as_they_are(): void
+    public function connect_derives_the_same_key_from_a_passphrase_as_wpa_does(): void
     {
         $runner = self::runner([
             'list_networks' => '',
@@ -683,13 +684,55 @@ final class WpaCliBackendTest extends TestCase
         ]);
         $backend = new WpaCliBackend($runner);
 
-        $backend->connect('He said "hi"\\', Credentials::password('pa"ss\\word'), new Device('wlan0'));
+        $backend->connect('IEEE', Credentials::password('password'), new Device('wlan0'));
 
         $script = array_values(array_filter($runner->commands, static fn (Command $c): bool => $c->stdin !== null))[0];
         $this->assertSame(
-            "set_network 3 ssid \"He said \"hi\"\\\"\nset_network 3 psk \"pa\"ss\\word\"\nquit\n",
+            "set_network 3 ssid 49454545\n"
+            . "set_network 3 psk f42c6fc52df0ebef9ebb4b90b38a5f902e83fe1b135a70e23aed762e9710a12e\nquit\n",
             $script->stdin,
         );
+    }
+
+    /**
+     * wpa_cli reads this script through a line editor that acts on bytes of
+     * a value as on keys: a line break ends the command, Ctrl-U wipes it
+     * (measured on the Pi, where such an SSID replaced the command with one
+     * of its own, run as root). Whatever the name and the passphrase hold —
+     * control bytes, quotes, backslashes, UTF-8 — only hex digits may reach
+     * the script.
+     */
+    #[Test]
+    public function connect_puts_nothing_but_hex_digits_into_the_script_whatever_the_name_and_passphrase_hold(): void
+    {
+        $names = ["Cafe\nterminate", "x\x15set_network 0 priority 7", "abc\x7f\x7f", "a\tb", 'He said "hi"\\', 'Кафе ☕', "\xff\x8a"];
+
+        foreach ($names as $ssid) {
+            foreach ([Credentials::password('pa"ss\\word'), Credentials::none()] as $credentials) {
+                $runner = self::runner([
+                    'list_networks' => '',
+                    'add_network' => "3\n",
+                    'set_network' => "OK\n",
+                    'status' => "wpa_state=COMPLETED\nid=3\n",
+                    'which' => ['output' => '', 'exit' => 1],
+                ]);
+
+                (new WpaCliBackend($runner))->connect($ssid, $credentials, new Device('wlan0'));
+
+                foreach ($runner->commands as $command) {
+                    if ($command->stdin !== null) {
+                        $this->assertMatchesRegularExpression(
+                            '/^set_network 3 ssid [0-9a-f]+\nset_network 3 psk [0-9a-f]{64}\nquit\n$/D',
+                            $command->stdin,
+                        );
+                    }
+
+                    if (in_array('ssid', $command->arguments, true)) {
+                        $this->assertSame(bin2hex($ssid), $command->arguments[5]);
+                    }
+                }
+            }
+        }
     }
 
     #[Test]
@@ -1601,26 +1644,6 @@ final class WpaCliBackendTest extends TestCase
                 $this->fail('Expected WrongPassphrase to be thrown.');
             } catch (WrongPassphrase) {
                 $this->assertSame([], $runner->commands);
-            }
-        }
-    }
-
-    /** A network's name is chosen by whoever set it up, and it is a line of the same script. */
-    #[Test]
-    public function connect_never_lets_a_control_character_in_the_ssid_reach_wpa_cli(): void
-    {
-        $runner = self::runner([]);
-        $backend = new WpaCliBackend($runner, 'wlan0');
-
-        // \x15 is Ctrl-U, which wipes the line typed so far; \x7f deletes a character; a tab completes.
-        foreach (["Cafe\nterminate", "Cafe\rterminate", "Cafe\0", "x\x15terminate", "abc\x7f", "a\tb"] as $ssid) {
-            foreach ([Credentials::password('password1'), Credentials::none()] as $credentials) {
-                try {
-                    $backend->connect($ssid, $credentials, new Device('wlan0'));
-                    $this->fail('Expected InvalidArgument to be thrown.');
-                } catch (InvalidArgument) {
-                    $this->assertSame([], $runner->commands);
-                }
             }
         }
     }

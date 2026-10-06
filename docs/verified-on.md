@@ -1099,8 +1099,29 @@ code (19 lines of it in the journal) now that `qrencode` is installed.
    backslash-escaped quote    "a\"b"     stored ssid:  " a \ " b "
    ```
 
-   An SSID with a control character is now refused, a passphrase has to be
-   8–63 printable ASCII characters, and neither is escaped any more.
+   A second pass of the review pointed out that filtering bytes would keep
+   missing some. So nothing a caller supplies is written into that script any
+   more: the SSID goes in as hex digits, and instead of the passphrase the key
+   WPA derives from it. Run on the Pi at the commit that does this:
+
+   ```
+   $ php bin/wifi connect --ssid=BELL340 --password-file=/tmp/wrong.pass
+   The passphrase for "BELL340" was not accepted.
+   [exit 1]
+   $ php bin/wifi connect --ssid=BELL340 --password-file=/home/femus/.wifi-pass
+   Connected to BELL340 via wlan0 (auto)
+   [exit 0]
+   addr=192.168.2.76/24
+   2 packets transmitted, 2 received, 0% packet loss, time 1001ms
+   network={
+   	ssid="BELL340"
+   	psk=f199…931d (64 hex digits)
+   }
+   passphrase present in the config: 0
+   ```
+
+   Not run: a network whose name or passphrase really contains a quote, a
+   backslash or a non-ASCII character. None was at hand.
 
 ## Not verified
 
