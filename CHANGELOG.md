@@ -2,6 +2,55 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.5] - 2026-10-06
+
+Hardening. No API changes; three behaviour changes are listed in
+[UPGRADE.md](UPGRADE.md#32--325). Verified live on the maintainer's Raspberry
+Pi — see [docs/verified-on.md](docs/verified-on.md).
+
+### Security
+- **Runtime files no longer live in `/tmp`.** `WpaCliBackend`'s `hostapd` and
+  `dnsmasq` pid files and the watchdog's state file sat at fixed names in a
+  world-writable directory and were written by root, so a local user could
+  plant a symlink under one of those names and have root overwrite the file it
+  pointed at. They, and the short-lived `hostapd` config, are now in
+  `/run/php-wifi` (mode 0700; `WIFI_RUNTIME_DIR` overrides the path). A
+  directory that is a symlink, belongs to another user or is writable by group
+  or others is refused, for reading and deleting as well as for writing.
+  `examples/watch/wifi-watch.service` declares it with `RuntimeDirectory=`.
+
+### Fixed
+- **A stopped hotspot's age no longer passes to the next one.** `wifi hotspot
+  stop` left the watchdog's state file behind, so the watchdog could tear down
+  a hotspot the provisioning demo had just raised, on the first tick nobody
+  was attached. `wifi hotspot stop` and `start` now remove the file, a tick
+  that finds no hotspot drops it, and a running watchdog whose file was
+  removed starts the count again.
+- **A stop followed at once by a start could lose the new pid file.**
+  `hostapd` deletes its pid file as it exits, after the signal;
+  `WpaCliBackend::stopHotspot()` now waits for it to exit.
+- **`NmcliBackend` deleted profiles by name**, which matches every profile of
+  that name whatever its type. `connect()` and `forget()` now delete only the
+  Wi-Fi profile, by its UUID.
+- **`wifi forget` on a network that is not saved** said it "was not found in
+  the scan". It now says `No saved network named "…"`, on both Linux backends.
+- **`WpaCliBackend::stopHotspot()` removed every address on the interface.**
+  Called when no hotspot was up — the provisioning demo does that after a
+  successful join — it threw away the DHCP lease. It now removes only the
+  hotspot's own address.
+- **The provisioning demo on `WpaCliBackend`**: `hotspot.sh` restarted the
+  hotspot while the page was still joining, and the DHCP client the join had
+  started was stopped together with the unit. The page now marks a running
+  join (`PROVISION_JOINING`), and `provision.service` sets `KillMode=process`.
+
+### Changed
+- CI uses `actions/checkout@v5`.
+
+### Verified
+- The provisioning demo on `WpaCliBackend`, the last Linux item left under
+  "Not verified" for 3.2.0. The run is where the three defects above it were
+  found.
+
 ## [3.2.4] - 2026-09-16
 
 No code changes.
