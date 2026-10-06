@@ -172,13 +172,82 @@ Calling a capability the active backend does not implement (`known` or
 `hotspot` on macOS/Windows) throws `UnsupportedOperation`; check first
 with `$wifi->supports(SupportsHotspot::class)`.
 
-## Provisioning a headless Raspberry Pi
+## Provisioning a headless device: `wifi provision`
 
-`examples/provision/` turns a headless Pi into a Wi-Fi setup wizard: it
-opens a temporary hotspot and serves a small PHP page that lets a phone
-scan and join the real network — no SSH, no keyboard, no monitor. See
-[`examples/provision/README.md`](examples/provision/README.md) for the
-systemd unit and install steps.
+Since 3.3.0 one command turns a headless Linux device into one that is set up
+from a phone — no SSH, no keyboard, no monitor:
+
+```
+$ sudo wifi provision
+Setup network: femus-pi-setup
+Passphrase:    k7m2xw9qhd4t
+Setup page:    http://10.42.0.1/
+```
+
+It scans, raises a setup hotspot, and serves a page on it. The hotspot is a
+captive portal: its DNS answers every name with the device, and the page
+redirects every request meant for another host to itself, which is what makes
+a phone that has just joined open it. With `qrencode` installed, a QR code
+for joining the setup network is printed as well.
+
+The page lists the networks and takes a passphrase. A single radio cannot
+stay an access point and join a network, so the phone loses the page the
+moment the join starts. The page therefore answers first — what is about to
+happen, and where the device will be — and joins once that answer has been
+sent. If the join fails, the hotspot comes back and the page says why:
+`The passphrase for "Home" was not accepted.` If it works, the command prints
+`Joined Home.` and exits 0; with `avahi-daemon` running it also names
+`<hostname>.local`. After `--timeout` seconds without a join it takes the
+hotspot down and exits 1.
+
+It needs root: the page is served on port 80, and on both backends the
+captive portal's DNS is root's to configure. On a machine without
+NetworkManager, give the unit that runs it `KillMode=process` — the DHCP
+client the join starts has to outlive the command. To keep the device on its
+network afterwards, run [`wifi watch`](#wifi-watch).
+
+The page has no login. It is served only on the setup hotspot's own address,
+only while that hotspot is up, to whoever knows its passphrase.
+
+### The same building blocks in your own application
+
+`Provision\Portal` is what the page is built from, with no framework
+underneath:
+
+```php
+use Sanchescom\WiFi\Provision\Portal;
+use Sanchescom\WiFi\WiFi;
+
+$portal = new Portal(WiFi::create());
+
+$portal->networks();               // [['ssid' => 'Home', 'band' => '5', 'quality' => 87, 'security' => 'WPA2'], …]
+$portal->connect('Home', $typed);  // ['ok' => false, 'ssid' => 'Home', 'reason' => 'wrong_passphrase', 'message' => '…']
+$portal->status();                 // ['hotspot' => false, 'joining' => false, 'connected' => 'Home', 'lastAttempt' => …]
+```
+
+`connect()` never throws; `reason` is `wrong_passphrase`, `network_not_found`,
+`no_address`, `permission_denied`, `invalid` or `failed`. The same three are
+JSON endpoints — `GET /api/networks`, `GET /api/status`, `POST /api/connect`
+with `ssid` and `password`:
+
+```php
+$response = $portal->handle($method, $path, $_POST);   // null when the path is not one of the three
+
+if ($response !== null) {
+    $response->send();
+}
+```
+
+A `Response` is plain data (`status`, `headers`, `body`), so a framework can
+turn it into its own. Put these behind your application's authentication:
+`connect()` changes which network the device is on.
+
+## The original demo: `examples/provision/`
+
+`examples/provision/` is the hand-assembled version `wifi provision` grew out
+of: a shell supervisor, a single PHP page and a systemd unit. It still works
+and shows every moving part. See
+[`examples/provision/README.md`](examples/provision/README.md).
 
 ![Provisioning page on a phone](examples/provision/screenshot.jpg)
 
@@ -515,6 +584,7 @@ of this repository it is `php bin/wifi`.
 | `hotspot start` | `--ssid=`, `--password=`, `--password-file=`, `--band=`, `--channel=`, `--country=`, `--device=` | Start a hotspot (`--band` is `2.4` or `5`; `--country` is a two-letter code and works on `WpaCliBackend` only) |
 | `hotspot stop` | — | Stop the hotspot |
 | `hotspot status` | — | Print `active` or `inactive` |
+| `provision` | `--ssid=`, `--password-file=`, `--port=`, `--timeout=`, `--channel=`, `--country=`, `--device=` | Raise a setup hotspot with a captive-portal page a phone uses to put the device on a network; exits 0 once it has joined, 1 after `--timeout` (default 900) seconds. Without `--ssid` the hotspot is `<hostname>-setup`; without `--password-file` a random passphrase is generated and printed |
 | `watch` | `--ssid=`, `--interval=`, `--retry=`, `--hotspot-ssid=`, `--hotspot-password-file=`, `--device=`, `--once` | Keep rejoining a network, raising a provisioning hotspot when it cannot (requires `SupportsHotspot`, i.e. either Linux backend) |
 
 `--device` is optional everywhere it appears; the wireless device is

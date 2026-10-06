@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.0] - unreleased
+
+`wifi provision`, and what it stands on. Nothing in this release breaks
+calling code; the behaviour changes are in
+[UPGRADE.md](UPGRADE.md#32--33). Verified live on the maintainer's Raspberry
+Pi on both Linux backends — see [docs/verified-on.md](docs/verified-on.md).
+
+### Added
+- **`wifi provision`**: one command that raises a setup hotspot, serves a
+  page on it for a phone to pick a network and type its passphrase, and exits
+  once the device has joined. The hotspot is a captive portal, so the phone
+  opens the page by itself. The page answers before it joins — the phone
+  loses it the moment the radio switches — and when a join fails the hotspot
+  comes back and the page says why. Prints a QR code for the setup network
+  when `qrencode` is installed, and names `<hostname>.local` when
+  `avahi-daemon` is running.
+- **`Provision\Portal`**: the reusable part — `networks()`, `connect()` and
+  `status()` as methods and as framework-free JSON endpoints
+  (`GET /api/networks`, `GET /api/status`, `POST /api/connect`) that any PHP
+  application can mount behind its own authentication.
+- **A failed join says why.** `WrongPassphrase` and `NoAddress` (both extend
+  `CommandFailed`) on both Linux backends, and `NetworkNotFound` from
+  `NmcliBackend::connect()`. On `WpaCliBackend` a wrong passphrase now also
+  ends the wait as soon as `wpa_supplicant` has given up on the handshake,
+  instead of after the full twenty-one seconds.
+- **`HotspotConfig` takes a `channel`, a `country` and `captivePortal`.**
+  `wifi hotspot start` has `--channel` and `--country`. `hostapd` gets
+  `country_code` and announces it; until now the radio stayed in the world
+  regulatory domain. `NmcliBackend` passes the channel on and refuses a
+  country, which NetworkManager has no setting for.
+
+### Security
+- **`NmcliBackend::startHotspot()` no longer passes the hotspot passphrase as
+  an argument.** `nmcli device wifi hotspot` has no other way to take it, so
+  the hotspot is now a profile added without a passphrase and activated with
+  `nmcli --ask`, which reads it from stdin. That was the last place a Linux
+  backend put a passphrase in a process's arguments.
+
+### Fixed
+- `NmcliBackend::startHotspot()` leaves one `Hotspot` profile however often it
+  is called, and none after a start that failed.
+- `examples/provision`: a join right after the hotspot went down could fail
+  with "no such network" — NetworkManager's list of networks is empty for a
+  moment after the radio leaves access-point mode. The page now looks again.
+
 ## [3.2.5] - 2026-10-06
 
 Hardening. No API changes; three behaviour changes are listed in
