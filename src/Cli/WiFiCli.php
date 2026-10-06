@@ -12,7 +12,13 @@ use Sanchescom\WiFi\Exception\InvalidArgument;
 use Sanchescom\WiFi\Exception\PermissionDenied;
 use Sanchescom\WiFi\Exception\UnsupportedOperation;
 use Sanchescom\WiFi\Shell\CommandRunner;
+use Sanchescom\WiFi\Provision\LocalName;
+use Sanchescom\WiFi\Provision\QrCode;
+use Sanchescom\WiFi\Provision\SetupPage;
+use Sanchescom\WiFi\Provision\State;
+use Sanchescom\WiFi\Provision\Supervisor;
 use Sanchescom\WiFi\Shell\Os;
+use Sanchescom\WiFi\Shell\ShellCommandRunner;
 use Sanchescom\WiFi\Test\Support\FakeCommandRunner;
 use Sanchescom\WiFi\Value\Band;
 use Sanchescom\WiFi\Value\Credentials;
@@ -171,6 +177,53 @@ final class WiFiCli extends CLI
             false,
             'watch',
         );
+
+        $this->registerProvision($options);
+    }
+
+    private function registerProvision(Options $options): void
+    {
+        $options->registerCommand(
+            'provision',
+            'Raise a setup hotspot with a page a phone uses to put this device on a wifi network',
+        );
+        $options->registerOption(
+            'ssid',
+            'SSID of the setup hotspot (default: <hostname>-setup)',
+            null,
+            true,
+            'provision',
+        );
+        $options->registerOption(
+            'password-file',
+            'Read the hotspot passphrase from a file, or from stdin when given "-" (default: a random one, printed)',
+            null,
+            true,
+            'provision',
+        );
+        $options->registerOption('port', 'Port the setup page is served on (default: 80)', null, true, 'provision');
+        $options->registerOption(
+            'timeout',
+            'Seconds to wait for someone to finish the setup before giving up (default: 900)',
+            null,
+            true,
+            'provision',
+        );
+        $options->registerOption('channel', 'Channel of the setup hotspot', null, true, 'provision');
+        $options->registerOption(
+            'country',
+            'Two-letter country code for the regulatory domain (wpa_cli backend only)',
+            null,
+            true,
+            'provision',
+        );
+        $options->registerOption(
+            'device',
+            'Which device to use (auto-detected when omitted)',
+            null,
+            true,
+            'provision',
+        );
     }
 
     protected function main(Options $options): void
@@ -200,6 +253,7 @@ final class WiFiCli extends CLI
             'forget' => $this->cmdForget($options),
             'hotspot' => $this->cmdHotspot($options),
             'watch' => $this->cmdWatch($options),
+            'provision' => $this->cmdProvision($options),
             default => throw new InvalidArgument('No known command was given; see --help.'),
         };
     }
@@ -496,6 +550,136 @@ final class WiFiCli extends CLI
     }
 
     /**
+     * Raises a setup hotspot that is a captive portal, serves
+     * {@see SetupPage} on it through PHP's built-in web server, and stays
+     * until the device has joined a network (exit 0) or `--timeout` has
+     * passed (exit 1). {@see Supervisor} brings the hotspot back after a
+     * failed join. Whatever happens, the web server is stopped on the way
+     * out, and so is the hotspot unless the device joined.
+     */
+    private function cmdProvision(Options $options): void
+    {
+        if (!$this->wifi->supports(SupportsHotspot::class)) {
+            throw UnsupportedOperation::by($this->wifi->backend()::class, SupportsHotspot::class);
+        }
+
+        $runner = $this->commandRunner ?? ShellCommandRunner::forCurrentOs();
+        $port = $this->optInt($options, 'port', 80);
+        $timeout = $this->optInt($options, 'timeout', 900);
+
+        if ($port < 1 || $port > 65535 || $timeout < 1) {
+            throw new InvalidArgument('provision: --port must be 1–65535 and --timeout a positive number of seconds.');
+        }
+
+        $ssidOpt = $this->optString($options, 'ssid');
+        $passwordOpt = $this->resolvePassword($options, 'password-file', null);
+        $channelOpt = $this->optString($options, 'channel');
+        $countryOpt = $this->optString($options, 'country');
+
+        if ($channelOpt !== false && !ctype_digit($channelOpt)) {
+            throw new InvalidArgument('--channel must be a number.');
+        }
+
+        [$device] = $this->resolveDevice($options);
+
+        $config = new HotspotConfig(
+            ssid: $ssidOpt !== false ? $ssidOpt : substr((string) gethostname(), 0, 26) . '-setup',
+            password: $passwordOpt !== false ? $passwordOpt : self::randomPassphrase(),
+            device: $device,
+            channel: $channelOpt !== false ? (int) $channelOpt : null,
+            country: $countryOpt !== false ? strtoupper($countryOpt) : null,
+            captivePortal: true,
+        );
+
+        $url = 'http://' . HotspotConfig::ADDRESS . ($port === 80 ? '' : ':' . $port) . '/';
+        $localName = LocalName::detect($runner);
+        $state = new State();
+        $supervisor = new Supervisor($this->wifi, $config, $state);
+        $server = null;
+        $joined = null;
+
+        // A stop from systemd or Ctrl-C has to run the cleanup below, not skip it.
+        if (function_exists('pcntl_async_signals')) {
+            pcntl_async_signals(true);
+            pcntl_signal(SIGTERM, static fn () => throw new InvalidArgument('provision: stopped.'));
+            pcntl_signal(SIGINT, static fn () => throw new InvalidArgument('provision: stopped.'));
+        }
+
+        try {
+            $supervisor->start();
+
+            echo sprintf('Setup network: %s', $config->ssid) . PHP_EOL;
+            echo sprintf('Passphrase:    %s', $config->password) . PHP_EOL;
+            echo sprintf('Setup page:    %s', $url) . PHP_EOL;
+            echo (QrCode::render($runner, $config->ssid, $config->password)
+                ?? 'Install qrencode to get a QR code for joining the setup network here.') . PHP_EOL;
+
+            $server = proc_open(
+                [PHP_BINARY, '-S', '0.0.0.0:' . $port, dirname(__DIR__, 2) . '/bin/wifi-portal.php'],
+                [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => STDERR],
+                $pipes,
+                null,
+                ['WIFI_PORTAL_URL' => $url, 'WIFI_PORTAL_NAME' => (string) $localName] + getenv(),
+            );
+
+            if ($server === false) {
+                throw new InvalidArgument('provision: could not start the web server.');
+            }
+
+            $previous = null;
+
+            for ($waited = 0; $waited < $timeout && $joined === null; $waited++) {
+                sleep(1);
+
+                if (!proc_get_status($server)['running']) {
+                    throw new InvalidArgument(sprintf('provision: the web server on port %d stopped.', $port));
+                }
+
+                $current = $supervisor->tick();
+
+                if ($current !== $previous) {
+                    fwrite(STDERR, sprintf('%s provision: %s', date(DATE_ATOM), $current->value) . PHP_EOL);
+                    $previous = $current;
+                }
+
+                $joined = $state->joinedSsid();
+            }
+        } finally {
+            if (is_resource($server)) {
+                proc_terminate($server);
+                proc_close($server);
+            }
+
+            if ($joined === null) {
+                $supervisor->stop();
+            }
+        }
+
+        if ($joined === null) {
+            throw new InvalidArgument(sprintf('provision: nobody finished the setup within %d seconds.', $timeout));
+        }
+
+        echo sprintf('Joined %s.', $joined) . PHP_EOL;
+
+        if ($localName !== null) {
+            echo sprintf('The device answers to %s on that network.', $localName) . PHP_EOL;
+        }
+    }
+
+    /** Twelve characters without the look-alikes (0/O, 1/l/I), easy to type from a screen. */
+    private static function randomPassphrase(): string
+    {
+        $alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+        $passphrase = '';
+
+        for ($i = 0; $i < 12; $i++) {
+            $passphrase .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+        }
+
+        return $passphrase;
+    }
+
+    /**
      * Builds the observer passed to {@see Watchdog::run()}: one timestamped
      * line to STDERR (so it lands in the journal under systemd) per tick an
      * operator needs to see.
@@ -711,9 +895,13 @@ final class WiFiCli extends CLI
      * handed to a {@see Watchdog} too: the watch command's own `iw`
      * invocations must be driven by the same fixtures as the facade's.
      *
+     * Public only for `bin/wifi-portal.php`, the setup page's router script,
+     * which has to end up with the same backend as the command that started it.
+     *
+     * @internal
      * @return array{0: WiFi, 1: ?CommandRunner}
      */
-    private static function buildWifi(): array
+    public static function buildWifi(): array
     {
         $fakeRunnerDir = getenv('WIFI_FAKE_RUNNER');
         $fakeOsName = getenv('WIFI_FAKE_OS');

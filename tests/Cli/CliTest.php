@@ -605,6 +605,24 @@ final class CliTest extends TestCase
     }
 
     #[Test]
+    public function provision_is_unsupported_on_darwin(): void
+    {
+        $result = $this->runCli(['provision'], self::DARWIN_FIXTURES, 'Darwin');
+
+        $this->assertSame(2, $result['exit']);
+        $this->assertStringContainsString('does not support', $result['stderr']);
+    }
+
+    #[Test]
+    public function provision_rejects_a_port_that_is_not_one(): void
+    {
+        $result = $this->runCli(['provision', '--port=0'], self::LINUX_FIXTURES, 'Linux');
+
+        $this->assertSame(1, $result['exit']);
+        $this->assertStringContainsString('--port must be 1–65535', $result['stderr']);
+    }
+
+    #[Test]
     public function watch_rejects_a_non_positive_interval(): void
     {
         $passwordFile = $this->writeTempFile('hotspot-pass');
