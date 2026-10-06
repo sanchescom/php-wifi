@@ -1,0 +1,10 @@
+{
+    "connection show --active": {
+        "output": "Hotspot\n"
+    },
+    "-f DEVICE,TYPE device": "../../linux/Devices.txt",
+    "which iw": {
+        "output": "",
+        "exit": 1
+    }
+}

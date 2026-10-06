@@ -27,6 +27,7 @@ final class CliTest extends TestCase
     private const LINUX_HOTSPOT_STOP_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-hotspot-stop';
 
     private const LINUX_WATCH_DISCONNECTED_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-watch-disconnected';
+    private const LINUX_WATCH_HOTSPOT_BUSY_FIXTURES = __DIR__ . '/../Fixtures/cli/linux-watch-hotspot-busy';
 
     #[Test]
     public function list_unique_shows_four_rows_with_the_strongest_bell340_first(): void
@@ -502,6 +503,55 @@ final class CliTest extends TestCase
         } finally {
             unlink($passwordFile);
         }
+    }
+
+    /**
+     * The one line an operator has for telling a hotspot held up by a
+     * missing `iw` from one with a phone on it. It is written by the loop
+     * that never returns, so the loop is started for real, read from until
+     * its first line arrives, and then stopped.
+     */
+    #[Test]
+    public function watch_logs_why_a_hotspot_whose_stations_cannot_be_counted_is_left_up(): void
+    {
+        $passwordFile = $this->writeTempFile('hotspot-pass');
+        $process = proc_open(
+            [
+                PHP_BINARY,
+                self::REPO_ROOT . '/bin/wifi',
+                'watch',
+                '--hotspot-ssid=femus-setup',
+                '--hotspot-password-file=' . $passwordFile,
+                '--interval=60',
+            ],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            self::REPO_ROOT,
+            [
+                'PATH' => (string) getenv('PATH'),
+                'WIFI_FAKE_RUNNER' => self::LINUX_WATCH_HOTSPOT_BUSY_FIXTURES,
+                'WIFI_FAKE_OS' => 'Linux',
+                'WIFI_RUNTIME_DIR' => $this->runtimeDir,
+            ],
+        );
+        self::assertIsResource($process);
+
+        try {
+            $read = [$pipes[2]];
+            $write = $except = null;
+            $ready = stream_select($read, $write, $except, 20);
+            $line = $ready === 1 ? (string) fgets($pipes[2]) : '';
+        } finally {
+            proc_terminate($process);
+            array_map(fclose(...), $pipes);
+            proc_close($process);
+            unlink($passwordFile);
+        }
+
+        $this->assertMatchesRegularExpression(
+            '/^\S+ watch: hotspot_busy: cannot count hotspot stations: iw was not found$/',
+            trim($line),
+        );
     }
 
     #[Test]
